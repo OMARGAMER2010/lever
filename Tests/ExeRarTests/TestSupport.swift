@@ -13,6 +13,8 @@ func expect(_ condition: @autoclosure () -> Bool, _ message: String) throws {
 final class TemporaryFixture {
     private let directory: URL
 
+    var directoryURL: URL { directory }
+
     init() throws {
         directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("ExeRarTests-\(UUID().uuidString)", isDirectory: true)
