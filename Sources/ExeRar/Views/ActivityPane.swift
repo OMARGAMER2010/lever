@@ -5,6 +5,9 @@ import ExeRarCore
 struct ActivityPane: View {
     @ObservedObject var model: AppModel
     @Binding var isExpanded: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var s: Strings { model.strings }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -22,12 +25,13 @@ struct ActivityPane: View {
     private var header: some View {
         HStack(spacing: 9) {
             Button {
-                withAnimation(.easeOut(duration: 0.2)) { isExpanded.toggle() }
+                if reduceMotion { isExpanded.toggle() }
+                else { withAnimation(.easeOut(duration: 0.18)) { isExpanded.toggle() } }
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                         .font(.system(size: 9, weight: .bold))
-                    Text("Actividad")
+                    Text(s[.activity])
                         .font(.system(size: 12, weight: .semibold))
                     if !model.log.isEmpty {
                         Text("\(model.log.count)")
@@ -57,13 +61,15 @@ struct ActivityPane: View {
                     Image(systemName: "doc.on.doc")
                 }
                 .buttonStyle(.borderless)
-                .help("Copiar la actividad")
+                .help(s[.copyActivity])
+                .accessibilityLabel(s[.copyActivity])
 
                 Button(action: model.clearLog) {
                     Image(systemName: "trash")
                 }
                 .buttonStyle(.borderless)
-                .help("Limpiar")
+                .help(s[.clearActivity])
+                .accessibilityLabel(s[.clearActivity])
             }
         }
         .padding(.horizontal, Theme.Spacing.page)
@@ -75,7 +81,7 @@ struct ActivityPane: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 3) {
                     if model.log.isEmpty {
-                        Text("Aquí aparecerá lo que vaya pasando: qué se ejecuta, qué se extrae y qué falla.")
+                        Text(s[.activityEmpty])
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                             .padding(.top, 6)
@@ -90,9 +96,8 @@ struct ActivityPane: View {
             }
             .onChange(of: model.log.count) { _ in
                 guard let last = model.log.last else { return }
-                withAnimation(.easeOut(duration: 0.15)) {
-                    proxy.scrollTo(last.id, anchor: .bottom)
-                }
+                if reduceMotion { proxy.scrollTo(last.id, anchor: .bottom) }
+                else { withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(last.id, anchor: .bottom) } }
             }
         }
     }

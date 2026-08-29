@@ -6,83 +6,94 @@ struct ProgramPane: View {
     @ObservedObject var model: AppModel
     @State private var showsWineHelp = false
 
+    private var s: Strings { model.strings }
+
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.loose) {
             if model.selectedProgram == nil {
                 DropZone(
-                    title: "Arrastra aquí un programa de Windows",
-                    subtitle: "Archivos .exe y .msi · o pulsa para buscarlo",
-                    systemImage: "arrow.down.doc.fill",
+                    title: s[.dropProgramTitle],
+                    subtitle: s[.dropProgramSubtitle],
+                    systemImage: "arrow.down.doc",
                     accept: { model.accept(droppedURLs: $0) },
                     browse: model.selectProgram
                 )
             } else {
-                Card { programCardContent }
+                Panel { programContent }
             }
 
-            if model.wineIsBlocked {
-                NoticeBanner(
-                    kind: .failure,
-                    title: "macOS tiene Wine bloqueado",
-                    message: "Wine se descargó de internet y macOS lo cierra nada más abrirlo. Desbloquéalo para poder usarlo: es la misma autorización que darías al abrir la app por primera vez.",
-                    actionTitle: model.isUnblockingWine ? "Desbloqueando…" : "Desbloquear Wine",
-                    action: { model.unblockWine() }
-                )
-            } else if model.runtimeStatus.wineURL == nil {
-                NoticeBanner(
-                    kind: .warning,
-                    title: "Falta Wine",
-                    message: "macOS no abre archivos .exe por su cuenta. Wine es la capa que los traduce. Se instala una vez y la app lo encuentra sola.",
-                    actionTitle: "Cómo instalarlo",
-                    action: { showsWineHelp = true }
-                )
-            } else if !model.runtimeStatus.hasRosetta {
-                NoticeBanner(
-                    kind: .failure,
-                    title: "Falta Rosetta 2",
-                    message: "Wine es un programa Intel y tu Mac necesita Rosetta 2 para ejecutarlo. Instálalo desde la Terminal con: softwareupdate --install-rosetta"
-                )
-            } else {
-                windowsCard
-            }
-
-            Text("Wine no es Windows: los programas que necesitan controladores, sistemas anti-trampas o gráficos avanzados suelen fallar. Los instaladores y las utilidades sencillas son los que mejor funcionan.")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            wineState
+            disclaimer
         }
-        .sheet(isPresented: $showsWineHelp) {
-            WineHelpSheet(model: model)
-        }
+        .sheet(isPresented: $showsWineHelp) { WineHelpSheet(model: model) }
     }
 
     @ViewBuilder
-    private var programCardContent: some View {
+    private var programContent: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.normal) {
             if let program = model.selectedProgram {
                 SelectedFileChip(
                     url: program,
-                    tint: Theme.indigo,
+                    facts: programFacts(for: program),
+                    revealLabel: s[.revealInFinder],
+                    removeLabel: s[.removeFile],
                     onReveal: { FileActions.reveal(program) },
                     onClear: model.clearProgram
                 )
             }
 
-            Text("Al ejecutarlo se abrirá en su propia ventana, como cualquier programa de Windows.")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
+            if model.programWontRunOnThisWine {
+                NoticeBanner(kind: .warning, title: s[.arch32Title], message: s[.arch32Warning])
+            } else {
+                Text(s[.programWillOpen])
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
-    /// Herramientas del entorno de Windows que la app mantiene aparte.
-    private var windowsCard: some View {
-        Card(padding: Theme.Spacing.normal) {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 7) {
-                    Image(systemName: "gearshape.2.fill")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.indigo)
-                    Text("Tu Windows dentro del Mac")
+    /// Datos leídos del propio archivo: tamaño y arquitectura de la cabecera PE. La arquitectura
+    /// importa porque los Wine que funcionan hoy en Apple Silicon son solo de 64 bits.
+    private func programFacts(for program: URL) -> [String] {
+        var facts: [String] = []
+        if let size = program.formattedFileSize { facts.append(size) }
+        if model.programArchitecture != .unknown {
+            facts.append(s[model.programArchitecture.textKey])
+        }
+        facts.append(program.deletingLastPathComponent().path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
+        return facts
+    }
+
+    @ViewBuilder
+    private var wineState: some View {
+        if model.wineIsBlocked {
+            NoticeBanner(
+                kind: .failure,
+                title: s[.wineBlockedTitle],
+                message: s[.wineBlockedBody],
+                actionTitle: model.isUnblockingWine ? s[.unblocking] : s[.unblockWine],
+                action: { model.unblockWine() }
+            )
+        } else if model.runtimeStatus.wineURL == nil {
+            NoticeBanner(
+                kind: .warning,
+                title: s[.missingWineTitle],
+                message: s[.missingWineBody],
+                actionTitle: s[.howToInstall],
+                action: { showsWineHelp = true }
+            )
+        } else if !model.runtimeStatus.hasRosetta {
+            NoticeBanner(kind: .failure, title: s[.rosettaTitle], message: s[.rosettaBody])
+        } else {
+            windowsPanel
+        }
+    }
+
+    private var windowsPanel: some View {
+        Panel(padding: Theme.Spacing.normal) {
+            VStack(alignment: .leading, spacing: Theme.Spacing.normal) {
+                HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.tight) {
+                    Text(s[.windowsCardTitle])
                         .font(.system(size: 12, weight: .semibold))
                     Spacer()
                     if let wine = model.runtimeStatus.wineURL {
@@ -94,20 +105,27 @@ struct ProgramPane: View {
                     }
                 }
 
-                Text("La app guarda su propio disco C: en una carpeta aparte, así no toca ninguna otra instalación de Wine que tengas.")
+                Text(s[.windowsCardBody])
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 
                 HStack(spacing: Theme.Spacing.tight) {
-                    QuietButton(title: "Ajustes de Wine", systemImage: "slider.horizontal.3", action: model.openWineSettings)
-                    QuietButton(title: "Cerrar todo", systemImage: "power", action: model.closeWindowsPrograms)
-                    QuietButton(title: "Restablecer", systemImage: "arrow.counterclockwise", action: model.resetWindowsEnvironment)
+                    Button(s[.wineSettings], action: model.openWineSettings)
+                    Button(s[.closeAll], action: model.closeWindowsPrograms)
+                    Button(s[.resetWindows], action: model.resetWindowsEnvironment)
                     Spacer()
-                    QuietButton(title: "Otro Wine", systemImage: "magnifyingglass", action: model.selectWine)
+                    Button(s[.otherWine], action: model.selectWine)
                 }
+                .controlSize(.small)
             }
         }
     }
 
+    private var disclaimer: some View {
+        Text(s[.wineDisclaimer])
+            .font(.system(size: 11))
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
 }

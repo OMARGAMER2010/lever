@@ -18,25 +18,25 @@ struct ExeRarApp: App {
         .defaultSize(width: 880, height: 720)
         .commands {
             CommandGroup(replacing: .newItem) {
-                Button("Abrir programa de Windows…") { model.selectProgram() }
+                Button(model.strings[.menuOpenProgram]) { model.selectProgram() }
                     .keyboardShortcut("o", modifiers: [.command])
-                Button("Abrir comprimido…") { model.selectArchive() }
+                Button(model.strings[.menuOpenArchive]) { model.selectArchive() }
                     .keyboardShortcut("o", modifiers: [.command, .shift])
             }
 
-            CommandMenu("Herramientas") {
-                Button("Volver a buscar herramientas") { model.refreshTools() }
+            CommandMenu(model.strings[.menuTools]) {
+                Button(model.strings[.menuRefresh]) { model.refreshTools() }
                     .keyboardShortcut("r", modifiers: [.command])
-                Button("Instalar lo que falta") { model.installTools() }
+                Button(model.strings[.menuInstallExtractors]) { model.installTools() }
                     .disabled(!model.canInstallTools)
                 Divider()
-                Button("Ajustes de Wine…") { model.openWineSettings() }
+                Button(model.strings[.wineSettings]) { model.openWineSettings() }
                     .disabled(model.runtimeStatus.wineURL == nil)
-                Button("Cerrar los programas de Windows") { model.closeWindowsPrograms() }
+                Button(model.strings[.closeAll]) { model.closeWindowsPrograms() }
                     .disabled(model.runtimeStatus.wineURL == nil)
                 Divider()
-                Button("Copiar la actividad") { model.copyLog() }
-                Button("Limpiar la actividad") { model.clearLog() }
+                Button(model.strings[.menuCopyActivity]) { model.copyLog() }
+                Button(model.strings[.menuClearActivity]) { model.clearLog() }
             }
         }
     }

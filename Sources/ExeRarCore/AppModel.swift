@@ -11,13 +11,29 @@ public final class AppModel: ObservableObject {
     private var programSession: ProcessSession?
     private var extractionSession: ProcessSession?
 
+    // MARK: - Idioma
+
+    @Published public var language: Language {
+        didSet {
+            guard language != oldValue else { return }
+            Preferences.language = language
+            strings = Strings.table(for: language)
+        }
+    }
+    @Published public private(set) var strings: Strings
+
     // MARK: - Herramientas del sistema
 
     @Published public private(set) var runtimeStatus: RuntimeStatus
 
     // MARK: - Programa de Windows
 
-    @Published public var selectedProgram: URL?
+    @Published public var selectedProgram: URL? {
+        didSet {
+            programArchitecture = selectedProgram.map(ProgramInspector.architecture(of:)) ?? .unknown
+        }
+    }
+    @Published public private(set) var programArchitecture: ProgramArchitecture = .unknown
     @Published public private(set) var isRunningProgram = false
     @Published public private(set) var isPreparingWindows = false
     /// macOS bloquea Wine si viene marcado como descargado. Se detecta al arrancar.
@@ -45,13 +61,13 @@ public final class AppModel: ObservableObject {
     @Published public private(set) var isExtracting = false
     /// De 0 a 1 mientras `7zz` informa. `nil` cuando no hay dato.
     @Published public private(set) var extractionProgress: Double?
-    @Published public private(set) var archiveContents: [String] = []
+    @Published public private(set) var archiveFacts = ArchiveFacts()
     @Published public private(set) var isInspecting = false
 
     // MARK: - Estado común
 
     @Published public private(set) var log: [LogEntry] = []
-    @Published public private(set) var activityMessage = "Todo listo"
+    @Published public private(set) var activityMessage = ""
     @Published public private(set) var lastError: String?
     @Published public private(set) var lastSuccessFolder: URL?
     @Published public private(set) var isInstallingTools = false
@@ -60,10 +76,30 @@ public final class AppModel: ObservableObject {
         isRunningProgram || isExtracting || isInstallingTools || isPreparingWindows
     }
 
+    // MARK: - Lo que la app sabe del archivo elegido
+
+    public var archiveContents: [String] { archiveFacts.entryNames }
+
+    /// El extractor que abrirá el comprimido elegido.
+    public var toolForSelectedArchive: ArchiveTool? {
+        selectedArchive.flatMap { runtimeStatus.tool(for: $0) }
+    }
+
+    /// La elección merece explicación cuando se descarta `7zz` a propósito por ser un `.rar`.
+    public var toolChoiceNeedsExplaining: Bool {
+        guard let tool = toolForSelectedArchive, case .unar = tool else { return false }
+        return runtimeStatus.archiveTools.contains { if case .sevenZip = $0 { return true }; return false }
+    }
+
+    /// El Wine disponible solo ejecuta 64 bits, así que un programa de 32 no arrancará.
+    public var programWontRunOnThisWine: Bool {
+        runtimeStatus.wineURL != nil && programArchitecture.warnsAboutWine
+    }
+
     // MARK: - Reglas de habilitación
 
     public var canRunProgram: Bool {
-        guard let selectedProgram, !isRunningProgram, !isPreparingWindows else { return false }
+        guard let selectedProgram, !isRunningProgram, !isPreparingWindows, !wineIsBlocked else { return false }
         return SupportedFileKind.exe.accepts(selectedProgram)
             && fileManager.isReadableFile(atPath: selectedProgram.path)
             && runtimeStatus.wineURL != nil
@@ -90,37 +126,33 @@ public final class AppModel: ObservableObject {
         !isInstallingTools && runtimeStatus.homebrewURL != nil && runtimeStatus.archiveTool == nil
     }
 
-    /// Las formas de conseguir Wine que funcionan hoy en un Mac con chip Apple.
-    /// No hay una sola respuesta buena, así que se enseñan y el usuario elige.
-    public static let wineOptions: [WineOption] = [
-        WineOption(
-            name: "Game Porting Toolkit",
-            detail: "Gratis. La compilación que mantiene la comunidad para Mac con chip Apple.",
-            command: "brew tap gcenx/wine && HOMEBREW_CASK_OPTS=--no-quarantine brew install --cask gcenx/wine/game-porting-toolkit"
-        ),
-        WineOption(
-            name: "CrossOver",
-            detail: "De pago, con 14 días de prueba. Es la más fiable con diferencia.",
-            command: "brew install --cask crossover"
-        ),
-        WineOption(
-            name: "Ya tengo uno",
-            detail: "Si ya tienes Wine en el Mac, señálalo a mano con «Otro Wine».",
-            command: nil
-        )
-    ]
-
-    public func copyCommand(_ command: String) {
-        FileActions.copyToClipboard(command)
-        add("Orden copiada. Pégala en la Terminal.", level: .info)
-    }
-
     /// Qué le falta al sistema para que la app funcione entera.
     public var missingTools: [String] {
         var missing: [String] = []
         if runtimeStatus.wineURL == nil { missing.append("Wine") }
-        if runtimeStatus.archiveTool == nil { missing.append("un extractor") }
+        if runtimeStatus.archiveTool == nil { missing.append(strings[.toolExtractor]) }
         return missing
+    }
+
+    /// Las formas de conseguir Wine que funcionan hoy en un Mac con chip Apple.
+    public var wineOptions: [WineOption] {
+        [
+            WineOption(
+                name: strings[.wineOptionGptk],
+                detail: strings[.wineOptionGptkWhy],
+                command: "brew tap gcenx/wine && HOMEBREW_CASK_OPTS=--no-quarantine brew install --cask gcenx/wine/game-porting-toolkit"
+            ),
+            WineOption(
+                name: strings[.wineOptionCrossover],
+                detail: strings[.wineOptionCrossoverWhy],
+                command: "brew install --cask crossover"
+            ),
+            WineOption(
+                name: strings[.wineOptionExisting],
+                detail: strings[.wineOptionExistingWhy],
+                command: nil
+            )
+        ]
     }
 
     // MARK: - Ciclo de vida
@@ -133,12 +165,15 @@ public final class AppModel: ObservableObject {
         self.locator = locator
         self.runner = runner
         self.fileManager = fileManager
+        self.language = Preferences.language
+        self.strings = Strings.table(for: Preferences.language)
         self.customWineURL = Preferences.customWineURL
         self.overwritePolicy = Preferences.overwritePolicy
         self.extractIntoSubfolder = Preferences.extractIntoSubfolder
         self.revealWhenDone = Preferences.revealWhenDone
         self.runtimeStatus = locator.locate(customWineURL: Preferences.customWineURL)
         self.wineIsBlocked = Self.detectBlockedWine(in: runtimeStatus)
+        self.activityMessage = Strings.table(for: Preferences.language)[.allReady]
     }
 
     private static func detectBlockedWine(in status: RuntimeStatus) -> Bool {
@@ -149,29 +184,34 @@ public final class AppModel: ObservableObject {
     public func refreshTools() {
         runtimeStatus = locator.locate(customWineURL: customWineURL)
         wineIsBlocked = Self.detectBlockedWine(in: runtimeStatus)
+
         let found = [
             runtimeStatus.wineURL != nil ? "Wine" : nil,
             runtimeStatus.archiveToolName
         ].compactMap { $0 }
-        add(found.isEmpty ? "No se encontró ninguna herramienta." : "Herramientas: \(found.joined(separator: ", "))",
-            level: found.isEmpty ? .warning : .info)
+
+        if found.isEmpty {
+            add(strings[.logNoTools], level: .warning)
+        } else {
+            add(strings(.logToolsFound, found.joined(separator: ", ")), level: .info)
+        }
     }
 
     // MARK: - Selección de archivos
 
     public func selectProgram() {
-        guard let url = FileActions.chooseFile(kind: .exe) else { return }
+        guard let url = FileActions.chooseFile(kind: .exe, title: strings[.menuOpenProgram]) else { return }
         acceptProgram(url)
     }
 
     public func acceptProgram(_ url: URL) {
         guard SupportedFileKind.exe.accepts(url) else {
-            showError("«\(url.lastPathComponent)» no es un \(SupportedFileKind.exe.humanDescription).")
+            showError(strings(.errNotAProgram, url.lastPathComponent))
             return
         }
         selectedProgram = url
         clearError()
-        add("Programa elegido: \(url.lastPathComponent)", level: .info)
+        add(strings(.logProgramChosen, url.lastPathComponent), level: .info)
     }
 
     public func clearProgram() {
@@ -179,33 +219,33 @@ public final class AppModel: ObservableObject {
     }
 
     public func selectArchive() {
-        guard let url = FileActions.chooseFile(kind: .rar) else { return }
+        guard let url = FileActions.chooseFile(kind: .rar, title: strings[.menuOpenArchive]) else { return }
         acceptArchive(url)
     }
 
     public func acceptArchive(_ url: URL) {
         guard SupportedFileKind.rar.accepts(url) else {
-            showError("«\(url.lastPathComponent)» no es un \(SupportedFileKind.rar.humanDescription).")
+            showError(strings(.errNotAnArchive, url.lastPathComponent))
             return
         }
         selectedArchive = url
         chosenDestination = nil
-        archiveContents = []
+        archiveFacts = ArchiveFacts()
         archivePassword = ""
         clearError()
-        add("Comprimido elegido: \(url.lastPathComponent)", level: .info)
+        add(strings(.logArchiveChosen, url.lastPathComponent), level: .info)
         inspectArchive()
     }
 
     public func clearArchive() {
         selectedArchive = nil
         chosenDestination = nil
-        archiveContents = []
+        archiveFacts = ArchiveFacts()
         archivePassword = ""
+        lastSuccessFolder = nil
     }
 
     /// Punto de entrada para arrastrar y soltar, y para «Abrir con» desde el Finder.
-    /// Devuelve `true` si reconoció algo.
     @discardableResult
     public func accept(droppedURLs urls: [URL]) -> Bool {
         var handled = false
@@ -219,18 +259,18 @@ public final class AppModel: ObservableObject {
             }
         }
         if !handled, let first = urls.first {
-            showError("No se reconoce «\(first.lastPathComponent)». Admite .exe, .msi y comprimidos como .rar o .zip.")
+            showError(strings(.errUnknownFile, first.lastPathComponent))
         }
         return handled
     }
 
     public func selectDestination() {
         let start = chosenDestination ?? selectedArchive?.deletingLastPathComponent()
-        guard let url = FileActions.chooseDirectory(startingAt: start) else { return }
+        guard let url = FileActions.chooseDirectory(startingAt: start, title: strings[.saveIn]) else { return }
         chosenDestination = url
         Preferences.lastDestinationURL = url
         clearError()
-        add("Destino: \(url.path)", level: .info)
+        add(strings(.logDestination, url.path), level: .info)
     }
 
     public func useSuggestedDestination() {
@@ -240,9 +280,9 @@ public final class AppModel: ObservableObject {
     // MARK: - Wine
 
     public func selectWine() {
-        guard let url = FileActions.chooseWine() else { return }
+        guard let url = FileActions.chooseWine(title: strings[.menuFindWine]) else { return }
         guard let resolved = RuntimeLocator.resolveWineURL(url) else {
-            showError("Ahí no hay un ejecutable de Wine. Busca el archivo «wine» o una app «Wine…app».")
+            showError(strings[.errNotWineExecutable])
             return
         }
         customWineURL = resolved
@@ -250,7 +290,7 @@ public final class AppModel: ObservableObject {
         runtimeStatus = locator.locate(customWineURL: resolved)
         wineIsBlocked = Self.detectBlockedWine(in: runtimeStatus)
         clearError()
-        add("Wine elegido a mano: \(resolved.path)", level: .success)
+        add(strings(.logWineChosen, resolved.path), level: .success)
     }
 
     public func forgetCustomWine() {
@@ -261,12 +301,12 @@ public final class AppModel: ObservableObject {
 
     public func openWineSettings() {
         guard let wine = runtimeStatus.wineURL else { return }
-        launchDetached(WineLauncher.configCommand(wine: wine), describing: "Abriendo la configuración de Wine")
+        launchDetached(WineLauncher.configCommand(wine: wine), describing: strings[.wineSettings])
     }
 
     public func closeWindowsPrograms() {
         guard let wine = runtimeStatus.wineURL else { return }
-        launchDetached(WineLauncher.killCommand(wine: wine), describing: "Cerrando los programas de Windows")
+        launchDetached(WineLauncher.killCommand(wine: wine), describing: strings[.closeAll])
     }
 
     public var windowsFolderURL: URL { WineLauncher.prefixURL }
@@ -274,15 +314,40 @@ public final class AppModel: ObservableObject {
     /// Borra el entorno de Windows. Se vuelve a crear solo en la siguiente ejecución.
     public func resetWindowsEnvironment() {
         guard !isRunningProgram, !isPreparingWindows else {
-            showError("Espera a que termine el programa que está en marcha.")
+            showError(strings[.errBusy])
             return
         }
         do {
             try WineLauncher.resetPrefix()
-            add("Entorno de Windows borrado. Se creará de nuevo la próxima vez que ejecutes algo.", level: .success)
-            activityMessage = "Windows restablecido"
+            add(strings[.logWindowsReset], level: .success)
+            activityMessage = strings[.statusWindowsReset]
         } catch {
-            showError("No se pudo borrar el entorno: \(error.localizedDescription)")
+            showError(error.localizedDescription)
+        }
+    }
+
+    /// Quita la marca de cuarentena que impide arrancar Wine.
+    public func unblockWine() {
+        guard !isUnblockingWine, let wine = runtimeStatus.wineURL else { return }
+        let target = QuarantineGuard.repairTarget(for: wine)
+
+        isUnblockingWine = true
+        clearError()
+
+        Task { [weak self] in
+            guard let self else { return }
+            _ = try? await runner.run(QuarantineGuard.repairCommand(for: wine)) { line in
+                Task { @MainActor [weak self] in self?.addOutput(line) }
+            }
+            isUnblockingWine = false
+            wineIsBlocked = Self.detectBlockedWine(in: runtimeStatus)
+
+            if wineIsBlocked {
+                showError(strings(.errUnblockFailed, target.path))
+            } else {
+                activityMessage = strings[.statusWineUnblocked]
+                add(strings[.logWineUnblocked], level: .success)
+            }
         }
     }
 
@@ -293,19 +358,19 @@ public final class AppModel: ObservableObject {
         guard let program = selectedProgram,
               SupportedFileKind.exe.accepts(program),
               fileManager.isReadableFile(atPath: program.path) else {
-            showError("Elige un programa .exe o .msi válido.")
+            showError(strings[.errPickProgram])
             return
         }
         guard let wine = runtimeStatus.wineURL else {
-            showError("No hay Wine disponible. Instálalo o búscalo a mano.")
+            showError(strings[.errNoWine])
             return
         }
         if !runtimeStatus.hasRosetta {
-            showError("Falta Rosetta 2, que Wine necesita en los Mac con chip Apple. Instálalo con: softwareupdate --install-rosetta")
+            showError(strings[.errNoRosetta])
             return
         }
         if wineIsBlocked {
-            showError("macOS tiene Wine bloqueado porque lo marcó como descargado de internet. Pulsa «Desbloquear Wine» y vuelve a intentarlo.")
+            showError(strings[.errWineBlocked])
             return
         }
 
@@ -318,90 +383,66 @@ public final class AppModel: ObservableObject {
 
             if WineLauncher.needsFirstRunSetup() {
                 isPreparingWindows = true
-                activityMessage = "Preparando Windows por primera vez…"
-                add("Primer arranque: creando el entorno de Windows. Puede tardar un par de minutos.", level: .info)
-                let boot = WineLauncher.bootCommand(wine: wine)
-                _ = try? await runner.run(boot, session: session) { line in
+                activityMessage = strings[.statusPreparing]
+                add(strings[.logFirstRun], level: .info)
+
+                _ = try? await runner.run(WineLauncher.bootCommand(wine: wine), session: session) { line in
                     Task { @MainActor [weak self] in self?.addOutput(line) }
                 }
                 isPreparingWindows = false
+
                 if session.isCancelled {
-                    finishProgram(message: "Preparación cancelada", level: .warning)
+                    finishProgram(message: strings[.statusStopped], level: .warning)
                     return
                 }
                 // Si el entorno sigue incompleto, seguir solo llevaría a un error críptico.
                 if WineLauncher.needsFirstRunSetup() {
-                    finishProgram(message: "No se pudo preparar Windows", level: .failure)
-                    showError("Este Wine no consigue crear el entorno de Windows. Suele pasar con la versión «wine-stable» de Homebrew, que ya no es compatible con las versiones recientes de macOS. Prueba con otro Wine (CrossOver, Kegworks o una compilación para Apple Silicon) desde «Otro Wine».")
+                    finishProgram(message: strings[.statusWindowsFailed], level: .failure)
+                    showError(strings[.errWinePrefixFailed])
                     return
                 }
-                add("Entorno de Windows listo.", level: .success)
+                add(strings[.logWindowsReady], level: .success)
             }
 
             isRunningProgram = true
-            activityMessage = "Ejecutando \(program.lastPathComponent)"
-            add("Ejecutando \(program.lastPathComponent) con Wine…", level: .info)
+            activityMessage = strings(.statusRunning, program.lastPathComponent)
 
-            let command = WineLauncher.runCommand(wine: wine, program: program)
             do {
-                let result = try await runner.run(command, session: session) { line in
+                let result = try await runner.run(
+                    WineLauncher.runCommand(wine: wine, program: program),
+                    session: session
+                ) { line in
                     Task { @MainActor [weak self] in self?.addOutput(line) }
                 }
+
                 if result.wasCancelled {
-                    finishProgram(message: "Detenido", level: .warning)
+                    finishProgram(message: strings[.statusStopped], level: .warning)
                 } else if result.succeeded {
-                    finishProgram(message: "El programa se cerró", level: .success)
+                    finishProgram(message: strings[.statusFinished], level: .success)
                 } else {
-                    activityMessage = "Terminó con errores"
                     isRunningProgram = false
-                    showError(explain(exitCode: result.exitCode, forProgram: true))
+                    activityMessage = strings[.statusFailed]
+                    showError(strings(.errProgramExit, String(result.exitCode)))
                 }
             } catch {
                 isRunningProgram = false
-                activityMessage = "No se pudo iniciar"
+                activityMessage = strings[.statusCannotStart]
                 showError(error.localizedDescription)
             }
             programSession = nil
         }
     }
 
-    /// Quita la marca de cuarentena que impide arrancar Wine.
-    public func unblockWine() {
-        guard !isUnblockingWine, let wine = runtimeStatus.wineURL else { return }
-        let target = QuarantineGuard.repairTarget(for: wine)
-
-        isUnblockingWine = true
-        clearError()
-        add("Desbloqueando \(target.lastPathComponent)…", level: .info)
-
-        Task { [weak self] in
-            guard let self else { return }
-            let result = try? await runner.run(QuarantineGuard.repairCommand(for: wine)) { line in
-                Task { @MainActor [weak self] in self?.addOutput(line) }
-            }
-            isUnblockingWine = false
-            wineIsBlocked = Self.detectBlockedWine(in: runtimeStatus)
-
-            if wineIsBlocked {
-                showError("No se pudo desbloquear Wine. Desde la Terminal: xattr -dr com.apple.quarantine \"\(target.path)\"")
-            } else {
-                activityMessage = "Wine desbloqueado"
-                add("Wine desbloqueado. Ya se pueden ejecutar programas de Windows.", level: .success)
-                _ = result
-            }
-        }
-    }
-
     public func stopProgram() {
         programSession?.cancel()
-        add("Pidiendo el cierre del programa…", level: .warning)
+        add(strings[.logStopping], level: .warning)
     }
 
     private func finishProgram(message: String, level: LogLevel) {
         isRunningProgram = false
         isPreparingWindows = false
         activityMessage = message
-        add(message, level: level)
+        add(level == .success ? strings[.logProgramClosed] : message, level: level)
     }
 
     // MARK: - Extraer
@@ -424,11 +465,16 @@ public final class AppModel: ObservableObject {
             guard let self else { return }
             let result = try? await runner.run(command)
             isInspecting = false
+
             guard let result, result.succeeded else {
-                archiveContents = []
+                // El archivo se lee pero la herramienta no pudo listarlo: casi siempre, contraseña.
+                archiveFacts = ArchiveFacts(entryNames: [], listingFailed: true)
                 return
             }
-            archiveContents = ArchiveCommandBuilder.names(fromListing: result.output, usedLister: usedLister)
+            archiveFacts = ArchiveFacts(
+                entryNames: ArchiveCommandBuilder.names(fromListing: result.output, usedLister: usedLister),
+                listingFailed: false
+            )
         }
     }
 
@@ -437,22 +483,22 @@ public final class AppModel: ObservableObject {
         guard let archive = selectedArchive,
               SupportedFileKind.rar.accepts(archive),
               fileManager.isReadableFile(atPath: archive.path) else {
-            showError("Elige un archivo comprimido válido.")
+            showError(strings[.errPickArchive])
             return
         }
         guard let destination = effectiveDestination else {
-            showError("Elige una carpeta de destino.")
+            showError(strings[.errPickDestination])
             return
         }
         guard let tool = runtimeStatus.tool(for: archive) else {
-            showError("No hay ningún extractor instalado. Pulsa «Instalar herramientas».")
+            showError(strings[.errNoExtractor])
             return
         }
 
         do {
             try fileManager.createDirectory(at: destination, withIntermediateDirectories: true)
         } catch {
-            showError("No se pudo crear la carpeta «\(destination.lastPathComponent)»: \(error.localizedDescription)")
+            showError(strings(.errCannotCreateFolder, destination.lastPathComponent, error.localizedDescription))
             return
         }
 
@@ -463,8 +509,8 @@ public final class AppModel: ObservableObject {
         lastSuccessFolder = nil
         extractionProgress = tool.reportsProgress ? 0 : nil
         isExtracting = true
-        activityMessage = "Extrayendo \(archive.lastPathComponent)"
-        add("Extrayendo \(archive.lastPathComponent) con \(tool.displayName)…", level: .info)
+        activityMessage = strings(.statusExtracting, archive.lastPathComponent)
+        add(strings(.logExtracting, archive.lastPathComponent, tool.displayName), level: .info)
 
         let session = ProcessSession()
         extractionSession = session
@@ -508,15 +554,15 @@ public final class AppModel: ObservableObject {
             }
 
             if result.wasCancelled {
-                finishExtraction(message: "Extracción detenida")
-                add("Extracción detenida. Lo ya extraído sigue en la carpeta.", level: .warning)
+                finishExtraction(message: strings[.statusStopped])
+                add(strings[.logStopped], level: .warning)
                 return
             }
 
             if result.succeeded {
-                finishExtraction(message: "Extraído")
-                add("Listo. El contenido está en \(destination.path)", level: .success)
-                add("El archivo original no se ha tocado.", level: .info)
+                finishExtraction(message: strings[.statusExtracted])
+                add(strings(.logExtractedTo, destination.path), level: .success)
+                add(strings[.logOriginalKept], level: .info)
                 lastSuccessFolder = destination
                 if revealWhenDone { FileActions.openInFinder(destination) }
                 return
@@ -524,7 +570,7 @@ public final class AppModel: ObservableObject {
 
             // Cada extractor cubre formatos distintos: si uno no puede, se prueba con el otro.
             if !isRetry, let alternative = runtimeStatus.fallbackTool(for: archive, after: tool) {
-                add("\(tool.displayName) no pudo con este archivo. Probando con \(alternative.displayName)…", level: .warning)
+                add(strings(.logRetryingWith, tool.displayName, alternative.displayName), level: .warning)
                 extractionProgress = alternative.reportsProgress ? 0 : nil
                 await performExtraction(
                     archive: archive,
@@ -537,12 +583,22 @@ public final class AppModel: ObservableObject {
                 return
             }
 
-            finishExtraction(message: "Terminó con errores")
-            showError(explain(exitCode: result.exitCode, forProgram: false))
+            finishExtraction(message: strings[.statusFailed])
+            showError(explain(exitCode: result.exitCode))
         } catch {
-            finishExtraction(message: "No se pudo iniciar")
+            finishExtraction(message: strings[.statusCannotStart])
             showError(error.localizedDescription)
         }
+    }
+
+    public func stopExtraction() {
+        extractionSession?.cancel()
+        add(strings[.logStopping], level: .warning)
+    }
+
+    public func revealResult() {
+        guard let lastSuccessFolder else { return }
+        FileActions.openInFinder(lastSuccessFolder)
     }
 
     private func finishExtraction(message: String) {
@@ -557,45 +613,36 @@ public final class AppModel: ObservableObject {
         return (contents ?? []).filter { $0 != ".DS_Store" }.isEmpty
     }
 
-    public func stopExtraction() {
-        extractionSession?.cancel()
-        add("Deteniendo la extracción…", level: .warning)
-    }
-
-    public func revealResult() {
-        guard let lastSuccessFolder else { return }
-        FileActions.openInFinder(lastSuccessFolder)
-    }
-
     // MARK: - Instalar herramientas
 
     public func installTools() {
         guard !isInstallingTools else { return }
         guard let homebrew = runtimeStatus.homebrewURL else {
-            showError("Homebrew no está instalado. Instálalo desde brew.sh y vuelve a intentarlo.")
+            showError(strings[.errHomebrewMissing])
             return
         }
-
-        // Solo los extractores. Wine no se instala a ciegas: en Apple Silicon las versiones de
-        // Homebrew chocan entre sí y varias están obsoletas, así que se explican las opciones.
+        // Solo los extractores. Wine no se instala a ciegas: en Apple Silicon los casks chocan
+        // entre sí y varios están obsoletos, así que sus opciones se explican en una hoja aparte.
         guard runtimeStatus.archiveTool == nil else {
-            add("Los extractores ya están instalados.", level: .success)
+            add(strings[.logExtractorsPresent], level: .success)
             return
         }
-        let formulae = ["sevenzip", "unar"]
 
+        let formulae = ["sevenzip", "unar"]
         clearError()
         isInstallingTools = true
-        activityMessage = "Instalando herramientas"
-        add("Instalando con Homebrew: \(formulae.joined(separator: ", "))", level: .info)
-        add("Suele tardar un par de minutos.", level: .info)
+        activityMessage = strings[.statusInstalling]
+        add(strings(.logInstalling, formulae.joined(separator: ", ")), level: .info)
+        add(strings[.logInstallTakesTime], level: .info)
 
         let command = ProcessCommand(
             executableURL: homebrew,
             arguments: ["install"] + formulae,
             currentDirectoryURL: nil,
-            environment: ["PATH": RuntimeLocator.searchPathDirectories.joined(separator: ":"),
-                          "HOMEBREW_NO_AUTO_UPDATE": "1"]
+            environment: [
+                "PATH": RuntimeLocator.searchPathDirectories.joined(separator: ":"),
+                "HOMEBREW_NO_AUTO_UPDATE": "1"
+            ]
         )
 
         Task { [weak self] in
@@ -607,15 +654,15 @@ public final class AppModel: ObservableObject {
                 isInstallingTools = false
                 refreshTools()
                 if result.succeeded {
-                    activityMessage = "Herramientas instaladas"
-                    add("Instalación terminada.", level: .success)
+                    activityMessage = strings[.statusToolsInstalled]
+                    add(strings[.logInstallDone], level: .success)
                 } else {
-                    activityMessage = "La instalación falló"
-                    showError("Homebrew terminó con el código \(result.exitCode). Revisa la actividad para ver el motivo.")
+                    activityMessage = strings[.statusFailed]
+                    showError(strings(.errInstallFailed, String(result.exitCode)))
                 }
             } catch {
                 isInstallingTools = false
-                activityMessage = "No se pudo iniciar"
+                activityMessage = strings[.statusCannotStart]
                 showError(error.localizedDescription)
             }
         }
@@ -626,13 +673,18 @@ public final class AppModel: ObservableObject {
     public func clearLog() {
         log.removeAll()
         lastError = nil
-        activityMessage = "Todo listo"
+        activityMessage = strings[.allReady]
     }
 
     public func copyLog() {
         let text = log.map { "[\($0.timestamp)] \($0.text)" }.joined(separator: "\n")
         FileActions.copyToClipboard(text)
-        add("Actividad copiada al portapapeles.", level: .info)
+        add(strings[.logActivityCopied], level: .info)
+    }
+
+    public func copyCommand(_ command: String) {
+        FileActions.copyToClipboard(command)
+        add(strings[.logCommandCopied], level: .info)
     }
 
     private func addExtractionLine(_ line: String) {
@@ -665,29 +717,13 @@ public final class AppModel: ObservableObject {
     }
 
     /// Traduce códigos de salida secos en algo accionable.
-    private func explain(exitCode: Int32, forProgram: Bool) -> String {
-        if forProgram {
-            switch exitCode {
-            case 53:
-                return "Wine se cerró sin poder arrancar el programa. Si acaba de pasar en el primer arranque, es que esta versión de Wine no funciona en tu macOS: prueba con otra desde «Otro Wine»."
-            case 127:
-                return "Wine no encontró algo que necesita. Revisa la actividad para ver qué biblioteca falta."
-            default:
-                return "El programa terminó con el código \(exitCode). Muchos programas de Windows no funcionan bajo Wine: los que necesitan controladores, anti-trampas o gráficos especiales suelen fallar."
-            }
-        }
-
+    private func explain(exitCode: Int32) -> String {
         switch exitCode {
-        case 2:
-            return "Ningún extractor pudo con este comprimido. Si tiene contraseña, escríbela arriba; si está partido en varias partes, déjalas todas en la misma carpeta. Instalar «unar» suele resolver los .rar más antiguos."
-        case 1:
-            return "La extracción terminó con avisos. Revisa la actividad: puede que algún archivo se haya saltado."
-        default:
-            return "El extractor terminó con el código \(exitCode). Revisa la actividad para ver el motivo."
+        case 2: return strings[.errExtractExit2]
+        case 1: return strings[.errExtractExit1]
+        default: return strings(.errExtractExitOther, String(exitCode))
         }
     }
-
-    // MARK: - Utilidades
 
     private func launchDetached(_ command: ProcessCommand, describing activity: String) {
         add(activity, level: .info)

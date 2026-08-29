@@ -6,47 +6,39 @@ struct ContentView: View {
     @State private var mode: WorkMode = .archive
     @State private var showsActivity = false
 
+    private var s: Strings { model.strings }
+
     var body: some View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: Theme.Spacing.loose) {
                     if model.isInstallingTools {
                         NoticeBanner(
-                            kind: .info,
-                            title: "Instalando lo que falta",
-                            message: "Homebrew está trabajando. Puede tardar unos minutos; mira la actividad de abajo para seguirlo."
+                            kind: .warning,
+                            title: s[.installingTitle],
+                            message: s[.installingBody]
                         )
                     }
 
                     if let error = model.lastError {
-                        NoticeBanner(
-                            kind: .failure,
-                            title: "Algo no ha salido bien",
-                            message: error
-                        )
-                        .transition(.opacity)
+                        NoticeBanner(kind: .failure, title: s[.errorTitle], message: error)
                     }
 
                     switch mode {
-                    case .program:
-                        ProgramPane(model: model)
-                    case .archive:
-                        ArchivePane(model: model)
+                    case .program: ProgramPane(model: model)
+                    case .archive: ArchivePane(model: model)
                     }
                 }
                 .padding(.horizontal, Theme.Spacing.page)
-                .padding(.top, Theme.Spacing.loose)
-                .padding(.bottom, Theme.Spacing.page)
-                .frame(maxWidth: 760, alignment: .leading)
+                .padding(.vertical, Theme.Spacing.loose)
+                .frame(maxWidth: Theme.contentWidth, alignment: .leading)
                 .frame(maxWidth: .infinity)
             }
-            .background(Color(nsColor: .underPageBackgroundColor))
+            .background(Theme.pageBackground)
 
             ActionBar(model: model, mode: mode)
             ActivityPane(model: model, isExpanded: $showsActivity)
         }
-        .animation(.easeOut(duration: 0.2), value: model.lastError)
-        .animation(.easeOut(duration: 0.2), value: mode)
         // Se puede soltar un archivo en cualquier parte de la ventana, no solo en la zona marcada.
         .onDrop(of: [.fileURL], isTargeted: nil) { providers in
             DropZone.load(providers) { urls in
@@ -58,40 +50,50 @@ struct ContentView: View {
         }
         .toolbar {
             ToolbarItem(placement: .principal) {
-                ModeSwitcher(mode: $mode)
+                Picker("", selection: $mode) {
+                    ForEach(WorkMode.allCases) { candidate in
+                        Text(s[candidate.textKey]).tag(candidate)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
             }
 
             ToolbarItemGroup(placement: .primaryAction) {
-                ToolChip(
-                    title: "Wine",
-                    detail: model.runtimeStatus.wineURL?.lastPathComponent ?? "sin instalar",
-                    isAvailable: model.runtimeStatus.wineURL != nil
+                ToolStatus(
+                    title: s[.toolWine],
+                    detail: model.runtimeStatus.wineURL?.lastPathComponent ?? s[.toolNotInstalled],
+                    isAvailable: model.runtimeStatus.wineURL != nil && !model.wineIsBlocked
                 )
-                ToolChip(
-                    title: "Extractor",
-                    detail: model.runtimeStatus.archiveToolName ?? "sin instalar",
+                ToolStatus(
+                    title: s[.toolExtractor],
+                    detail: model.runtimeStatus.archiveToolName ?? s[.toolNotInstalled],
                     isAvailable: model.runtimeStatus.archiveTool != nil
                 )
 
                 Menu {
-                    Button("Volver a buscar herramientas", action: model.refreshTools)
+                    Button(s[.menuRefresh], action: model.refreshTools)
                     Divider()
-                    Button("Instalar lo que falta", action: model.installTools)
-                        .disabled(!model.canInstallTools || model.runtimeStatus.isComplete)
-                    Button("Buscar Wine a mano…", action: model.selectWine)
-                    Button("Olvidar el Wine elegido", action: model.forgetCustomWine)
-                    Button("Desbloquear Wine", action: model.unblockWine)
+                    Button(s[.menuInstallExtractors], action: model.installTools)
+                        .disabled(!model.canInstallTools)
+                    Button(s[.menuFindWine], action: model.selectWine)
+                    Button(s[.menuForgetWine], action: model.forgetCustomWine)
+                    Button(s[.menuUnblockWine], action: model.unblockWine)
                         .disabled(!model.wineIsBlocked)
                     Divider()
-                    Button("Restablecer Windows", action: model.resetWindowsEnvironment)
-                    Button("Abrir la carpeta de Windows") {
+                    Button(s[.menuResetWindows], action: model.resetWindowsEnvironment)
+                    Button(s[.menuOpenWindowsFolder]) {
                         FileActions.openInFinder(model.windowsFolderURL)
                     }
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
                 .menuIndicator(.hidden)
-                .help("Herramientas")
+                .help(s[.menuTools])
+                .accessibilityLabel(s[.menuTools])
+
+                LanguagePicker(language: $model.language, label: s[.languageMenu])
             }
         }
         .onAppear {

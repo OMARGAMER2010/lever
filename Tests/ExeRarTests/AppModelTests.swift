@@ -10,6 +10,8 @@ enum AppModelTests {
         try testDroppedFilesAreRoutedByExtension()
         try testMissingToolsAreReported()
         try testInstallIsOfferedOnlyWhenSomethingIsMissing()
+        try testSwitchingLanguageChangesTextAndKeepsState()
+        try testProgramArchitectureIsReadOnSelection()
     }
 
     private static func emptyModel() -> AppModel {
@@ -117,7 +119,37 @@ enum AppModelTests {
     }
 
     private static func testMissingToolsAreReported() throws {
-        try expect(emptyModel().missingTools == ["Wine", "un extractor"], "debe listar lo que falta")
+        let empty = emptyModel()
+        try expect(empty.missingTools.count == 2, "sin herramientas deben faltar las dos")
+        try expect(empty.missingTools.contains("Wine"), "Wine debe aparecer entre lo que falta")
         try expect(readyModel().missingTools.isEmpty, "sin nada que falte, la lista debe estar vacía")
+    }
+
+    /// Cambiar de idioma debe cambiar el texto de verdad, sin perder lo que hubiera elegido.
+    private static func testSwitchingLanguageChangesTextAndKeepsState() throws {
+        let model = readyModel()
+        let fixture = try TemporaryFixture()
+        let archive = try fixture.makeFile(named: "Paquete.rar")
+        model.selectedArchive = archive
+
+        model.language = .spanish
+        let spanish = model.strings[.extract]
+        model.language = .english
+        let english = model.strings[.extract]
+
+        try expect(spanish != english, "el texto debe cambiar al cambiar de idioma")
+        try expect(english == "Extract", "en inglés el botón dice Extract")
+        try expect(model.selectedArchive == archive, "cambiar de idioma no debe perder el archivo elegido")
+    }
+
+    /// La app lee la cabecera del .exe y avisa si el Wine disponible no podrá con él.
+    private static func testProgramArchitectureIsReadOnSelection() throws {
+        let model = readyModel()
+        let fixture = try TemporaryFixture()
+        model.selectedProgram = try fixture.makeFile(named: "cualquiera.exe")
+        try expect(model.programArchitecture == .unknown,
+                   "un archivo que no es PE debe quedar como desconocido, no inventarse nada")
+        try expect(!model.programWontRunOnThisWine,
+                   "sin saber la arquitectura no se avisa de nada")
     }
 }

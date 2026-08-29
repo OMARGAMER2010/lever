@@ -1,59 +1,79 @@
 import SwiftUI
 import ExeRarCore
 
-/// Paleta e ingredientes visuales compartidos. Un único sitio donde cambiar el aspecto.
+/// Tokens visuales, con el motivo de cada uno.
+///
+/// Decisiones y por qué:
+///
+/// - **El acento es el del sistema, no uno propio.** La versión anterior usaba un degradado
+///   índigo→violeta. Ese degradado no salía de nada: ni del dominio, ni de una marca, ni de una
+///   necesidad de jerarquía. Era el color por defecto con el que sale casi cualquier interfaz
+///   generada. `Color.accentColor` toma el que el usuario eligió en Ajustes del Sistema: es una
+///   decisión que solo tiene sentido en macOS y que ninguna plantilla puede llevarse puesta.
+/// - **Sin degradados.** Ninguno resolvía un problema de legibilidad o de jerarquía.
+/// - **Los colores son semánticos.** Verde = herramienta encontrada. Ámbar = falta algo pero se
+///   puede seguir. Rojo = ha fallado. Ninguno decora.
+/// - **Los radios van por función**, no uno grande para todo: 5 para controles en línea, 9 para
+///   paneles. Un radio único hace que todo pese lo mismo.
+/// - **Superficies opacas.** El material translúcido se reserva para las barras del sistema
+///   (arriba y abajo), donde comunica que algo se desliza por debajo. En los paneles de contenido
+///   solo restaba contraste al texto.
 enum Theme {
-    static let indigo = Color(red: 0.29, green: 0.30, blue: 0.88)
-    static let violet = Color(red: 0.55, green: 0.31, blue: 0.91)
-    static let amber = Color(red: 0.95, green: 0.63, blue: 0.19)
-    static let mint = Color(red: 0.20, green: 0.74, blue: 0.51)
-    static let coral = Color(red: 0.93, green: 0.35, blue: 0.36)
+    /// Herramienta presente y utilizable.
+    static let ready = Color(nsColor: .systemGreen)
+    /// Falta algo, pero hay camino: instalar, desbloquear, elegir otro.
+    static let attention = Color(nsColor: .systemOrange)
+    /// Ha fallado.
+    static let failure = Color(nsColor: .systemRed)
 
-    static let brand = LinearGradient(
-        colors: [indigo, violet],
-        startPoint: .topLeading,
-        endPoint: .bottomTrailing
-    )
+    /// Fondo de los paneles de contenido.
+    static let surface = Color(nsColor: .controlBackgroundColor)
+    static let pageBackground = Color(nsColor: .underPageBackgroundColor)
+    static let hairline = Color(nsColor: .separatorColor)
 
-    /// Radios de esquina, de menor a mayor jerarquía.
     enum Radius {
-        static let small: CGFloat = 8
-        static let medium: CGFloat = 12
-        static let large: CGFloat = 18
+        /// Controles en línea: fichas, campos, celdas.
+        static let inline: CGFloat = 5
+        /// Paneles y zonas.
+        static let panel: CGFloat = 9
     }
 
     enum Spacing {
         static let tight: CGFloat = 8
         static let normal: CGFloat = 14
-        static let loose: CGFloat = 22
-        static let page: CGFloat = 26
+        static let loose: CGFloat = 20
+        static let page: CGFloat = 24
     }
+
+    /// Ancho máximo de la columna de contenido. Más allá, las filas de ajustes se separan
+    /// tanto de su etiqueta que cuesta emparejarlas.
+    static let contentWidth: CGFloat = 680
 }
 
 extension LogLevel {
     var tint: Color {
         switch self {
         case .info: return .secondary
-        case .success: return Theme.mint
-        case .warning: return Theme.amber
-        case .failure: return Theme.coral
-        case .output: return .secondary.opacity(0.85)
+        case .success: return Theme.ready
+        case .warning: return Theme.attention
+        case .failure: return Theme.failure
+        case .output: return .secondary
         }
     }
 
     var symbol: String? {
         switch self {
-        case .info: return "info.circle"
-        case .success: return "checkmark.circle.fill"
-        case .warning: return "exclamationmark.triangle.fill"
-        case .failure: return "xmark.octagon.fill"
+        case .info: return nil
+        case .success: return "checkmark"
+        case .warning: return "exclamationmark.triangle"
+        case .failure: return "xmark.octagon"
         case .output: return nil
         }
     }
 }
 
-/// Tarjeta estándar: material translúcido, borde sutil y esquinas suaves.
-struct Card<Content: View>: View {
+/// Panel de contenido: fondo opaco, borde de un pelo, sin sombra ni desenfoque.
+struct Panel<Content: View>: View {
     var padding: CGFloat = Theme.Spacing.loose
     @ViewBuilder var content: () -> Content
 
@@ -61,73 +81,10 @@ struct Card<Content: View>: View {
         content()
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.Radius.large, style: .continuous))
+            .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.panel))
             .overlay {
-                RoundedRectangle(cornerRadius: Theme.Radius.large, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.08))
+                RoundedRectangle(cornerRadius: Theme.Radius.panel)
+                    .strokeBorder(Theme.hairline)
             }
-    }
-}
-
-/// Botón principal de cada pantalla. Grande, con degradado de marca.
-struct PrimaryActionButton: View {
-    let title: String
-    let systemImage: String
-    var isEnabled: Bool
-    var action: () -> Void
-
-    @State private var isHovering = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 9) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 14, weight: .bold))
-                Text(title)
-                    .font(.system(size: 15, weight: .semibold))
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 13)
-            .foregroundStyle(.white)
-            .background {
-                RoundedRectangle(cornerRadius: Theme.Radius.medium, style: .continuous)
-                    .fill(Theme.brand)
-                    .opacity(isEnabled ? (isHovering ? 0.92 : 1) : 0.35)
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: Theme.Radius.medium, style: .continuous)
-                    .strokeBorder(.white.opacity(isEnabled ? 0.18 : 0))
-            }
-            .shadow(
-                color: Theme.indigo.opacity(isEnabled ? 0.28 : 0),
-                radius: isHovering ? 14 : 9,
-                y: isHovering ? 5 : 3
-            )
-        }
-        .buttonStyle(.plain)
-        .disabled(!isEnabled)
-        .onHover { isHovering = $0 && isEnabled }
-        .animation(.easeOut(duration: 0.16), value: isHovering)
-        .animation(.easeOut(duration: 0.16), value: isEnabled)
-    }
-}
-
-/// Botón secundario discreto, con icono.
-struct QuietButton: View {
-    let title: String
-    var systemImage: String?
-    var action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 5) {
-                if let systemImage {
-                    Image(systemName: systemImage).font(.system(size: 11, weight: .semibold))
-                }
-                Text(title).font(.system(size: 12, weight: .medium))
-            }
-        }
-        .buttonStyle(.bordered)
-        .controlSize(.regular)
     }
 }

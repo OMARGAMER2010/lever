@@ -2,7 +2,11 @@ import SwiftUI
 import UniformTypeIdentifiers
 import ExeRarCore
 
-/// Zona grande para soltar archivos. Es la acción principal de cada pestaña.
+/// Zona para soltar archivos.
+///
+/// El borde discontinuo se queda porque es la convención que dice «suéltalo aquí». Lo que se ha
+/// quitado es el círculo con degradado que envolvía el icono: no aportaba área de pulsación ni
+/// jerarquía, solo peso visual.
 struct DropZone: View {
     let title: String
     let subtitle: String
@@ -11,51 +15,44 @@ struct DropZone: View {
     let browse: () -> Void
 
     @State private var isTargeted = false
-    @State private var isHovering = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Button(action: browse) {
-            VStack(spacing: 12) {
-                ZStack {
-                    Circle()
-                        .fill(Theme.brand)
-                        .opacity(isTargeted ? 0.28 : 0.14)
-                        .frame(width: 62, height: 62)
-                    Image(systemName: systemImage)
-                        .font(.system(size: 25, weight: .medium))
-                        .foregroundStyle(Theme.brand)
-                }
-                .scaleEffect(isTargeted ? 1.08 : 1)
+            VStack(spacing: 10) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 26, weight: .light))
+                    .foregroundStyle(isTargeted ? Color.accentColor : .secondary)
 
-                VStack(spacing: 4) {
-                    Text(title)
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(.primary)
-                    Text(subtitle)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                }
+                Text(title)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.primary)
+                Text(subtitle)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 34)
+            .padding(.vertical, 40)
+            .padding(.horizontal, Theme.Spacing.loose)
             .background {
-                RoundedRectangle(cornerRadius: Theme.Radius.large, style: .continuous)
-                    .fill(Theme.indigo.opacity(isTargeted ? 0.10 : (isHovering ? 0.05 : 0.025)))
+                RoundedRectangle(cornerRadius: Theme.Radius.panel)
+                    .fill(isTargeted ? Color.accentColor.opacity(0.07) : Theme.surface)
             }
             .overlay {
-                RoundedRectangle(cornerRadius: Theme.Radius.large, style: .continuous)
+                RoundedRectangle(cornerRadius: Theme.Radius.panel)
                     .strokeBorder(
-                        Theme.indigo.opacity(isTargeted ? 0.75 : 0.28),
-                        style: StrokeStyle(lineWidth: isTargeted ? 2 : 1.5, dash: [7, 5])
+                        isTargeted ? Color.accentColor : Theme.hairline,
+                        style: StrokeStyle(lineWidth: 1, dash: [6, 4])
                     )
             }
         }
         .buttonStyle(.plain)
-        .onHover { isHovering = $0 }
-        .animation(.easeOut(duration: 0.18), value: isTargeted)
-        .animation(.easeOut(duration: 0.18), value: isHovering)
+        .accessibilityLabel(title)
+        .accessibilityHint(subtitle)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: isTargeted)
         .onDrop(of: [.fileURL], isTargeted: $isTargeted) { providers in
-            load(providers, into: accept)
+            Self.load(providers, into: accept)
         }
     }
 
@@ -65,15 +62,9 @@ struct DropZone: View {
         var handled = false
         for provider in providers where provider.canLoadObject(ofClass: URL.self) {
             handled = true
-            _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                collected.add(url)
-            }
+            _ = provider.loadObject(ofClass: URL.self) { url, _ in collected.add(url) }
         }
         return handled
-    }
-
-    private func load(_ providers: [NSItemProvider], into accept: @escaping ([URL]) -> Void) -> Bool {
-        Self.load(providers, into: accept)
     }
 }
 
@@ -102,57 +93,56 @@ private final class URLCollector: @unchecked Sendable {
     }
 }
 
-/// Ficha del archivo elegido: icono real del Finder, nombre, tamaño y botón para quitarlo.
+/// Ficha del archivo elegido. Debajo del nombre van los datos que la app ha averiguado leyendo
+/// el archivo: no adornos, sino lo que hace falta para decidir si esto va a funcionar.
 struct SelectedFileChip: View {
     let url: URL
-    let tint: Color
+    let facts: [String]
+    let revealLabel: String
+    let removeLabel: String
     var onReveal: () -> Void
     var onClear: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 11) {
             Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
                 .resizable()
-                .frame(width: 34, height: 34)
+                .frame(width: 32, height: 32)
+                .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(url.lastPathComponent)
                     .font(.system(size: 13, weight: .semibold))
                     .lineLimit(1)
                     .truncationMode(.middle)
-                HStack(spacing: 6) {
-                    if let size = url.formattedFileSize {
-                        Text(size)
-                    }
-                    Text(url.deletingLastPathComponent().path)
+
+                if !facts.isEmpty {
+                    Text(facts.joined(separator: " · "))
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
-                        .truncationMode(.head)
                 }
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
             }
 
-            Spacer(minLength: 8)
+            Spacer(minLength: Theme.Spacing.tight)
 
             Button(action: onReveal) {
                 Image(systemName: "magnifyingglass")
             }
             .buttonStyle(.borderless)
-            .help("Mostrar en el Finder")
+            .help(revealLabel)
+            .accessibilityLabel(revealLabel)
 
             Button(action: onClear) {
                 Image(systemName: "xmark.circle.fill")
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.borderless)
-            .help("Quitar")
+            .help(removeLabel)
+            .accessibilityLabel(removeLabel)
         }
-        .padding(12)
-        .background(tint.opacity(0.07), in: RoundedRectangle(cornerRadius: Theme.Radius.medium, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: Theme.Radius.medium, style: .continuous)
-                .strokeBorder(tint.opacity(0.22))
-        }
+        .padding(10)
+        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: Theme.Radius.inline))
     }
 }
 
@@ -163,10 +153,10 @@ struct SettingRow<Control: View>: View {
     @ViewBuilder var control: () -> Control
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 14) {
-            VStack(alignment: .leading, spacing: 2) {
+        HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.normal) {
+            VStack(alignment: .leading, spacing: 1) {
                 Text(label)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 12, weight: .medium))
                 if let hint {
                     Text(hint)
                         .font(.system(size: 11))
@@ -174,16 +164,18 @@ struct SettingRow<Control: View>: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .frame(width: 156, alignment: .leading)
+            .frame(width: 150, alignment: .leading)
 
             control()
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(label)
     }
 }
 
-/// Indicador compacto del estado de una herramienta, para la barra superior.
-struct ToolChip: View {
+/// Estado de una herramienta en la barra superior: un punto y dos palabras. Sin cápsula.
+struct ToolStatus: View {
     let title: String
     let detail: String
     let isAvailable: Bool
@@ -191,40 +183,30 @@ struct ToolChip: View {
     var body: some View {
         HStack(spacing: 5) {
             Circle()
-                .fill(isAvailable ? Theme.mint : Color.secondary.opacity(0.45))
-                .frame(width: 7, height: 7)
+                .fill(isAvailable ? Theme.ready : Theme.attention)
+                .frame(width: 6, height: 6)
             Text(title)
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: 11, weight: .medium))
             Text(detail)
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 5)
-        .background(Color.primary.opacity(0.06), in: Capsule())
-        .help(isAvailable ? "\(title): \(detail)" : "\(title) no está disponible")
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title): \(detail)")
     }
 }
 
-/// Aviso destacado con icono, título y explicación. Sirve para errores y para consejos.
+/// Aviso con una regla de color a la izquierda. Sustituye al bloque redondeado teñido, que
+/// llenaba de superficies una pantalla que ya tenía paneles.
 struct NoticeBanner: View {
     enum Kind {
-        case info, warning, failure
+        case warning, failure
 
         var tint: Color {
             switch self {
-            case .info: return Theme.indigo
-            case .warning: return Theme.amber
-            case .failure: return Theme.coral
-            }
-        }
-
-        var symbol: String {
-            switch self {
-            case .info: return "lightbulb.fill"
-            case .warning: return "exclamationmark.triangle.fill"
-            case .failure: return "exclamationmark.octagon.fill"
+            case .warning: return Theme.attention
+            case .failure: return Theme.failure
             }
         }
     }
@@ -236,11 +218,11 @@ struct NoticeBanner: View {
     var action: (() -> Void)?
 
     var body: some View {
-        HStack(alignment: .top, spacing: 11) {
-            Image(systemName: kind.symbol)
-                .font(.system(size: 14))
-                .foregroundStyle(kind.tint)
-                .padding(.top, 1)
+        HStack(alignment: .top, spacing: Theme.Spacing.normal) {
+            Rectangle()
+                .fill(kind.tint)
+                .frame(width: 3)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
@@ -250,55 +232,45 @@ struct NoticeBanner: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            .padding(.vertical, 2)
 
-            Spacer(minLength: 8)
+            Spacer(minLength: Theme.Spacing.tight)
 
             if let actionTitle, let action {
                 Button(actionTitle, action: action)
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+                    .controlSize(.regular)
+                    .padding(.top, 1)
             }
         }
-        .padding(13)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(kind.tint.opacity(0.09), in: RoundedRectangle(cornerRadius: Theme.Radius.medium, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: Theme.Radius.medium, style: .continuous)
-                .strokeBorder(kind.tint.opacity(0.22))
-        }
+        .fixedSize(horizontal: false, vertical: true)
+        .accessibilityElement(children: .contain)
     }
 }
 
-/// El interruptor de las dos secciones de la app.
-struct ModeSwitcher: View {
-    @Binding var mode: WorkMode
+/// Selector de idioma: bandera y nombre. La bandera es el identificador que pidió el usuario;
+/// el nombre en su propio idioma evita que se confunda país con lengua.
+struct LanguagePicker: View {
+    @Binding var language: Language
+    let label: String
 
     var body: some View {
-        HStack(spacing: 3) {
-            ForEach(WorkMode.allCases) { candidate in
-                Button {
-                    withAnimation(.easeOut(duration: 0.18)) { mode = candidate }
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: candidate.symbol)
-                            .font(.system(size: 11, weight: .semibold))
-                        Text(candidate.title)
-                            .font(.system(size: 12, weight: .semibold))
-                    }
-                    .padding(.horizontal, 13)
-                    .padding(.vertical, 6)
-                    .foregroundStyle(mode == candidate ? Color.white : Color.primary.opacity(0.75))
-                    .background {
-                        if mode == candidate {
-                            Capsule().fill(Theme.brand)
-                        }
-                    }
+        Menu {
+            Picker(label, selection: $language) {
+                ForEach(Language.allCases) { candidate in
+                    Text("\(candidate.flag)  \(candidate.nativeName)").tag(candidate)
                 }
-                .buttonStyle(.plain)
             }
+            .pickerStyle(.inline)
+            .labelsHidden()
+        } label: {
+            Text(language.flag)
+                .font(.system(size: 14))
         }
-        .padding(3)
-        .background(Color.primary.opacity(0.07), in: Capsule())
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.visible)
+        .fixedSize()
+        .help(label)
+        .accessibilityLabel("\(label): \(language.nativeName)")
     }
 }
 
@@ -308,17 +280,10 @@ enum WorkMode: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    var title: String {
+    var textKey: TextKey {
         switch self {
-        case .program: return "Programas"
-        case .archive: return "Comprimidos"
-        }
-    }
-
-    var symbol: String {
-        switch self {
-        case .program: return "play.rectangle.fill"
-        case .archive: return "archivebox.fill"
+        case .program: return .tabPrograms
+        case .archive: return .tabArchives
         }
     }
 }

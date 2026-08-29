@@ -1,7 +1,12 @@
 // Genera el icono de EXE & RAR y lo exporta como .iconset listo para `iconutil`.
 //
 // El símbolo: una caja abierta —la tapa separada del cuerpo— con un triángulo de reproducción
-// recortado dentro. La tapa levantada dice «descomprimir»; el triángulo dice «ejecutar».
+// dentro. La tapa levantada dice «descomprimir»; el triángulo dice «ejecutar».
+//
+// Sobre el color: la primera versión usaba un degradado índigo→violeta. Ese degradado no salía
+// de ningún sitio; es el relleno por defecto de casi cualquier interfaz generada, y no decía
+// nada de lo que hace la app. Ahora el fondo es grafito, como una herramienta, y el único color
+// saturado es el ámbar del triángulo, que marca justo la acción que ejecuta el programa.
 //
 //   swift scripts/make-icon.swift Resources/AppIcon.iconset
 
@@ -11,10 +16,12 @@ import Foundation
 
 let canvas: CGFloat = 1024
 
-// Paleta de marca: mismo índigo y violeta que usa la interfaz.
-let indigo = CGColor(red: 0.24, green: 0.22, blue: 0.86, alpha: 1)
-let violet = CGColor(red: 0.58, green: 0.24, blue: 0.90, alpha: 1)
-let deepEdge = CGColor(red: 0.16, green: 0.09, blue: 0.42, alpha: 0.45)
+// Grafito para el cuerpo, ámbar solo para la acción.
+let graphiteTop = CGColor(red: 0.16, green: 0.17, blue: 0.19, alpha: 1)
+let graphiteBottom = CGColor(red: 0.09, green: 0.10, blue: 0.11, alpha: 1)
+let deepEdge = CGColor(red: 0, green: 0, blue: 0, alpha: 0.35)
+let bone = CGColor(red: 0.95, green: 0.94, blue: 0.92, alpha: 1)
+let amber = CGColor(red: 0.91, green: 0.64, blue: 0.24, alpha: 1)
 
 /// Rectángulo redondeado continuo, el mismo perfil que usan los iconos de macOS.
 func roundedPath(_ rect: CGRect, radius: CGFloat) -> CGPath {
@@ -67,19 +74,20 @@ func drawIcon(into context: CGContext) {
     context.addPath(platePath)
     context.clip()
     let space = CGColorSpaceCreateDeviceRGB()
-    if let gradient = CGGradient(colorsSpace: space, colors: [indigo, violet] as CFArray,
+    // Un desplazamiento vertical muy corto: da cuerpo físico sin convertirse en un degradado.
+    if let gradient = CGGradient(colorsSpace: space, colors: [graphiteTop, graphiteBottom] as CFArray,
                                  locations: [0, 1]) {
         context.drawLinearGradient(
             gradient,
-            start: CGPoint(x: plate.minX, y: plate.minY),
-            end: CGPoint(x: plate.maxX, y: plate.maxY),
+            start: CGPoint(x: plate.midX, y: plate.minY),
+            end: CGPoint(x: plate.midX, y: plate.maxY),
             options: []
         )
     }
     // Brillo tenue en la parte alta, para que no se vea plano.
     if let sheen = CGGradient(
         colorsSpace: space,
-        colors: [CGColor(gray: 1, alpha: 0.15), CGColor(gray: 1, alpha: 0)] as CFArray,
+        colors: [CGColor(gray: 1, alpha: 0.07), CGColor(gray: 1, alpha: 0)] as CFArray,
         locations: [0, 1]
     ) {
         context.drawLinearGradient(
@@ -105,36 +113,31 @@ func drawIcon(into context: CGContext) {
     context.restoreGState()
 
     // ── Símbolo ───────────────────────────────────────────────────────────────
-    let white = CGColor(gray: 1, alpha: 1)
-
     context.saveGState()
-    context.setShadow(offset: CGSize(width: 0, height: -8), blur: 22,
-                      color: CGColor(red: 0.10, green: 0.06, blue: 0.30, alpha: 0.35))
 
     // Tapa levantada: más ancha que el cuerpo, para que se lea como una caja abierta.
     let lid = CGRect(x: 512 - 208, y: 310, width: 416, height: 80)
     context.addPath(roundedPath(lid, radius: 34))
-    context.setFillColor(white)
+    context.setFillColor(bone)
     context.fillPath()
 
-    // Cuerpo de la caja, con el triángulo recortado (se ve el degradado a través).
+    // Cuerpo de la caja.
     let body = CGRect(x: 512 - 196, y: 418, width: 392, height: 306)
-    let bodyPath = CGMutablePath()
-    bodyPath.addPath(roundedPath(body, radius: 46))
+    context.addPath(roundedPath(body, radius: 46))
+    context.setFillColor(bone)
+    context.fillPath()
 
-    let triangle = roundedTriangle(
+    // El triángulo es el único color saturado del icono: marca la acción de ejecutar.
+    context.addPath(roundedTriangle(
         points: [
             CGPoint(x: 455, y: 489),
             CGPoint(x: 455, y: 653),
             CGPoint(x: 597, y: 571)
         ],
         radius: 18
-    )
-    bodyPath.addPath(triangle)
-
-    context.addPath(bodyPath)
-    context.setFillColor(white)
-    context.fillPath(using: .evenOdd)
+    ))
+    context.setFillColor(amber)
+    context.fillPath()
     context.restoreGState()
 
     context.restoreGState()
