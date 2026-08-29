@@ -2,7 +2,7 @@
 
 # Lever
 
-**Abre archivos `.exe` de Windows y descomprime `.rar` en tu Mac.**
+**Abre archivos `.exe` de Windows, descomprime `.rar` e instala `.apk` de Android desde tu Mac.**
 Sin cuentas, sin servidor, sin telemetría. Todo local.
 
 </div>
@@ -19,6 +19,7 @@ Sin cuentas, sin servidor, sin telemetría. Todo local.
 |---|---|
 | **Programas** | Ejecuta `.exe` y `.msi` de Windows a través de Wine, en un entorno propio que no toca nada más de tu Mac. |
 | **Comprimidos** | Extrae `.rar`, `.zip`, `.7z`, `.tar`, `.iso`, `.cab` y compañía. Admite contraseñas y nunca borra el original. |
+| **Android** | Ejecuta un `.apk` en el propio Mac, dentro de un emulador que la app monta y arranca sola. También sirve un móvil enchufado por USB. |
 
 Arrastra un archivo a la ventana —o al icono de la app en el Dock— y la app se coloca sola en la
 pestaña que toca. También funciona con «Abrir con» desde el Finder.
@@ -32,13 +33,32 @@ sesiones y arranca según el del sistema.
 bash scripts/install.sh
 ```
 
-Compila la app, genera el icono y deja `Lever.app` en el Escritorio, lista para abrir con doble
-clic. Si prefieres solo construirla en `dist/`:
+Revisa qué falta, **instala solo lo que se puede instalar sin preguntar**, compila la app, genera
+el icono y deja `Lever.app` en el Escritorio, lista para abrir con doble clic.
+
+Si prefieres solo construirla en `dist/`, o solo revisar las dependencias:
 
 ```bash
-bash scripts/build-app.sh
+bash scripts/build-app.sh          # compilar y armar el .app
 open dist/Lever.app
+
+bash scripts/dependencies.sh          # revisar e instalar lo automático
+bash scripts/dependencies.sh --check  # solo informar, sin tocar nada
 ```
+
+### Qué se instala solo y qué no
+
+`scripts/dependencies.sh` mira los mismos directorios que mira la app —no el `PATH` de tu
+terminal, que no es el que hereda una app abierta desde el Finder— y parte lo que falta en dos:
+
+| | |
+|---|---|
+| **Se instala solo** | `sevenzip` (`7zz`), `unar` y `adb`. Pocos megas, sin licencias, sin contraseña, sin decisiones. |
+| **Se explica, no se instala** | Wine, Rosetta 2 y el SDK de Android. Son gigas, o piden tu contraseña, o hay que elegir entre opciones que no son equivalentes. |
+
+Lo del segundo grupo sale impreso con la orden exacta lista para pegar. Instalarlo a ciegas sería
+descargar varios gigas que quizá no quieres y elegir por ti entre cosas distintas. La app arranca
+igual y te dice qué le falta cuando lo necesita.
 
 ## Requisitos
 
@@ -54,6 +74,22 @@ brew install sevenzip unar     # para los comprimidos
 
 Para ejecutar `.exe` hace falta además un runtime Wine y, en los Mac con chip Apple, Rosetta 2
 (`softwareupdate --install-rosetta`).
+
+Para ejecutar un `.apk` **dentro del Mac** hace falta un Android dentro: el emulador. La app lo
+monta sola —hay un botón en la pestaña Android— o desde la terminal:
+
+```bash
+bash scripts/android-emulator.sh
+```
+
+Descarga el SDK, la imagen de sistema `arm64` (nativa en un Mac con chip Apple; una `x86_64` se
+emularía instrucción a instrucción y sería inservible) y crea el emulador ajustado a la máquina:
+2 GB de RAM y 4 GB de disco, para no ahogar un Mac de 8 GB. **Ocupa unos 6 GB y pide 8 libres**,
+porque el emulador sigue creciendo con el uso. El guion es idempotente: si se corta, se vuelve a
+lanzar y sigue donde estaba.
+
+Si prefieres no gastar ese espacio, con un móvil Android enchufado y la depuración por USB
+activada basta `adb`, que ocupa unos megas y lo pone el instalador.
 
 **Qué Wine usar en un Mac con chip Apple.** Los casks de WineHQ (`wine-stable`, `wine@devel`,
 `wine@staging`) están obsoletos por no pasar el control de Gatekeeper y Homebrew los desactiva el
@@ -79,6 +115,22 @@ esperar dos minutos a que se cree el entorno de Windows.
 
 **Si el comprimido está partido en varias partes o pide contraseña**, antes de intentar extraerlo.
 
+**Si el `.apk` no va a instalarse en el aparato que has elegido.** Un paquete trae código nativo
+para procesadores concretos (`arm64-v8a`, `x86_64`…) y pide una versión mínima de Android; el
+aparato dice cuáles ejecuta y cuál tiene. Si no coinciden, `adb` falla con
+`INSTALL_FAILED_NO_MATCHING_ABIS` después de que hayas esperado a que arranque el emulador. La app
+compara las dos listas antes y lo dice en una frase. Es la misma promesa que con los 32 bits de un
+`.exe`, con otro dominio.
+
+**Si el `.apk` es un trozo de un App Bundle** —un «split», sin `classes.dex`— que Android va a
+rechazar siempre porque no es una app entera.
+
+**En qué postura arranca la app.** Se lee `android:screenOrientation` de la actividad de inicio
+—la que lleva el filtro `LAUNCHER`, no la primera que aparezca— y la pantalla se pone vertical u
+horizontal antes de abrirla. Con un aviso honesto: muchos juegos hechos con Unity no lo declaran y
+deciden la postura desde su propio código al arrancar, así que hay un conmutador
+**Automática / Vertical / Horizontal** que manda sobre lo que diga el manifiesto.
+
 ## Detalles que importan
 
 **Para los `.rar` se usa `unar`, no `7zz`.** No es un capricho: `7zz` no sabe descomprimir varios
@@ -97,6 +149,19 @@ un botón.
 **Nada se cuelga esperando.** Todos los procesos se lanzan con la entrada cerrada, así que un
 comprimido con contraseña falla con un error legible en vez de quedarse esperando para siempre.
 
+**El `.apk` se lee a mano, sin el SDK de Android.** Un `.apk` es un `.zip` con un
+`AndroidManifest.xml` en formato binario dentro, y los dos formatos están documentados: la app los
+lee directamente para sacar el paquete, la versión, el Android mínimo y los ABIs. Pedir `aapt2`
+—varios gigas de build-tools, más Java, más aceptar licencias— para poder avisar de que algo no va
+a funcionar sería cobrar el diagnóstico más caro que la instalación.
+
+**`adb install` no siempre falla con un código de error.** Hay versiones que terminan con código 0
+y escriben «Failure [...]» por la salida. La app lee el texto, no solo el código, y traduce cada
+motivo conocido a una frase que dice qué hacer.
+
+**De un móvil solo se toca lo que le pidas.** La app instala, abre y desinstala el paquete que le
+has dado, y nada más. «Desinstalar» solo aparece después de una instalación que salió bien.
+
 ## Desarrollo
 
 ```bash
@@ -109,23 +174,42 @@ incluyen XCTest. Las de integración se saltan solas si no hay extractores insta
 
 ```
 Sources/
-  LeverCore/     Lógica: localizar herramientas, construir órdenes, lanzar procesos
-  Lever/          Interfaz SwiftUI
+  LeverCore/          Lógica: localizar herramientas, construir órdenes, lanzar procesos
+    ApkInspector        Lee el zip y el AndroidManifest.xml binario de un .apk
+    AndroidLauncher     Órdenes de adb y del emulador, y lectura de sus respuestas
+  Lever/              Interfaz SwiftUI
 scripts/
-  build-app.sh    Compila y arma el .app
-  install.sh      Lo anterior + copia al Escritorio
-  make-icon.swift Dibuja el icono y genera el .iconset
+  build-app.sh        Compila y arma el .app
+  dependencies.sh     Revisa e instala lo que falta
+  android-emulator.sh Monta el SDK de Android y crea el emulador
+  install.sh          Lo anterior + copia al Escritorio
+  make-icon.swift     Dibuja el icono y genera el .iconset
 ```
 
 > ⚠️ En `scripts/build-app.sh`, la compilación se hace **antes** de pedir la ruta del binario.
 > `swift build --show-bin-path` solo imprime la ruta: no compila. Usarlo como único paso metía en
 > el `.app` un binario viejo y la ventana salía vacía.
 
-## Qué esperar de Wine
+## Qué esperar de cada cosa
+
+### Wine
 
 Wine no es Windows. Los programas que necesitan controladores, sistemas anti-trampas o gráficos
 avanzados fallarán. Los instaladores y las utilidades sencillas son los que mejor funcionan. Si un
 programa no arranca, no es culpa de la app: es el límite de la capa de compatibilidad.
+
+### Android
+
+Un `.apk` no se ejecuta *directamente* en macOS como un `.exe` bajo Wine: hace falta un Android
+donde instalarlo, y por eso esta pestaña tiene algo que las otras no necesitan —elegir dónde—.
+Pulsar **Ejecutar** hace la cadena entera: arranca el emulador si no hay ningún aparato, espera a
+que termine de arrancar, instala, abre la app y pone la pantalla en su postura.
+
+El emulador es Android de verdad corriendo en arm64, nativo en tu chip. Los juegos 2D y las apps
+normales van bien; los juegos 3D pesados y todo lo que lleve anti-trampas sufrirá o no arrancará.
+Con 8 GB de RAM, cerrar cosas antes ayuda.
+
+Instalar fuera de Google Play se salta sus comprobaciones. Pon solo archivos de origen conocido.
 
 ## Bitácora
 

@@ -7,6 +7,8 @@ struct LeverTests {
         do {
             try LocalizationTests.run()
             try ProgramInspectorTests.run()
+            try ApkInspectorTests.run()
+            try AndroidCommandTests.run()
             try RuntimeLocatorTests.run()
             try CommandBuilderTests.run()
             try await ProcessRunnerTests.run()
@@ -14,6 +16,8 @@ struct LeverTests {
             try await ExtractionIntegrationTests.run()
             print("PASS LocalizationTests")
             print("PASS ProgramInspectorTests")
+            print("PASS ApkInspectorTests")
+            print("PASS AndroidCommandTests")
             print("PASS RuntimeLocatorTests")
             print("PASS CommandBuilderTests")
             print("PASS ProcessRunnerTests")

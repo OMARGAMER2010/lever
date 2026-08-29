@@ -12,6 +12,16 @@ public enum Preferences {
         static let customWinePath = "customWinePath"
         static let lastDestinationPath = "lastDestinationPath"
         static let language = "language"
+        static let rotationChoice = "rotationChoice"
+    }
+
+    public static var rotationChoice: RotationChoice {
+        get {
+            guard let raw = defaults.string(forKey: Key.rotationChoice),
+                  let choice = RotationChoice(rawValue: raw) else { return .automatic }
+            return choice
+        }
+        set { defaults.set(newValue.rawValue, forKey: Key.rotationChoice) }
     }
 
     public static var language: Language {

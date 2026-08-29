@@ -60,17 +60,27 @@ public struct RuntimeStatus: Equatable, Sendable {
     public let archiveTools: [ArchiveTool]
     public let homebrewURL: URL?
     public let hasRosetta: Bool
+    /// El puente con los aparatos Android. Es lo unico imprescindible para instalar un `.apk`:
+    /// con un movil enchufado basta, sin emulador ni SDK completo.
+    public let adbURL: URL?
+    /// El emulador de Android. Opcional a proposito: pesa gigas y solo hace falta si no hay
+    /// ningun movil a mano.
+    public let emulatorURL: URL?
 
     public init(
         wineURL: URL?,
         archiveTools: [ArchiveTool],
         homebrewURL: URL?,
-        hasRosetta: Bool = true
+        hasRosetta: Bool = true,
+        adbURL: URL? = nil,
+        emulatorURL: URL? = nil
     ) {
         self.wineURL = wineURL
         self.archiveTools = archiveTools
         self.homebrewURL = homebrewURL
         self.hasRosetta = hasRosetta
+        self.adbURL = adbURL
+        self.emulatorURL = emulatorURL
     }
 
     public var archiveTool: ArchiveTool? { archiveTools.first }
@@ -113,9 +123,12 @@ public struct RuntimeStatus: Equatable, Sendable {
 
     public var canRunWindows: Bool { wineURL != nil }
     public var canExtract: Bool { !archiveTools.isEmpty }
+    /// Con `adb` ya se puede instalar en un móvil enchufado. El emulador es otra cosa.
+    public var canReachAndroid: Bool { adbURL != nil }
+    public var canStartEmulator: Bool { emulatorURL != nil }
 
-    /// Todo listo: se puede ejecutar y extraer sin instalar nada más.
-    public var isComplete: Bool { canRunWindows && canExtract }
+    /// Todo listo: se puede ejecutar, extraer e instalar sin añadir nada más.
+    public var isComplete: Bool { canRunWindows && canExtract && canReachAndroid }
 }
 
 /// Una orden concreta que se le pide al sistema.

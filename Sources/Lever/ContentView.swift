@@ -27,6 +27,7 @@ struct ContentView: View {
                     switch mode {
                     case .program: ProgramPane(model: model)
                     case .archive: ArchivePane(model: model)
+                    case .android: AndroidPane(model: model)
                     }
                 }
                 .padding(.horizontal, Theme.Spacing.page)
@@ -43,9 +44,7 @@ struct ContentView: View {
         .onDrop(of: [.fileURL], isTargeted: nil) { providers in
             DropZone.load(providers) { urls in
                 model.accept(droppedURLs: urls)
-                if let first = urls.first {
-                    mode = SupportedFileKind.exe.accepts(first) ? .program : .archive
-                }
+                if let first = urls.first { mode = WorkMode.forDroppedFile(first) }
             }
         }
         .toolbar {
@@ -60,23 +59,19 @@ struct ContentView: View {
                 .fixedSize()
             }
 
+            // La barra superior se queda solo con navegación y acciones. Los indicadores de
+            // herramienta bajaron a la barra de actividad: con tres pestañas y tres indicadores
+            // ya no cabían a la anchura mínima de la ventana, y macOS escondía las pestañas
+            // detrás del botón de desbordamiento — justo lo que no puede esconderse.
             ToolbarItemGroup(placement: .primaryAction) {
-                ToolStatus(
-                    title: s[.toolWine],
-                    detail: model.runtimeStatus.wineURL?.lastPathComponent ?? s[.toolNotInstalled],
-                    isAvailable: model.runtimeStatus.wineURL != nil && !model.wineIsBlocked
-                )
-                ToolStatus(
-                    title: s[.toolExtractor],
-                    detail: model.runtimeStatus.archiveToolName ?? s[.toolNotInstalled],
-                    isAvailable: model.runtimeStatus.archiveTool != nil
-                )
-
                 Menu {
                     Button(s[.menuRefresh], action: model.refreshTools)
                     Divider()
-                    Button(s[.menuInstallExtractors], action: model.installTools)
+                    Button(s[.menuInstallMissing], action: model.installTools)
                         .disabled(!model.canInstallTools)
+                    Button(s[.menuScanDevices], action: model.refreshDevices)
+                        .disabled(!model.runtimeStatus.canReachAndroid)
+                    Divider()
                     Button(s[.menuFindWine], action: model.selectWine)
                     Button(s[.menuForgetWine], action: model.forgetCustomWine)
                     Button(s[.menuUnblockWine], action: model.unblockWine)
@@ -105,5 +100,9 @@ struct ContentView: View {
         .onChange(of: model.selectedArchive) { archive in
             if archive != nil { mode = .archive }
         }
+        .onChange(of: model.selectedApk) { apk in
+            if apk != nil { mode = .android }
+        }
     }
+
 }

@@ -12,6 +12,8 @@ enum AppModelTests {
         try testInstallIsOfferedOnlyWhenSomethingIsMissing()
         try testSwitchingLanguageChangesTextAndKeepsState()
         try testProgramArchitectureIsReadOnSelection()
+        try testApkNeedsADeviceBeforeInstalling()
+        try testAndroidBundlesGetTheirOwnExplanation()
     }
 
     private static func emptyModel() -> AppModel {
@@ -20,10 +22,14 @@ enum AppModelTests {
             sevenZipCandidates: [],
             unarCandidates: [],
             unrarCandidates: [],
-            homebrewCandidates: []
+            homebrewCandidates: [],
+            adbCandidates: [],
+            emulatorCandidates: []
         ))
     }
 
+    /// Todo presente: Wine, extractor, Homebrew y `adb`. `/bin/echo` sirve de doble porque lo
+    /// único que se comprueba aquí es que la app *encuentre* un ejecutable, no lo que hace.
     private static func readyModel() -> AppModel {
         let echo = URL(fileURLWithPath: "/bin/echo")
         return AppModel(locator: RuntimeLocator(
@@ -31,7 +37,9 @@ enum AppModelTests {
             sevenZipCandidates: [echo],
             unarCandidates: [],
             unrarCandidates: [],
-            homebrewCandidates: [echo]
+            homebrewCandidates: [echo],
+            adbCandidates: [echo],
+            emulatorCandidates: []
         ))
     }
 
@@ -62,17 +70,37 @@ enum AppModelTests {
             sevenZipCandidates: [],
             unarCandidates: [],
             unrarCandidates: [],
-            homebrewCandidates: [echo]
+            homebrewCandidates: [echo],
+            adbCandidates: [],
+            emulatorCandidates: []
         ))
         try expect(withBrewNoExtractor.canInstallTools,
                    "con Homebrew y sin extractor, instalar debe estar disponible")
+        try expect(withBrewNoExtractor.missingFormulae == ["sevenzip", "unar", "android-platform-tools"],
+                   "sin nada instalado, se ofrecen los extractores y adb")
+
+        // Con los extractores puestos pero sin `adb`, sigue habiendo algo que instalar: el botón
+        // ya no es solo de extractores.
+        let onlyAdbMissing = AppModel(locator: RuntimeLocator(
+            wineCandidates: [],
+            sevenZipCandidates: [echo],
+            unarCandidates: [echo],
+            unrarCandidates: [],
+            homebrewCandidates: [echo],
+            adbCandidates: [],
+            emulatorCandidates: []
+        ))
+        try expect(onlyAdbMissing.missingFormulae == ["android-platform-tools"],
+                   "si solo falta adb, solo se instala adb")
 
         let noBrew = AppModel(locator: RuntimeLocator(
             wineCandidates: [],
             sevenZipCandidates: [],
             unarCandidates: [],
             unrarCandidates: [],
-            homebrewCandidates: []
+            homebrewCandidates: [],
+            adbCandidates: [],
+            emulatorCandidates: []
         ))
         try expect(!noBrew.canInstallTools, "sin Homebrew no se puede instalar nada")
     }
@@ -109,19 +137,22 @@ enum AppModelTests {
         let fixture = try TemporaryFixture()
         let program = try fixture.makeFile(named: "juego.exe")
         let archive = try fixture.makeFile(named: "datos.zip")
+        let apk = try fixture.makeFile(named: "app.apk")
         let unknown = try fixture.makeFile(named: "notas.txt")
 
-        try expect(model.accept(droppedURLs: [program, archive]), "debe aceptar programa y comprimido")
+        try expect(model.accept(droppedURLs: [program, archive, apk]), "debe aceptar los tres tipos")
         try expect(model.selectedProgram == program, "el .exe debe ir a la sección de programas")
         try expect(model.selectedArchive == archive, "el .zip debe ir a la sección de comprimidos")
+        try expect(model.selectedApk == apk, "el .apk debe ir a la sección de Android")
         try expect(!model.accept(droppedURLs: [unknown]), "un .txt no debe aceptarse")
         try expect(model.lastError != nil, "soltar algo no admitido debe explicar el motivo")
     }
 
     private static func testMissingToolsAreReported() throws {
         let empty = emptyModel()
-        try expect(empty.missingTools.count == 2, "sin herramientas deben faltar las dos")
+        try expect(empty.missingTools.count == 3, "sin herramientas deben faltar las tres")
         try expect(empty.missingTools.contains("Wine"), "Wine debe aparecer entre lo que falta")
+        try expect(empty.missingTools.contains("adb"), "adb debe aparecer entre lo que falta")
         try expect(readyModel().missingTools.isEmpty, "sin nada que falte, la lista debe estar vacía")
     }
 
@@ -151,5 +182,44 @@ enum AppModelTests {
                    "un archivo que no es PE debe quedar como desconocido, no inventarse nada")
         try expect(!model.programWontRunOnThisWine,
                    "sin saber la arquitectura no se avisa de nada")
+    }
+
+    /// Un `.apk` no se ejecuta en el Mac: hace falta un aparato. Sin él, instalar no se activa
+    /// aunque estén el archivo y `adb`.
+    private static func testApkNeedsADeviceBeforeInstalling() throws {
+        let model = readyModel()
+        let fixture = try TemporaryFixture()
+        model.selectedApk = try fixture.makeFile(named: "app.apk")
+
+        try expect(!model.canRunApk, "sin aparato ni emulador creado no se puede ejecutar")
+        try expect(!model.canLaunchApk, "sin haber instalado nada no hay app que abrir")
+
+        let noAdb = AppModel(locator: RuntimeLocator(
+            wineCandidates: [], sevenZipCandidates: [], unarCandidates: [],
+            unrarCandidates: [], homebrewCandidates: [], adbCandidates: [], emulatorCandidates: []
+        ))
+        noAdb.selectedApk = model.selectedApk
+        try expect(!noAdb.canRunApk, "sin adb tampoco")
+
+        // En automático la postura sale del .apk; el conmutador manda sobre ella.
+        try expect(model.effectiveOrientation == model.apkFacts.orientation,
+                   "en automático manda lo que declara el .apk")
+        model.rotationChoice = .landscape
+        try expect(model.effectiveOrientation == .landscape, "elegir a mano gana")
+        model.rotationChoice = .automatic
+    }
+
+    /// Un `.aab` o un `.xapk` tienen arreglo, y el mensaje debe decir cuál en vez de soltar un
+    /// «no reconozco este archivo».
+    private static func testAndroidBundlesGetTheirOwnExplanation() throws {
+        let model = readyModel()
+        let fixture = try TemporaryFixture()
+        let bundle = try fixture.makeFile(named: "juego.xapk")
+
+        try expect(!model.accept(droppedURLs: [bundle]), "un .xapk no se instala tal cual")
+        try expect(model.lastError?.contains(".apk") == true,
+                   "el aviso debe decir que hay que buscar el .apk de dentro")
+        try expect(URL(fileURLWithPath: "/tmp/a.aab").looksLikeAndroidBundle, ".aab es un paquete")
+        try expect(!URL(fileURLWithPath: "/tmp/a.apk").looksLikeAndroidBundle, ".apk no lo es")
     }
 }

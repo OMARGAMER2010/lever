@@ -27,7 +27,10 @@ enum LocalizationTests {
     private static func testNoTextIsLeftInTheOtherLanguage() throws {
         let allowed: Set<TextKey> = [
             .toolWine, .toolExtractor, .wineOptionGptk, .wineOptionCrossover,
-            .archArm, .wineSettings, .arch64, .arch32
+            .archArm, .wineSettings, .arch64, .arch32,
+            // Nombres propios y una marca: «Android» y «Android Studio» se escriben igual en
+            // los dos idiomas, y traducirlos sería inventar.
+            .tabAndroid, .toolAndroid, .deviceAndroidVersion, .androidOptionStudio
         ]
         let spanish = Strings.rawTable(for: .spanish)
         let english = Strings.rawTable(for: .english)

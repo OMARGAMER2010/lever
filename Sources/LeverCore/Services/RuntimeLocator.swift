@@ -8,6 +8,8 @@ public struct RuntimeLocator {
     private let unarCandidates: [URL]
     private let unrarCandidates: [URL]
     private let homebrewCandidates: [URL]
+    private let adbCandidates: [URL]
+    private let emulatorCandidates: [URL]
     private let rosettaMarker: URL?
 
     public init(
@@ -17,6 +19,8 @@ public struct RuntimeLocator {
         unarCandidates: [URL] = RuntimeLocator.defaultExecutableCandidates(named: "unar"),
         unrarCandidates: [URL] = RuntimeLocator.defaultExecutableCandidates(named: "unrar"),
         homebrewCandidates: [URL] = RuntimeLocator.defaultExecutableCandidates(named: "brew"),
+        adbCandidates: [URL] = RuntimeLocator.defaultAdbCandidates(),
+        emulatorCandidates: [URL] = RuntimeLocator.defaultEmulatorCandidates(),
         rosettaMarker: URL? = RuntimeLocator.defaultRosettaMarker
     ) {
         self.fileManager = fileManager
@@ -25,6 +29,8 @@ public struct RuntimeLocator {
         self.unarCandidates = unarCandidates
         self.unrarCandidates = unrarCandidates
         self.homebrewCandidates = homebrewCandidates
+        self.adbCandidates = adbCandidates
+        self.emulatorCandidates = emulatorCandidates
         self.rosettaMarker = rosettaMarker
     }
 
@@ -43,7 +49,9 @@ public struct RuntimeLocator {
             wineURL: wineURL,
             archiveTools: archiveTools,
             homebrewURL: firstExecutable(in: homebrewCandidates),
-            hasRosetta: hasRosetta
+            hasRosetta: hasRosetta,
+            adbURL: firstExecutable(in: adbCandidates),
+            emulatorURL: firstExecutable(in: emulatorCandidates)
         )
     }
 
@@ -114,6 +122,33 @@ public struct RuntimeLocator {
         ]
 
         return directories.map { URL(fileURLWithPath: $0).appendingPathComponent(name) }
+    }
+
+    /// `adb` llega por dos caminos: el cask `android-platform-tools`, que lo enlaza en el `bin`
+    /// de Homebrew, o el SDK completo que instala Android Studio dentro de la carpeta personal.
+    public static func defaultAdbCandidates() -> [URL] {
+        defaultExecutableCandidates(named: "adb") + androidSdkRoots.map {
+            $0.appendingPathComponent("platform-tools/adb")
+        }
+    }
+
+    /// El emulador no lo enlaza nadie en el `PATH`: vive dentro del SDK, donde lo dejó
+    /// `sdkmanager`.
+    public static func defaultEmulatorCandidates() -> [URL] {
+        androidSdkRoots.map { $0.appendingPathComponent("emulator/emulator") }
+            + defaultExecutableCandidates(named: "emulator")
+    }
+
+    /// Los sitios donde acaba el SDK de Android en un Mac, de más probable a menos.
+    public static var androidSdkRoots: [URL] {
+        [
+            // Android Studio, que es como lo instala casi todo el mundo.
+            NSHomeDirectory() + "/Library/Android/sdk",
+            // El cask `android-commandlinetools` de Homebrew.
+            "/opt/homebrew/share/android-commandlinetools",
+            "/usr/local/share/android-commandlinetools",
+            NSHomeDirectory() + "/Android/sdk"
+        ].map { URL(fileURLWithPath: $0) }
     }
 
     public static let defaultRosettaMarker = URL(fileURLWithPath: "/usr/libexec/rosetta/oahd")

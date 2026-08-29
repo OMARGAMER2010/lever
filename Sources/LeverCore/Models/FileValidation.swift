@@ -6,11 +6,15 @@ public enum SupportedFileKind: Sendable {
     case exe
     /// Comprimidos. `.rar` es el caso principal, pero los extractores abren muchos más.
     case rar
+    /// Aplicaciones de Android. Solo `.apk`: un `.aab` o un `.xapk` no se instalan tal cual.
+    case apk
 
     public var extensions: [String] {
         switch self {
         case .exe:
             return ["exe", "msi"]
+        case .apk:
+            return ["apk"]
         case .rar:
             return [
                 "rar", "zip", "7z", "tar", "gz", "tgz", "bz2", "tbz",
@@ -31,7 +35,17 @@ public enum SupportedFileKind: Sendable {
         switch self {
         case .exe: return "programa de Windows (.exe o .msi)"
         case .rar: return "archivo comprimido (.rar, .zip, .7z…)"
+        case .apk: return "aplicación de Android (.apk)"
         }
+    }
+}
+
+public extension URL {
+    /// Formatos que envuelven varios `.apk` dentro. `adb install` no sabe abrirlos y hace falta
+    /// `bundletool` u otra herramienta: conviene decirlo con nombre propio en vez de soltar un
+    /// «no reconozco este archivo».
+    var looksLikeAndroidBundle: Bool {
+        ["aab", "apks", "xapk", "apkm"].contains(pathExtension.lowercased())
     }
 }
 

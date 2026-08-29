@@ -10,6 +10,7 @@ public final class AppModel: ObservableObject {
     private var customWineURL: URL?
     private var programSession: ProcessSession?
     private var extractionSession: ProcessSession?
+    private var installSession: ProcessSession?
 
     // MARK: - Idioma
 
@@ -64,6 +65,38 @@ public final class AppModel: ObservableObject {
     @Published public private(set) var archiveFacts = ArchiveFacts()
     @Published public private(set) var isInspecting = false
 
+    // MARK: - App de Android
+
+    @Published public var selectedApk: URL? {
+        didSet {
+            guard selectedApk != oldValue else { return }
+            installedPackage = nil
+            inspectApk()
+        }
+    }
+    @Published public private(set) var apkFacts = ApkFacts()
+    @Published public private(set) var isInspectingApk = false
+    @Published public private(set) var androidDevices: [AndroidDevice] = []
+    @Published public var selectedDeviceSerial: String?
+    @Published public private(set) var isScanningDevices = false
+    /// Cubre toda la cadena: arrancar el emulador si hace falta, instalar, abrir y girar.
+    @Published public private(set) var isRunningApk = false
+    @Published public private(set) var isSettingUpEmulator = false
+    /// Postura elegida a mano. En automático manda lo que declare el `.apk`.
+    @Published public var rotationChoice: RotationChoice {
+        didSet {
+            guard rotationChoice != oldValue else { return }
+            Preferences.rotationChoice = rotationChoice
+            applyRotation()
+        }
+    }
+    @Published public private(set) var isUninstalling = false
+    /// Paquete que se ha confirmado instalado en el aparato. Es lo que habilita «Abrir» y
+    /// «Desinstalar»: sin una instalación previa esta app no toca nada del móvil.
+    @Published public private(set) var installedPackage: String?
+    @Published public private(set) var avdNames: [String] = []
+    @Published public private(set) var startingAvd: String?
+
     // MARK: - Estado común
 
     @Published public private(set) var log: [LogEntry] = []
@@ -74,6 +107,7 @@ public final class AppModel: ObservableObject {
 
     public var isBusy: Bool {
         isRunningProgram || isExtracting || isInstallingTools || isPreparingWindows
+            || isRunningApk || isScanningDevices || isUninstalling || isSettingUpEmulator
     }
 
     // MARK: - Lo que la app sabe del archivo elegido
@@ -94,6 +128,21 @@ public final class AppModel: ObservableObject {
     /// El Wine disponible solo ejecuta 64 bits, así que un programa de 32 no arrancará.
     public var programWontRunOnThisWine: Bool {
         runtimeStatus.wineURL != nil && programArchitecture.warnsAboutWine
+    }
+
+    public var selectedDevice: AndroidDevice? {
+        androidDevices.first { $0.serial == selectedDeviceSerial }
+    }
+
+    /// Aparatos donde de verdad se puede instalar. Los demás se enseñan igual, con su motivo:
+    /// un móvil sin autorizar no es un fallo, es un paso que le falta al usuario.
+    public var installableDevices: [AndroidDevice] {
+        androidDevices.filter { $0.availability == .ready }
+    }
+
+    /// Se calcula antes de instalar comparando lo leído del `.apk` con lo que dice el aparato.
+    public var apkCompatibility: ApkCompatibility {
+        ApkCompatibility.check(apk: apkFacts, device: selectedDevice)
     }
 
     // MARK: - Reglas de habilitación
@@ -122,8 +171,60 @@ public final class AppModel: ObservableObject {
             && runtimeStatus.tool(for: selectedArchive) != nil
     }
 
+    /// Instalar el `.apk` no se bloquea aunque `apkCompatibility` diga que va a fallar: el aviso
+    /// se enseña y la decisión se deja al usuario, igual que con un `.exe` de 32 bits. Si la
+    /// lectura del archivo se equivocara, bloquear dejaría al usuario sin salida.
+    public var canRunApk: Bool {
+        guard let selectedApk, !isRunningApk, !isUninstalling, !isSettingUpEmulator else { return false }
+        guard SupportedFileKind.apk.accepts(selectedApk),
+              fileManager.isReadableFile(atPath: selectedApk.path),
+              runtimeStatus.adbURL != nil else { return false }
+        // Con un aparato listo se ejecuta ya; con un emulador creado, se arranca por el camino.
+        return selectedDevice?.availability == .ready || !avdNames.isEmpty
+    }
+
+    /// El emulador se monta cuando no hay ninguno y tampoco hay un móvil enchufado.
+    public var canSetUpEmulator: Bool {
+        !isSettingUpEmulator && runtimeStatus.homebrewURL != nil && avdNames.isEmpty
+    }
+
+    /// El guion que monta el emulador viaja dentro del `.app`, para que funcione también cuando
+    /// la app se abre desde el Escritorio y no hay código fuente cerca.
+    public var emulatorScriptURL: URL? {
+        Bundle.main.url(forResource: "android-emulator", withExtension: "sh")
+    }
+
+    /// Gigas libres en el disco, para poder decir de antemano lo que va a costar el emulador.
+    public var freeDiskSpace: String? {
+        guard let values = try? URL(fileURLWithPath: NSHomeDirectory())
+            .resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]),
+            let bytes = values.volumeAvailableCapacityForImportantUsage else { return nil }
+        return ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+    }
+
+    /// La postura que se va a aplicar de verdad: la elegida a mano, o la del `.apk` en automático.
+    public var effectiveOrientation: ScreenOrientation {
+        rotationChoice.resolved(declaring: apkFacts.orientation)
+    }
+
+    /// Solo se puede abrir lo que esta app acaba de instalar y cuyo nombre de paquete conoce.
+    public var canLaunchApk: Bool {
+        installedPackage != nil && selectedDevice?.availability == .ready
+            && !isRunningApk && !isUninstalling
+    }
+
     public var canInstallTools: Bool {
-        !isInstallingTools && runtimeStatus.homebrewURL != nil && runtimeStatus.archiveTool == nil
+        !isInstallingTools && runtimeStatus.homebrewURL != nil && !missingFormulae.isEmpty
+    }
+
+    /// Lo que Homebrew puede poner sin pedir nada más: pesa pocos megas, no necesita Java ni
+    /// aceptar licencias, y no choca con nada instalado. Wine y el SDK de Android quedan fuera
+    /// a propósito —gigas, licencias y casks que se pisan entre sí— y se explican en su hoja.
+    public var missingFormulae: [String] {
+        var packages: [String] = []
+        if runtimeStatus.archiveTool == nil { packages.append(contentsOf: ["sevenzip", "unar"]) }
+        if runtimeStatus.adbURL == nil { packages.append("android-platform-tools") }
+        return packages
     }
 
     /// Qué le falta al sistema para que la app funcione entera.
@@ -131,7 +232,33 @@ public final class AppModel: ObservableObject {
         var missing: [String] = []
         if runtimeStatus.wineURL == nil { missing.append("Wine") }
         if runtimeStatus.archiveTool == nil { missing.append(strings[.toolExtractor]) }
+        if runtimeStatus.adbURL == nil { missing.append("adb") }
         return missing
+    }
+
+    /// Las maneras reales de tener un aparato Android donde instalar. Enchufar un móvil es la
+    /// primera porque es la única que no descarga gigas.
+    public var androidOptions: [WineOption] {
+        [
+            WineOption(
+                name: strings[.androidOptionPhone],
+                detail: strings[.androidOptionPhoneWhy],
+                command: "brew install android-platform-tools"
+            ),
+            WineOption(
+                name: strings[.androidOptionEmulator],
+                detail: strings[.androidOptionEmulatorWhy],
+                command: "brew install --cask temurin android-commandlinetools && "
+                    + "sdkmanager --install \"emulator\" \"platform-tools\" "
+                    + "\"system-images;android-34;google_apis;arm64-v8a\" && "
+                    + "avdmanager create avd -n Lever -k \"system-images;android-34;google_apis;arm64-v8a\""
+            ),
+            WineOption(
+                name: strings[.androidOptionStudio],
+                detail: strings[.androidOptionStudioWhy],
+                command: "brew install --cask android-studio"
+            )
+        ]
     }
 
     /// Las formas de conseguir Wine que funcionan hoy en un Mac con chip Apple.
@@ -171,6 +298,7 @@ public final class AppModel: ObservableObject {
         self.overwritePolicy = Preferences.overwritePolicy
         self.extractIntoSubfolder = Preferences.extractIntoSubfolder
         self.revealWhenDone = Preferences.revealWhenDone
+        self.rotationChoice = Preferences.rotationChoice
         self.runtimeStatus = locator.locate(customWineURL: Preferences.customWineURL)
         self.wineIsBlocked = Self.detectBlockedWine(in: runtimeStatus)
         self.activityMessage = Strings.table(for: Preferences.language)[.allReady]
@@ -187,7 +315,9 @@ public final class AppModel: ObservableObject {
 
         let found = [
             runtimeStatus.wineURL != nil ? "Wine" : nil,
-            runtimeStatus.archiveToolName
+            runtimeStatus.archiveToolName,
+            runtimeStatus.adbURL != nil ? "adb" : nil,
+            runtimeStatus.emulatorURL != nil ? "emulator" : nil
         ].compactMap { $0 }
 
         if found.isEmpty {
@@ -237,6 +367,28 @@ public final class AppModel: ObservableObject {
         inspectArchive()
     }
 
+    public func selectApk() {
+        guard let url = FileActions.chooseFile(kind: .apk, title: strings[.menuOpenApk]) else { return }
+        acceptApk(url)
+    }
+
+    public func acceptApk(_ url: URL) {
+        guard SupportedFileKind.apk.accepts(url) else {
+            showError(strings(.errNotAnApk, url.lastPathComponent))
+            return
+        }
+        selectedApk = url
+        clearError()
+        add(strings(.logApkChosen, url.lastPathComponent), level: .info)
+        if androidDevices.isEmpty { refreshDevices() }
+    }
+
+    public func clearApk() {
+        selectedApk = nil
+        apkFacts = ApkFacts()
+        installedPackage = nil
+    }
+
     public func clearArchive() {
         selectedArchive = nil
         chosenDestination = nil
@@ -253,13 +405,21 @@ public final class AppModel: ObservableObject {
             if SupportedFileKind.exe.accepts(url) {
                 acceptProgram(url)
                 handled = true
+            } else if SupportedFileKind.apk.accepts(url) {
+                acceptApk(url)
+                handled = true
             } else if SupportedFileKind.rar.accepts(url) {
                 acceptArchive(url)
                 handled = true
             }
         }
         if !handled, let first = urls.first {
-            showError(strings(.errUnknownFile, first.lastPathComponent))
+            // Un `.aab` o un `.xapk` tienen arreglo, y decir cuál ahorra una búsqueda.
+            showError(
+                first.looksLikeAndroidBundle
+                    ? strings(.errAndroidBundle, first.lastPathComponent)
+                    : strings(.errUnknownFile, first.lastPathComponent)
+            )
         }
         return handled
     }
@@ -613,6 +773,405 @@ public final class AppModel: ObservableObject {
         return (contents ?? []).filter { $0 != ".DS_Store" }.isEmpty
     }
 
+    // MARK: - Android
+
+    private func inspectApk() {
+        guard let apk = selectedApk else {
+            apkFacts = ApkFacts()
+            return
+        }
+        isInspectingApk = true
+        Task { [weak self] in
+            // Fuera del hilo principal: leer el directorio de un `.apk` de un giga con decenas
+            // de miles de entradas no debe congelar la ventana.
+            let facts = await Task.detached { ApkInspector.inspect(apk) }.value
+            guard let self, selectedApk == apk else { return }
+            apkFacts = facts
+            isInspectingApk = false
+        }
+    }
+
+    /// Pregunta a `adb` qué aparatos hay y, a los que responden, por sus datos.
+    ///
+    /// No hay repaso automático en segundo plano a propósito: significaría un proceso corriendo
+    /// sin que nadie lo haya pedido. Se repasa al abrir la pestaña, al pulsar el botón y al
+    /// arrancar un emulador.
+    public func refreshDevices() {
+        guard let adb = runtimeStatus.adbURL, !isScanningDevices else { return }
+
+        isScanningDevices = true
+        Task { [weak self] in
+            guard let self else { return }
+            let listing = try? await runner.run(AndroidLauncher.listDevicesCommand(adb: adb))
+            var found = AndroidLauncher.devices(fromListing: listing?.output ?? "")
+
+            for (index, device) in found.enumerated() where device.availability == .ready {
+                guard let result = try? await runner.run(
+                    AndroidLauncher.propertiesCommand(adb: adb, serial: device.serial)
+                ), result.succeeded else { continue }
+
+                let properties = AndroidLauncher.properties(fromOutput: result.output)
+                found[index] = AndroidDevice(
+                    serial: device.serial,
+                    availability: .ready,
+                    model: properties.model ?? device.model,
+                    abis: properties.abis,
+                    sdk: properties.sdk,
+                    release: properties.release
+                )
+            }
+
+            // Solo se escribe en el registro si la lista cambió: si no, abrir la pestaña dos
+            // veces llenaría la actividad de líneas idénticas.
+            let changed = found.map(\.serial) != androidDevices.map(\.serial)
+            androidDevices = found
+            isScanningDevices = false
+
+            if selectedDeviceSerial == nil || !found.contains(where: { $0.serial == selectedDeviceSerial }) {
+                selectedDeviceSerial = found.first { $0.availability == .ready }?.serial
+            }
+            if changed {
+                if found.isEmpty {
+                    add(strings[.logNoDevices], level: .info)
+                } else {
+                    add(strings(.logDevicesFound, found.map(\.displayName).joined(separator: ", ")), level: .info)
+                }
+            }
+            refreshAvds()
+        }
+    }
+
+    public func refreshAvds() {
+        guard let emulator = runtimeStatus.emulatorURL else {
+            avdNames = []
+            return
+        }
+        Task { [weak self] in
+            guard let self else { return }
+            let result = try? await runner.run(AndroidLauncher.listAvdsCommand(emulator: emulator))
+            avdNames = AndroidLauncher.avdNames(fromListing: result?.output ?? "")
+        }
+    }
+
+    /// Arranca un emulador. No se espera a que termine: se queda abierto como una ventana más,
+    /// y tarda uno o dos minutos en responder a `adb`.
+    public func startEmulator(named avd: String) {
+        guard let emulator = runtimeStatus.emulatorURL, startingAvd == nil else { return }
+
+        startingAvd = avd
+        clearError()
+        activityMessage = strings[.statusEmulatorStarting]
+        add(strings(.logEmulatorStarting, avd), level: .info)
+
+        Task { [weak self] in
+            guard let self else { return }
+            _ = try? await runner.run(AndroidLauncher.startEmulatorCommand(emulator: emulator, avd: avd)) { line in
+                Task { @MainActor [weak self] in self?.addOutput(line) }
+            }
+            // El proceso solo termina cuando se cierra la ventana del emulador.
+            startingAvd = nil
+            refreshDevices()
+        }
+    }
+
+    /// Ejecutar un `.apk`: arrancar el emulador si no hay ningún aparato, esperar a que termine
+    /// de arrancar, instalar, abrir y poner la pantalla en la postura que toque.
+    ///
+    /// Es un solo botón porque es una sola intención —«quiero jugar a esto»— y partirla en cuatro
+    /// pasos manuales sería trasladarle al usuario un trabajo que la app puede hacer. Cada paso
+    /// dice en qué va, y se puede detener en cualquiera.
+    public func runApk() {
+        guard !isRunningApk else { return }
+        guard let apk = selectedApk,
+              SupportedFileKind.apk.accepts(apk),
+              fileManager.isReadableFile(atPath: apk.path) else {
+            showError(strings[.errPickApk])
+            return
+        }
+        guard let adb = runtimeStatus.adbURL else {
+            showError(strings[.errNoAdb])
+            return
+        }
+
+        clearError()
+        installedPackage = nil
+        isRunningApk = true
+
+        let session = ProcessSession()
+        installSession = session
+
+        Task { [weak self] in
+            guard let self else { return }
+            defer {
+                isRunningApk = false
+                installSession = nil
+            }
+
+            guard let serial = await readyDeviceSerial(adb: adb, session: session) else { return }
+            guard !session.isCancelled else {
+                activityMessage = strings[.statusStopped]
+                return
+            }
+            guard await install(apk: apk, adb: adb, serial: serial, session: session) else { return }
+
+            installedPackage = apkFacts.packageName
+            await open(package: apkFacts.packageName, adb: adb, serial: serial)
+            await rotate(adb: adb, serial: serial, to: effectiveOrientation)
+        }
+    }
+
+    /// Devuelve la serie de un aparato listo, arrancando el emulador si hace falta.
+    private func readyDeviceSerial(adb: URL, session: ProcessSession) async -> String? {
+        if let device = selectedDevice, device.availability == .ready { return device.serial }
+
+        guard let emulator = runtimeStatus.emulatorURL, let avd = avdNames.first else {
+            showError(strings[.errNoDevice])
+            return nil
+        }
+
+        activityMessage = strings[.statusEmulatorStarting]
+        add(strings(.logEmulatorStarting, avd), level: .info)
+        startingAvd = avd
+
+        // El emulador no termina: se queda abierto como una ventana más. Se lanza sin esperarlo
+        // y se vigila por `adb` hasta que conteste.
+        Task { [weak self] in
+            guard let self else { return }
+            _ = try? await runner.run(AndroidLauncher.startEmulatorCommand(emulator: emulator, avd: avd)) { line in
+                Task { @MainActor [weak self] in self?.addOutput(line) }
+            }
+            startingAvd = nil
+            refreshDevices()
+        }
+
+        guard let serial = await waitForBoot(adb: adb, session: session) else {
+            if !session.isCancelled {
+                activityMessage = strings[.statusFailed]
+                showError(strings[.errEmulatorTimeout])
+            }
+            return nil
+        }
+
+        add(strings[.logEmulatorReady], level: .success)
+        refreshDevices()
+        return serial
+    }
+
+    /// Un emulador sale en `adb devices` mucho antes de poder instalar nada: la señal buena es
+    /// `sys.boot_completed`. Se pregunta cada pocos segundos, con un tope, en vez de esperar
+    /// indefinidamente a algo que puede no llegar nunca.
+    private func waitForBoot(adb: URL, session: ProcessSession) async -> String? {
+        let deadline = Date().addingTimeInterval(300)
+
+        while Date() < deadline, !session.isCancelled {
+            let listing = try? await runner.run(AndroidLauncher.listDevicesCommand(adb: adb))
+            let devices = AndroidLauncher.devices(fromListing: listing?.output ?? "")
+
+            if let ready = devices.first(where: { $0.availability == .ready }) {
+                let boot = try? await runner.run(
+                    AndroidLauncher.waitForBootCommand(adb: adb, serial: ready.serial)
+                )
+                if AndroidLauncher.hasFinishedBooting(boot?.output ?? "") {
+                    selectedDeviceSerial = ready.serial
+                    return ready.serial
+                }
+            }
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+        }
+        return nil
+    }
+
+    private func install(apk: URL, adb: URL, serial: String, session: ProcessSession) async -> Bool {
+        activityMessage = strings(.statusInstallingApk, apk.lastPathComponent)
+        add(strings(.logInstallingApk, apk.lastPathComponent, selectedDevice?.displayName ?? serial), level: .info)
+
+        do {
+            let result = try await runner.run(
+                AndroidLauncher.installCommand(adb: adb, serial: serial, apk: apk),
+                session: session
+            ) { line in
+                Task { @MainActor [weak self] in self?.addOutput(line) }
+            }
+
+            if result.wasCancelled {
+                activityMessage = strings[.statusStopped]
+                add(strings[.logStopped], level: .warning)
+                return false
+            }
+            // `adb install` no siempre devuelve un código distinto de cero al fallar: hay
+            // versiones que terminan en 0 y escriben «Failure [...]». Manda el texto.
+            if let failure = AndroidLauncher.installFailure(inOutput: result.output) {
+                activityMessage = strings[.statusFailed]
+                showError(explain(installFailure: failure))
+                return false
+            }
+            guard result.succeeded else {
+                activityMessage = strings[.statusFailed]
+                showError(strings(.errInstallOther, String(result.exitCode)))
+                return false
+            }
+
+            add(strings[.logApkInstalled], level: .success)
+            return true
+        } catch {
+            activityMessage = strings[.statusCannotStart]
+            showError(error.localizedDescription)
+            return false
+        }
+    }
+
+    private func open(package: String?, adb: URL, serial: String) async {
+        guard let package else {
+            // Sin nombre de paquete no hay a quién llamar. Se instaló, y eso se dice.
+            activityMessage = strings[.statusApkInstalled]
+            return
+        }
+
+        activityMessage = strings[.statusApkRunning]
+        add(strings[.logApkLaunched], level: .info)
+
+        let result = try? await runner.run(
+            AndroidLauncher.launchCommand(adb: adb, serial: serial, package: package)
+        ) { line in
+            Task { @MainActor [weak self] in self?.addOutput(line) }
+        }
+        if let output = result?.output, AndroidLauncher.hasNoLauncherActivity(inOutput: output) {
+            showError(strings[.errNoLauncher])
+        }
+    }
+
+    /// Pone la pantalla del aparato en la postura pedida.
+    private func rotate(adb: URL, serial: String, to orientation: ScreenOrientation) async {
+        let command = orientation.deviceRotation.map {
+            AndroidLauncher.lockRotationCommand(adb: adb, serial: serial, quarterTurns: $0)
+        } ?? AndroidLauncher.freeRotationCommand(adb: adb, serial: serial)
+
+        _ = try? await runner.run(command)
+        add(strings(.logRotated, strings[orientation.textKey]), level: .info)
+    }
+
+    /// Aplica la postura al vuelo cuando se toca el conmutador, sin tener que reinstalar nada.
+    public func applyRotation() {
+        guard let adb = runtimeStatus.adbURL,
+              let device = selectedDevice,
+              device.availability == .ready else { return }
+        let orientation = effectiveOrientation
+        Task { [weak self] in
+            await self?.rotate(adb: adb, serial: device.serial, to: orientation)
+        }
+    }
+
+    /// Monta el emulador: SDK, imagen del sistema y el aparato virtual. Son unos 5 GB.
+    ///
+    /// Lo hace un guion y no una serie de órdenes desde aquí porque `sdkmanager` pide aceptar
+    /// licencias por la entrada estándar, y en esta app los procesos van con la entrada cerrada
+    /// para que nada se cuelgue esperando. El guion las acepta desde dentro.
+    public func setUpEmulator() {
+        guard !isSettingUpEmulator else { return }
+        guard let script = emulatorScriptURL else {
+            showError(strings[.errEmulatorScriptMissing])
+            return
+        }
+
+        clearError()
+        isSettingUpEmulator = true
+        activityMessage = strings[.emulatorSettingUp]
+        add(strings[.emulatorSettingUp], level: .info)
+
+        Task { [weak self] in
+            guard let self else { return }
+            let result = try? await runner.run(AndroidLauncher.setUpEmulatorCommand(script: script)) { line in
+                Task { @MainActor [weak self] in self?.addOutput(line) }
+            }
+            isSettingUpEmulator = false
+            refreshTools()
+            refreshDevices()
+
+            if result?.succeeded == true {
+                activityMessage = strings[.emulatorReady]
+                add(strings[.emulatorReady], level: .success)
+            } else {
+                activityMessage = strings[.statusFailed]
+                showError(strings[.errEmulatorSetUpFailed])
+            }
+        }
+    }
+
+    public func stopRun() {
+        installSession?.cancel()
+        add(strings[.logStopping], level: .warning)
+    }
+
+    public func launchApk() {
+        guard let adb = runtimeStatus.adbURL,
+              let device = selectedDevice,
+              let package = installedPackage else { return }
+
+        clearError()
+        add(strings[.logApkLaunched], level: .info)
+
+        Task { [weak self] in
+            guard let self else { return }
+            let result = try? await runner.run(
+                AndroidLauncher.launchCommand(adb: adb, serial: device.serial, package: package)
+            ) { line in
+                Task { @MainActor [weak self] in self?.addOutput(line) }
+            }
+            // Una app sin pantalla propia se instala bien pero no abre nada: sin este aviso el
+            // usuario mira el móvil esperando algo que no va a pasar.
+            if let output = result?.output, AndroidLauncher.hasNoLauncherActivity(inOutput: output) {
+                showError(strings[.errNoLauncher])
+            }
+        }
+    }
+
+    /// Quita del aparato lo que esta app acaba de instalar.
+    ///
+    /// Sin diálogo de confirmación a propósito: solo puede deshacer la instalación anterior, el
+    /// botón dice lo que hace y aparece justo al lado de «Abrir». Confirmar el deshacer de la
+    /// última acción sería ceremonia, no seguridad.
+    public func uninstallApk() {
+        guard !isUninstalling,
+              let adb = runtimeStatus.adbURL,
+              let device = selectedDevice,
+              let package = installedPackage else { return }
+
+        isUninstalling = true
+        clearError()
+
+        Task { [weak self] in
+            guard let self else { return }
+            let result = try? await runner.run(
+                AndroidLauncher.uninstallCommand(adb: adb, serial: device.serial, package: package)
+            ) { line in
+                Task { @MainActor [weak self] in self?.addOutput(line) }
+            }
+            isUninstalling = false
+
+            if result?.succeeded == true, AndroidLauncher.installFailure(inOutput: result?.output ?? "") == nil {
+                installedPackage = nil
+                activityMessage = strings[.statusApkUninstalled]
+                add(strings[.logApkUninstalled], level: .success)
+            } else {
+                activityMessage = strings[.statusFailed]
+                showError(strings(.errInstallOther, String(result?.exitCode ?? -1)))
+            }
+        }
+    }
+
+    private func explain(installFailure: AndroidLauncher.InstallFailure) -> String {
+        switch installFailure {
+        case .noMatchingAbis: return strings[.errInstallNoAbis]
+        case .olderSdk: return strings[.errInstallOldSdk]
+        case .signatureMismatch: return strings[.errInstallSignature]
+        case .versionDowngrade: return strings[.errInstallDowngrade]
+        case .noSpace: return strings[.errInstallNoSpace]
+        case .notSigned: return strings[.errInstallNotSigned]
+        case .blockedByDevice: return strings[.errInstallBlocked]
+        case .other(let code): return strings(.errInstallOther, code)
+        }
+    }
+
     // MARK: - Instalar herramientas
 
     public func installTools() {
@@ -621,14 +1180,15 @@ public final class AppModel: ObservableObject {
             showError(strings[.errHomebrewMissing])
             return
         }
-        // Solo los extractores. Wine no se instala a ciegas: en Apple Silicon los casks chocan
-        // entre sí y varios están obsoletos, así que sus opciones se explican en una hoja aparte.
-        guard runtimeStatus.archiveTool == nil else {
+        // Solo lo que se puede poner sin pedirle nada más al usuario: los extractores y `adb`.
+        // Wine y el SDK de Android quedan fuera —gigas, licencias, casks que chocan entre sí— y
+        // se explican en su hoja con la orden lista para copiar.
+        let formulae = missingFormulae
+        guard !formulae.isEmpty else {
             add(strings[.logExtractorsPresent], level: .success)
             return
         }
 
-        let formulae = ["sevenzip", "unar"]
         clearError()
         isInstallingTools = true
         activityMessage = strings[.statusInstalling]
@@ -653,6 +1213,8 @@ public final class AppModel: ObservableObject {
                 }
                 isInstallingTools = false
                 refreshTools()
+                // `adb` recién instalado: la lista de aparatos ya se puede pedir.
+                if runtimeStatus.adbURL != nil { refreshDevices() }
                 if result.succeeded {
                     activityMessage = strings[.statusToolsInstalled]
                     add(strings[.logInstallDone], level: .success)

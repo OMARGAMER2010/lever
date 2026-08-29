@@ -174,7 +174,14 @@ struct SettingRow<Control: View>: View {
     }
 }
 
-/// Estado de una herramienta en la barra superior: un punto y dos palabras. Sin cápsula.
+/// Estado de una herramienta: un punto y su nombre. Sin cápsula.
+///
+/// El detalle —la ruta o la versión— solo se escribe cuando la herramienta **falta**, que es
+/// cuando importa. Con ella puesta, el nombre y el punto verde bastan, y la ruta exacta está en
+/// la pestaña que la usa. Así los tres indicadores caben juntos en una fila.
+///
+/// El punto nunca es el único portador: siempre va acompañado del nombre, y VoiceOver lee
+/// además el estado completo.
 struct ToolStatus: View {
     let title: String
     let detail: String
@@ -185,12 +192,16 @@ struct ToolStatus: View {
             Circle()
                 .fill(isAvailable ? Theme.ready : Theme.attention)
                 .frame(width: 6, height: 6)
+                .accessibilityHidden(true)
             Text(title)
                 .font(.system(size: 11, weight: .medium))
-            Text(detail)
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+                .foregroundStyle(isAvailable ? .secondary : .primary)
+            if !isAvailable {
+                Text(detail)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.attention)
+                    .lineLimit(1)
+            }
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(title): \(detail)")
@@ -277,6 +288,7 @@ struct LanguagePicker: View {
 enum WorkMode: String, CaseIterable, Identifiable {
     case program
     case archive
+    case android
 
     var id: String { rawValue }
 
@@ -284,6 +296,14 @@ enum WorkMode: String, CaseIterable, Identifiable {
         switch self {
         case .program: return .tabPrograms
         case .archive: return .tabArchives
+        case .android: return .tabAndroid
         }
+    }
+
+    /// A qué pestaña lleva un archivo soltado en cualquier parte de la ventana.
+    static func forDroppedFile(_ url: URL) -> WorkMode {
+        if SupportedFileKind.exe.accepts(url) { return .program }
+        if SupportedFileKind.apk.accepts(url) { return .android }
+        return .archive
     }
 }

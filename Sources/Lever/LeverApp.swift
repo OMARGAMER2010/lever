@@ -32,13 +32,17 @@ struct LeverApp: App {
                     .keyboardShortcut("o", modifiers: [.command])
                 Button(model.strings[.menuOpenArchive]) { model.selectArchive() }
                     .keyboardShortcut("o", modifiers: [.command, .shift])
+                Button(model.strings[.menuOpenApk]) { model.selectApk() }
+                    .keyboardShortcut("o", modifiers: [.command, .option])
             }
 
             CommandMenu(model.strings[.menuTools]) {
                 Button(model.strings[.menuRefresh]) { model.refreshTools() }
                     .keyboardShortcut("r", modifiers: [.command])
-                Button(model.strings[.menuInstallExtractors]) { model.installTools() }
+                Button(model.strings[.menuInstallMissing]) { model.installTools() }
                     .disabled(!model.canInstallTools)
+                Button(model.strings[.menuScanDevices]) { model.refreshDevices() }
+                    .disabled(!model.runtimeStatus.canReachAndroid)
                 Divider()
                 Button(model.strings[.wineSettings]) { model.openWineSettings() }
                     .disabled(model.runtimeStatus.wineURL == nil)

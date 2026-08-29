@@ -31,6 +31,7 @@ struct ActionBar: View {
         switch mode {
         case .archive: archiveStatus
         case .program: programStatus
+        case .android: androidStatus
         }
     }
 
@@ -90,6 +91,31 @@ struct ActionBar: View {
         }
     }
 
+    @ViewBuilder
+    private var androidStatus: some View {
+        if model.isSettingUpEmulator {
+            busy(s[.emulatorSettingUp])
+        } else if model.isRunningApk {
+            busy(model.activityMessage)
+        } else if model.isScanningDevices {
+            busy(s[.deviceScanning])
+        } else if model.installedPackage != nil, let device = model.selectedDevice {
+            HStack(spacing: 5) {
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.ready)
+                Text(s(.apkInstalledOn, device.displayName))
+            }
+            .font(.system(size: 12))
+        } else if !model.runtimeStatus.canReachAndroid {
+            hint(s[.missingAdbShort])
+        } else if model.selectedApk == nil {
+            hint(s[.chooseApkFirst])
+        } else if model.selectedDevice?.availability != .ready {
+            hint(s[.noDeviceShort])
+        } else {
+            hint(s[.readyToInstall])
+        }
+    }
+
     private func busy(_ text: String) -> some View {
         HStack(spacing: Theme.Spacing.tight) {
             ProgressView().controlSize(.small)
@@ -131,6 +157,17 @@ struct ActionBar: View {
                     .controlSize(.large)
                     .keyboardShortcut(.return, modifiers: [.command])
                     .disabled(!model.canRunProgram)
+
+            case .android:
+                if model.isRunningApk {
+                    Button(s[.stop], action: model.stopRun)
+                        .controlSize(.large)
+                }
+                Button(model.isRunningApk ? s[.runningApk] : s[.runApk], action: model.runApk)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .keyboardShortcut(.return, modifiers: [.command])
+                    .disabled(!model.canRunApk)
             }
         }
     }

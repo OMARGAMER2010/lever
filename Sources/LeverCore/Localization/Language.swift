@@ -33,15 +33,18 @@ public enum Language: String, CaseIterable, Identifiable, Sendable {
 /// idioma se queda corto, en vez de descubrir un hueco en producción.
 public enum TextKey: String, CaseIterable, Sendable {
     // Barra superior
-    case tabPrograms, tabArchives, toolWine, toolExtractor, toolNotInstalled, languageMenu
+    case tabPrograms, tabArchives, tabAndroid
+    case toolWine, toolExtractor, toolAndroid, toolNotInstalled, languageMenu
 
     // Menú de herramientas
-    case menuTools, menuRefresh, menuInstallExtractors, menuFindWine, menuForgetWine
+    case menuTools, menuRefresh, menuInstallMissing, menuFindWine, menuForgetWine
     case menuUnblockWine, menuResetWindows, menuOpenWindowsFolder
-    case menuOpenProgram, menuOpenArchive, menuCopyActivity, menuClearActivity
+    case menuOpenProgram, menuOpenArchive, menuOpenApk, menuScanDevices
+    case menuCopyActivity, menuClearActivity
 
     // Zonas de soltar
     case dropProgramTitle, dropProgramSubtitle, dropArchiveTitle, dropArchiveSubtitle
+    case dropApkTitle, dropApkSubtitle
 
     // Ficha de archivo
     case revealInFinder, removeFile, chooseAnotherProgram, chooseAnotherArchive
@@ -54,6 +57,7 @@ public enum TextKey: String, CaseIterable, Sendable {
 
     // Acciones
     case extract, extracting, run, running, stop, preparingWindows
+    case installingApk, openApp, uninstall, uninstalling
 
     // Barra de estado
     case readyToExtract, readyToRun, chooseArchiveFirst, chooseProgramFirst
@@ -81,6 +85,37 @@ public enum TextKey: String, CaseIterable, Sendable {
     // Hechos del programa
     case arch64, arch32, archArm, archUnknown, arch32Warning, arch32Title
 
+    // Android: hechos del .apk
+    case apkMinAndroid, apkMinApi, apkNoNativeCode
+    case apkSplitTitle, apkSplitBody, apkUnreadableTitle, apkUnreadableBody
+
+    // Android: aparatos y emuladores
+    case deviceSection, deviceScanning, deviceRefresh, deviceNoneTitle, deviceNoneBody
+    case deviceUnauthorized, deviceOffline, deviceEmulator, devicePhone, deviceAndroidVersion
+    case emulatorSection, emulatorStart, emulatorStarting, emulatorNone, emulatorHint
+
+    // Android: compatibilidad y avisos
+    case abiMismatchTitle, abiMismatchBody, sdkTooOldTitle, sdkTooOldBody
+    case missingAdbTitle, missingAdbBody, androidCardTitle, androidCardBody, androidDisclaimer
+    case chooseApkFirst, readyToInstall, missingAdbShort, noDeviceShort, apkInstalledOn
+
+    // Android: orientación de la pantalla
+    case orientationSection, orientationAuto, orientationPortrait, orientationLandscape
+    case orientationFree, orientationDeclared, orientationRuntimeWarning
+
+    // Android: montar el emulador
+    case emulatorSetUp, emulatorSettingUp, emulatorSetUpTitle, emulatorSetUpBody
+    case emulatorSetUpSize, emulatorNoSpace, emulatorReady
+    case runApk, runningApk, openAgain
+    case logRotated, logEmulatorReady, statusApkRunning
+    case errEmulatorTimeout, errEmulatorSetUpFailed, errEmulatorScriptMissing
+
+    // Android: hoja de ayuda
+    case androidHelpTitle, androidHelpBody, androidHelpFootnote
+    case androidOptionPhone, androidOptionPhoneWhy
+    case androidOptionEmulator, androidOptionEmulatorWhy
+    case androidOptionStudio, androidOptionStudioWhy
+
     // Hoja de ayuda de Wine
     case wineHelpTitle, wineHelpBody, wineHelpFootnote, copyCommand, close, findWineOnMac
     case wineOptionGptk, wineOptionGptkWhy, wineOptionCrossover, wineOptionCrossoverWhy
@@ -92,12 +127,19 @@ public enum TextKey: String, CaseIterable, Sendable {
     case logRetryingWith, logFirstRun, logWindowsReady, logProgramClosed
     case logWineChosen, logCommandCopied, logActivityCopied, logExtractorsPresent
     case logInstalling, logInstallTakesTime, logInstallDone, logWindowsReset, logWineUnblocked
+    case logApkChosen, logDevicesFound, logNoDevices, logInstallingApk, logApkInstalled
+    case logApkLaunched, logApkUninstalled, logEmulatorStarting
     case errNotAProgram, errNotAnArchive, errUnknownFile, errNoWine, errNoExtractor
     case errPickProgram, errPickArchive, errPickDestination, errCannotCreateFolder
     case errWineBlocked, errNoRosetta, errWinePrefixFailed, errUnblockFailed
     case errNotWineExecutable, errProgramExit, errExtractExit2, errExtractExit1, errExtractExitOther
     case errBusy, errHomebrewMissing, errInstallFailed
+    case errNotAnApk, errAndroidBundle, errNoAdb, errNoDevice, errPickApk, errDeviceUnauthorized
+    case errInstallNoAbis, errInstallOldSdk, errInstallSignature, errInstallDowngrade
+    case errInstallNoSpace, errInstallNotSigned, errInstallBlocked, errInstallOther, errNoLauncher
     case statusFinished, statusStopped, statusExtracted, statusFailed, statusCannotStart
     case statusExtracting, statusRunning, statusInstalling, statusToolsInstalled
     case statusWindowsReset, statusWineUnblocked, statusPreparing, statusWindowsFailed
+    case statusInstallingApk, statusApkInstalled, statusApkUninstalled, statusScanning
+    case statusEmulatorStarting
 }

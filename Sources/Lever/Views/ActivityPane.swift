@@ -47,6 +47,9 @@ struct ActivityPane: View {
 
             Spacer()
 
+            // Qué hay instalado, junto a qué está pasando: es donde se mira cuando algo falla.
+            toolStates
+
             if model.isBusy {
                 ProgressView().controlSize(.small)
             }
@@ -74,6 +77,27 @@ struct ActivityPane: View {
         }
         .padding(.horizontal, Theme.Spacing.page)
         .padding(.vertical, 9)
+    }
+
+    private var toolStates: some View {
+        HStack(spacing: Theme.Spacing.normal) {
+            ToolStatus(
+                title: s[.toolWine],
+                detail: s[.toolNotInstalled],
+                isAvailable: model.runtimeStatus.wineURL != nil && !model.wineIsBlocked
+            )
+            ToolStatus(
+                title: s[.toolExtractor],
+                detail: s[.toolNotInstalled],
+                isAvailable: model.runtimeStatus.archiveTool != nil
+            )
+            ToolStatus(
+                title: s[.toolAndroid],
+                detail: s[.toolNotInstalled],
+                isAvailable: model.runtimeStatus.canReachAndroid
+            )
+        }
+        .layoutPriority(1)
     }
 
     private var content: some View {

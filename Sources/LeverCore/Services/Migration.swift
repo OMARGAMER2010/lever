@@ -20,7 +20,7 @@ public enum Migration {
     /// atrás a propósito: llevan dentro el nombre del tipo de la vista antigua y ya no valen.
     private static let carriedKeys = [
         "language", "overwritePolicy", "revealWhenDone",
-        "extractIntoSubfolder", "customWinePath", "lastDestinationPath"
+        "extractIntoSubfolder", "customWinePath", "lastDestinationPath", "rotationChoice"
     ]
 
     public static func runIfNeeded(fileManager: FileManager = .default) {

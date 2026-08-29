@@ -25,7 +25,7 @@ struct ProgramPane: View {
             wineState
             disclaimer
         }
-        .sheet(isPresented: $showsWineHelp) { WineHelpSheet(model: model) }
+        .sheet(isPresented: $showsWineHelp) { RuntimeHelpSheet.wine(model: model) }
     }
 
     @ViewBuilder

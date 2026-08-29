@@ -40,6 +40,9 @@ mkdir -p "$app_path/Contents/MacOS" "$app_path/Contents/Resources"
 cp "$binary" "$app_path/Contents/MacOS/Lever"
 cp "$project_root/Resources/Info.plist" "$app_path/Contents/Info.plist"
 cp "$project_root/Resources/AppIcon.icns" "$app_path/Contents/Resources/AppIcon.icns"
+# El guion que monta el emulador viaja dentro: la app se abre desde el Escritorio, donde no hay
+# código fuente cerca, y tiene que poder lanzarlo.
+cp "$project_root/scripts/android-emulator.sh" "$app_path/Contents/Resources/android-emulator.sh"
 printf 'APPL????' > "$app_path/Contents/PkgInfo"
 chmod +x "$app_path/Contents/MacOS/Lever"
 
