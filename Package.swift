@@ -8,7 +8,12 @@ let package = Package(
         .executable(name: "ExeRar", targets: ["ExeRar"])
     ],
     targets: [
-        .executableTarget(name: "ExeRar"),
-        .testTarget(name: "ExeRarTests", dependencies: ["ExeRar"])
+        .target(name: "ExeRarCore"),
+        .executableTarget(name: "ExeRar", dependencies: ["ExeRarCore"]),
+        .executableTarget(
+            name: "ExeRarTests",
+            dependencies: ["ExeRarCore"],
+            path: "Tests/ExeRarTests"
+        )
     ]
 )
