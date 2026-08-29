@@ -1,12 +1,12 @@
 import Foundation
 
-public enum ArchiveTool: Equatable {
+public enum ArchiveTool: Equatable, Sendable {
     case sevenZip(URL)
     case unar(URL)
     case unrar(URL)
 }
 
-public struct RuntimeStatus: Equatable {
+public struct RuntimeStatus: Equatable, Sendable {
     public let wineURL: URL?
     public let archiveTool: ArchiveTool?
     public let homebrewURL: URL?
@@ -25,7 +25,7 @@ public struct RuntimeStatus: Equatable {
     }
 }
 
-public struct ProcessCommand: Equatable {
+public struct ProcessCommand: Equatable, Sendable {
     public let executableURL: URL
     public let arguments: [String]
     public let currentDirectoryURL: URL?
@@ -37,7 +37,7 @@ public struct ProcessCommand: Equatable {
     }
 }
 
-public struct ProcessResult: Equatable {
+public struct ProcessResult: Equatable, Sendable {
     public let exitCode: Int32
     public let output: String
 
