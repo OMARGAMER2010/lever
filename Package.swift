@@ -2,18 +2,18 @@
 import PackageDescription
 
 let package = Package(
-    name: "Palanca",
+    name: "Lever",
     platforms: [.macOS(.v13)],
     products: [
-        .executable(name: "Palanca", targets: ["Palanca"])
+        .executable(name: "Lever", targets: ["Lever"])
     ],
     targets: [
-        .target(name: "PalancaCore"),
-        .executableTarget(name: "Palanca", dependencies: ["PalancaCore"]),
+        .target(name: "LeverCore"),
+        .executableTarget(name: "Lever", dependencies: ["LeverCore"]),
         .executableTarget(
-            name: "PalancaTests",
-            dependencies: ["PalancaCore"],
-            path: "Tests/PalancaTests"
+            name: "LeverTests",
+            dependencies: ["LeverCore"],
+            path: "Tests/LeverTests"
         )
     ]
 )

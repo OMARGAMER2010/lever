@@ -1,5 +1,5 @@
 import SwiftUI
-import PalancaCore
+import LeverCore
 
 /// Tokens visuales, con el motivo de cada uno.
 ///

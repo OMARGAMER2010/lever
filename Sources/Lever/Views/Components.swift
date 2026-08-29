@@ -1,6 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
-import PalancaCore
+import LeverCore
 
 /// Zona para soltar archivos.
 ///

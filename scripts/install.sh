@@ -7,11 +7,11 @@ cd "$project_root"
 
 bash scripts/build-app.sh
 
-destination="$HOME/Desktop/Palanca.app"
+destination="$HOME/Desktop/Lever.app"
 
 echo "▸ Instalando en el Escritorio…"
 rm -rf "$destination"
-cp -R "$project_root/dist/Palanca.app" "$destination"
+cp -R "$project_root/dist/Lever.app" "$destination"
 xattr -cr "$destination" 2>/dev/null || true
 
 # Refresca la caché de iconos del Finder para que se vea el nuevo de inmediato.

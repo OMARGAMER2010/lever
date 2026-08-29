@@ -17,7 +17,7 @@ final class TemporaryFixture {
 
     init() throws {
         directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("PalancaTests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("LeverTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     }
 

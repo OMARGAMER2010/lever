@@ -1,5 +1,5 @@
 import Foundation
-import PalancaCore
+import LeverCore
 
 enum ProgramInspectorTests {
     static func run() throws {

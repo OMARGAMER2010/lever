@@ -1,5 +1,5 @@
 import SwiftUI
-import PalancaCore
+import LeverCore
 
 /// Pestaña «Comprimidos»: elegir un .rar (o .zip, .7z…) y sacar su contenido.
 struct ArchivePane: View {

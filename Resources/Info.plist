@@ -3,21 +3,21 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDisplayName</key>
-	<string>Palanca</string>
+	<string>Lever</string>
 	<key>CFBundleExecutable</key>
-	<string>Palanca</string>
+	<string>Lever</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.local.palanca</string>
+	<string>com.local.lever</string>
 	<key>CFBundleName</key>
-	<string>Palanca</string>
+	<string>Lever</string>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>3.0</string>
+	<string>3.1</string>
 	<key>CFBundleVersion</key>
-	<string>3</string>
+	<string>4</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>13.0</string>
 	<key>LSApplicationCategoryType</key>

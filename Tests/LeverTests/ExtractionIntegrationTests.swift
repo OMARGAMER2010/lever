@@ -1,5 +1,5 @@
 import Foundation
-import PalancaCore
+import LeverCore
 
 /// Pruebas que usan las herramientas reales del sistema.
 /// Si no están instaladas, se saltan en vez de fallar: la máquina de otro no tiene por qué tenerlas.

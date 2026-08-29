@@ -1,5 +1,5 @@
 import Foundation
-import PalancaCore
+import LeverCore
 
 @MainActor
 enum AppModelTests {

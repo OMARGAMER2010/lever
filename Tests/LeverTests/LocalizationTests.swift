@@ -1,5 +1,5 @@
 import Foundation
-import PalancaCore
+import LeverCore
 
 enum LocalizationTests {
     static func run() throws {

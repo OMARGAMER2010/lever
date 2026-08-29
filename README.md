@@ -1,15 +1,15 @@
 <div align="center">
 
-# Palanca
+# Lever
 
 **Abre archivos `.exe` de Windows y descomprime `.rar` en tu Mac.**
 Sin cuentas, sin servidor, sin telemetría. Todo local.
 
 </div>
 
-> **El nombre.** Haces palanca para abrir un cajón clavado: eso es descomprimir. Y *tener palanca*
-> es tener el contacto que te abre una puerta cerrada: eso es lo que hace Wine con un `.exe`.
-> Los dos significados son reales y los dos son ciertos aquí.
+> **El nombre.** Una palanca es lo que metes en la rendija de un cajón clavado para abrirlo: eso es
+> descomprimir. Y en sentido figurado, *leverage* es la fuerza que te abre una puerta que estaba
+> cerrada: eso es lo que hace Wine con un `.exe`. Palabra corriente, sin inventar nada.
 
 ---
 
@@ -32,12 +32,12 @@ sesiones y arranca según el del sistema.
 bash scripts/install.sh
 ```
 
-Compila la app, genera el icono y deja `Palanca.app` en el Escritorio, lista para abrir con doble
+Compila la app, genera el icono y deja `Lever.app` en el Escritorio, lista para abrir con doble
 clic. Si prefieres solo construirla en `dist/`:
 
 ```bash
 bash scripts/build-app.sh
-open dist/Palanca.app
+open dist/Lever.app
 ```
 
 ## Requisitos
@@ -87,7 +87,7 @@ abre todos. Para el resto de formatos manda `7zz`, que es más rápido, cubre m�
 progreso. Si el primero falla, la app reintenta sola con el otro.
 
 **Wine se ejecuta en un entorno aparte.** La app crea su propio «disco C:» en
-`~/Library/Application Support/Palanca/wine`, así que no pisa un `~/.wine` que ya tuvieras. Se puede
+`~/Library/Application Support/Lever/wine`, así que no pisa un `~/.wine` que ya tuvieras. Se puede
 abrir, configurar o borrar desde el menú de herramientas.
 
 **macOS bloquea Wine si viene de Homebrew.** Los `.cask` se marcan como descargados de internet y
@@ -100,7 +100,7 @@ comprimido con contraseña falla con un error legible en vez de quedarse esperan
 ## Desarrollo
 
 ```bash
-swift run PalancaTests    # suite completa, incluidas pruebas de extracción reales
+swift run LeverTests    # suite completa, incluidas pruebas de extracción reales
 swift build
 ```
 
@@ -109,8 +109,8 @@ incluyen XCTest. Las de integración se saltan solas si no hay extractores insta
 
 ```
 Sources/
-  PalancaCore/     Lógica: localizar herramientas, construir órdenes, lanzar procesos
-  Palanca/        Interfaz SwiftUI
+  LeverCore/     Lógica: localizar herramientas, construir órdenes, lanzar procesos
+  Lever/          Interfaz SwiftUI
 scripts/
   build-app.sh    Compila y arma el .app
   install.sh      Lo anterior + copia al Escritorio

@@ -1,11 +1,11 @@
 import AppKit
 import SwiftUI
-import PalancaCore
+import LeverCore
 
 @main
-struct PalancaApp: App {
+struct LeverApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
-    @StateObject private var model = PalancaApp.makeModel()
+    @StateObject private var model = LeverApp.makeModel()
 
     /// La app se llamaba «EXE & RAR». Sus datos —el entorno de Windows sobre todo— viven bajo el
     /// nombre viejo, así que se recolocan antes de que el modelo lea nada.
@@ -20,7 +20,7 @@ struct PalancaApp: App {
     var body: some Scene {
         // `Window` y no `WindowGroup`: esta es una utilidad de una sola ventana. Con `WindowGroup`,
         // abrir un archivo desde el Finder creaba una segunda ventana duplicada.
-        Window("Palanca", id: "principal") {
+        Window("Lever", id: "principal") {
             ContentView(model: model)
                 .frame(minWidth: 700, minHeight: 620)
                 .onAppear { delegate.model = model }

@@ -1,5 +1,5 @@
 import SwiftUI
-import PalancaCore
+import LeverCore
 
 /// Cajón inferior con el registro de lo que va pasando.
 struct ActivityPane: View {

@@ -1,5 +1,5 @@
 import SwiftUI
-import PalancaCore
+import LeverCore
 
 struct ContentView: View {
     @ObservedObject var model: AppModel

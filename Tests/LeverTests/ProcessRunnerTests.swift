@@ -1,5 +1,5 @@
 import Foundation
-import PalancaCore
+import LeverCore
 
 enum ProcessRunnerTests {
     static func run() async throws {

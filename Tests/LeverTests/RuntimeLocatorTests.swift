@@ -1,5 +1,5 @@
 import Foundation
-import PalancaCore
+import LeverCore
 
 enum RuntimeLocatorTests {
     static func run() throws {
