@@ -53,7 +53,8 @@ enum RuntimeLocatorTests {
             homebrewCandidates: []
         )
 
-        try expect(locator.locate().archiveTool == .sevenZip(sevenZip), "7zz should be preferred over unar and unrar")
+        try expect(locator.locate().archiveTools == [.sevenZip(sevenZip), .unar(unar), .unrar(unrar)],
+                   "se deben encontrar los tres extractores, en orden")
     }
 
     private static func testLocateFindsHomebrewCandidate() throws {

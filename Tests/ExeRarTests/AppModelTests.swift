@@ -4,38 +4,120 @@ import ExeRarCore
 @MainActor
 enum AppModelTests {
     static func run() throws {
-        let emptyLocator = RuntimeLocator(
+        try testNothingIsEnabledWithoutTools()
+        try testActionsEnableWhenEverythingIsInPlace()
+        try testDestinationIsSuggestedNextToTheArchive()
+        try testDroppedFilesAreRoutedByExtension()
+        try testMissingToolsAreReported()
+        try testInstallIsOfferedOnlyWhenSomethingIsMissing()
+    }
+
+    private static func emptyModel() -> AppModel {
+        AppModel(locator: RuntimeLocator(
             wineCandidates: [],
             sevenZipCandidates: [],
             unarCandidates: [],
             unrarCandidates: [],
             homebrewCandidates: []
-        )
-        let emptyModel = AppModel(locator: emptyLocator)
+        ))
+    }
 
-        try expect(!emptyModel.canRunExe, "EXE execution should be disabled without a Wine runtime")
-        try expect(!emptyModel.canExtractArchive, "RAR extraction should be disabled without an archive tool")
-
+    private static func readyModel() -> AppModel {
         let echo = URL(fileURLWithPath: "/bin/echo")
-        let availableLocator = RuntimeLocator(
+        return AppModel(locator: RuntimeLocator(
             wineCandidates: [echo],
             sevenZipCandidates: [echo],
             unarCandidates: [],
             unrarCandidates: [],
             homebrewCandidates: [echo]
-        )
-        let model = AppModel(locator: availableLocator)
+        ))
+    }
+
+    private static func testNothingIsEnabledWithoutTools() throws {
+        let model = emptyModel()
+        try expect(!model.canRunProgram, "ejecutar debe estar desactivado sin Wine")
+        try expect(!model.canExtractArchive, "extraer debe estar desactivado sin extractor")
+        try expect(!model.canInstallTools, "instalar debe estar desactivado sin Homebrew")
+    }
+
+    private static func testActionsEnableWhenEverythingIsInPlace() throws {
+        let model = readyModel()
         let fixture = try TemporaryFixture()
-        model.selectedExe = try fixture.makeFile(named: "Installer.EXE")
-        model.selectedArchive = try fixture.makeFile(named: "Archive.RAR")
-        model.extractionDestination = fixture.directoryURL.appendingPathComponent("Extracted Files")
-        try FileManager.default.createDirectory(at: model.extractionDestination!, withIntermediateDirectories: true)
+        model.selectedProgram = try fixture.makeFile(named: "Instalador.EXE")
+        model.selectedArchive = try fixture.makeFile(named: "Paquete.RAR")
 
-        try expect(model.canRunExe, "EXE execution should enable with a selected EXE and Wine")
-        try expect(model.canExtractArchive, "RAR extraction should enable with archive, destination, and extractor")
+        try expect(model.canRunProgram, "ejecutar debe activarse con programa y Wine")
+        try expect(model.canExtractArchive, "extraer debe activarse con comprimido y extractor")
+        try expect(!model.canInstallTools,
+                   "si los extractores ya están, el botón de instalar no debe ofrecerse")
+    }
 
-        model.isBusy = true
-        try expect(!model.canRunExe, "EXE execution should disable while another process is running")
-        try expect(!model.canExtractArchive, "RAR extraction should disable while another process is running")
+    /// El botón de instalar solo aparece cuando hay Homebrew Y falta algo que instalar.
+    private static func testInstallIsOfferedOnlyWhenSomethingIsMissing() throws {
+        let echo = URL(fileURLWithPath: "/bin/echo")
+        let withBrewNoExtractor = AppModel(locator: RuntimeLocator(
+            wineCandidates: [],
+            sevenZipCandidates: [],
+            unarCandidates: [],
+            unrarCandidates: [],
+            homebrewCandidates: [echo]
+        ))
+        try expect(withBrewNoExtractor.canInstallTools,
+                   "con Homebrew y sin extractor, instalar debe estar disponible")
+
+        let noBrew = AppModel(locator: RuntimeLocator(
+            wineCandidates: [],
+            sevenZipCandidates: [],
+            unarCandidates: [],
+            unrarCandidates: [],
+            homebrewCandidates: []
+        ))
+        try expect(!noBrew.canInstallTools, "sin Homebrew no se puede instalar nada")
+    }
+
+    private static func testDestinationIsSuggestedNextToTheArchive() throws {
+        let model = readyModel()
+        let fixture = try TemporaryFixture()
+        let archive = try fixture.makeFile(named: "Mis Fotos.rar")
+        model.selectedArchive = archive
+
+        model.extractIntoSubfolder = true
+        let subfolder = fixture.directoryURL.appendingPathComponent("Mis Fotos", isDirectory: true)
+        try expect(
+            model.effectiveDestination?.standardizedFileURL == subfolder.standardizedFileURL,
+            "el destino sugerido debe ser una carpeta hermana con el nombre del comprimido"
+        )
+
+        model.extractIntoSubfolder = false
+        try expect(
+            model.effectiveDestination?.standardizedFileURL == fixture.directoryURL.standardizedFileURL,
+            "sin subcarpeta, el destino debe ser la carpeta del comprimido"
+        )
+
+        let manual = fixture.directoryURL.appendingPathComponent("Otro sitio", isDirectory: true)
+        model.chosenDestination = manual
+        try expect(
+            model.effectiveDestination == manual,
+            "un destino elegido a mano debe tener prioridad sobre el sugerido"
+        )
+    }
+
+    private static func testDroppedFilesAreRoutedByExtension() throws {
+        let model = readyModel()
+        let fixture = try TemporaryFixture()
+        let program = try fixture.makeFile(named: "juego.exe")
+        let archive = try fixture.makeFile(named: "datos.zip")
+        let unknown = try fixture.makeFile(named: "notas.txt")
+
+        try expect(model.accept(droppedURLs: [program, archive]), "debe aceptar programa y comprimido")
+        try expect(model.selectedProgram == program, "el .exe debe ir a la sección de programas")
+        try expect(model.selectedArchive == archive, "el .zip debe ir a la sección de comprimidos")
+        try expect(!model.accept(droppedURLs: [unknown]), "un .txt no debe aceptarse")
+        try expect(model.lastError != nil, "soltar algo no admitido debe explicar el motivo")
+    }
+
+    private static func testMissingToolsAreReported() throws {
+        try expect(emptyModel().missingTools == ["Wine", "un extractor"], "debe listar lo que falta")
+        try expect(readyModel().missingTools.isEmpty, "sin nada que falte, la lista debe estar vacía")
     }
 }

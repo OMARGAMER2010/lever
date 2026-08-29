@@ -9,10 +9,12 @@ struct ExeRarTests {
             try CommandBuilderTests.run()
             try await ProcessRunnerTests.run()
             try AppModelTests.run()
+            try await ExtractionIntegrationTests.run()
             print("PASS RuntimeLocatorTests")
             print("PASS CommandBuilderTests")
             print("PASS ProcessRunnerTests")
             print("PASS AppModelTests")
+            print("PASS ExtractionIntegrationTests")
         } catch {
             fputs("FAIL ExeRarTests: \(error)\n", stderr)
             exit(1)
