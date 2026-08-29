@@ -4,8 +4,7 @@ set -euo pipefail
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$project_root"
 
-swift build -c release --product ExeRar
-bin_dir="$(swift build -c release --show-bin-path)"
+bin_dir="$(swift build -c release --product ExeRar --show-bin-path)"
 app_path="$project_root/dist/EXE-RAR.app"
 
 rm -rf "$app_path"
