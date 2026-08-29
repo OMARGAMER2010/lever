@@ -9,16 +9,61 @@
 	<key>CFBundleIdentifier</key>
 	<string>com.local.exerar</string>
 	<key>CFBundleName</key>
-	<string>ExeRar</string>
+	<string>EXE &amp; RAR</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<string>2.0</string>
 	<key>CFBundleVersion</key>
-	<string>1</string>
+	<string>2</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>13.0</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.utilities</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>Utilidad local. Sin cuentas, sin servidor, sin telemetría.</string>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Programa de Windows</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>exe</string>
+				<string>msi</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Archivo comprimido</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>rar</string>
+				<string>zip</string>
+				<string>7z</string>
+				<string>tar</string>
+				<string>gz</string>
+				<string>tgz</string>
+				<string>bz2</string>
+				<string>xz</string>
+				<string>iso</string>
+				<string>cab</string>
+				<string>arj</string>
+				<string>lzh</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>
