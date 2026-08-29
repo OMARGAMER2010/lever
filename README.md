@@ -24,6 +24,10 @@ Sin cuentas, sin servidor, sin telemetría. Todo local.
 Arrastra un archivo a la ventana —o al icono de la app en el Dock— y la app se coloca sola en la
 pestaña que toca. También funciona con «Abrir con» desde el Finder.
 
+Lo que hayas abierto antes queda en **«Abiertos hace poco»**, con su icono y su tamaño, para no
+tener que volver a buscarlo: se abre con un clic. Desde el menú de cada fila puedes cambiarle el
+nombre, moverlo a otra carpeta, mostrarlo en el Finder o quitarlo de la lista.
+
 Español e inglés, con el selector de bandera arriba a la derecha. El idioma se recuerda entre
 sesiones y arranca según el del sistema.
 
@@ -125,6 +129,10 @@ compara las dos listas antes y lo dice en una frase. Es la misma promesa que con
 **Si el `.apk` es un trozo de un App Bundle** —un «split», sin `classes.dex`— que Android va a
 rechazar siempre porque no es una app entera.
 
+**Si un archivo de la lista ya no está.** Se comprueba al leerla, no al guardarla: entre dos
+sesiones puede haberse movido o borrado desde fuera. Los que faltan salen apagados, con su carpeta
+para saber dónde estaban, y lo único que se ofrece de ellos es quitarlos.
+
 **En qué postura arranca la app.** Se lee `android:screenOrientation` de la actividad de inicio
 —la que lleva el filtro `LAUNCHER`, no la primera que aparezca— y la pantalla se pone vertical u
 horizontal antes de abrirla. Con un aviso honesto: muchos juegos hechos con Unity no lo declaran y
@@ -177,6 +185,7 @@ Sources/
   LeverCore/          Lógica: localizar herramientas, construir órdenes, lanzar procesos
     ApkInspector        Lee el zip y el AndroidManifest.xml binario de un .apk
     AndroidLauncher     Órdenes de adb y del emulador, y lectura de sus respuestas
+    RecentFiles         La lista de abiertos hace poco: renombrar, mover, quitar
   Lever/              Interfaz SwiftUI
 scripts/
   build-app.sh        Compila y arma el .app

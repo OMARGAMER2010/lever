@@ -1,7 +1,11 @@
 import Foundation
 
 /// Tipos de archivo que la app sabe tratar.
-public enum SupportedFileKind: Sendable {
+///
+/// Con valor de texto porque se guarda en la lista de recientes entre sesiones: un `enum` sin
+/// valor crudo obligaría a inventar una correspondencia aparte que se despistaría al añadir un
+/// tipo nuevo.
+public enum SupportedFileKind: String, Codable, CaseIterable, Sendable {
     /// Programas de Windows: `.exe` y `.msi`.
     case exe
     /// Comprimidos. `.rar` es el caso principal, pero los extractores abren muchos más.

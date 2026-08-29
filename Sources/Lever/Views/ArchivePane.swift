@@ -19,6 +19,7 @@ struct ArchivePane: View {
                     accept: { model.accept(droppedURLs: $0) },
                     browse: model.selectArchive
                 )
+                RecentsList(model: model, kind: .rar)
             } else {
                 Panel { archiveContent }
             }

@@ -24,6 +24,7 @@ struct AndroidPane: View {
                     accept: { model.accept(droppedURLs: $0) },
                     browse: model.selectApk
                 )
+                RecentsList(model: model, kind: .apk)
             } else {
                 Panel { apkContent }
             }

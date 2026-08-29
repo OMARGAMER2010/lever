@@ -13,6 +13,7 @@ struct LeverTests {
             try CommandBuilderTests.run()
             try await ProcessRunnerTests.run()
             try AppModelTests.run()
+            try RecentFilesTests.run()
             try await ExtractionIntegrationTests.run()
             print("PASS LocalizationTests")
             print("PASS ProgramInspectorTests")
@@ -22,6 +23,7 @@ struct LeverTests {
             print("PASS CommandBuilderTests")
             print("PASS ProcessRunnerTests")
             print("PASS AppModelTests")
+            print("PASS RecentFilesTests")
             print("PASS ExtractionIntegrationTests")
         } catch {
             fputs("FAIL LeverTests: \(error)\n", stderr)

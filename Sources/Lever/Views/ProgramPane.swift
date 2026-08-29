@@ -18,6 +18,7 @@ struct ProgramPane: View {
                     accept: { model.accept(droppedURLs: $0) },
                     browse: model.selectProgram
                 )
+                RecentsList(model: model, kind: .exe)
             } else {
                 Panel { programContent }
             }

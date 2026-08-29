@@ -110,6 +110,12 @@ public enum TextKey: String, CaseIterable, Sendable {
     case logRotated, logEmulatorReady, statusApkRunning
     case errEmulatorTimeout, errEmulatorSetUpFailed, errEmulatorScriptMissing
 
+    // Abiertos hace poco
+    case recentsTitle, recentsClear, recentsReopen, recentsRename, recentsRenameHint
+    case recentsMove, recentsForget, recentsMissing
+    case errRenameEmpty, errNameTaken, errRenameFailed, errRecentMissing
+    case logRenamed, logMoved
+
     // Android: hoja de ayuda
     case androidHelpTitle, androidHelpBody, androidHelpFootnote
     case androidOptionPhone, androidOptionPhoneWhy

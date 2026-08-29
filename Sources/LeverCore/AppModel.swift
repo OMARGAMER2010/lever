@@ -97,6 +97,10 @@ public final class AppModel: ObservableObject {
     @Published public private(set) var avdNames: [String] = []
     @Published public private(set) var startingAvd: String?
 
+    // MARK: - Abiertos hace poco
+
+    @Published public private(set) var recentFiles: [RecentFile] = []
+
     // MARK: - Estado común
 
     @Published public private(set) var log: [LogEntry] = []
@@ -299,6 +303,7 @@ public final class AppModel: ObservableObject {
         self.extractIntoSubfolder = Preferences.extractIntoSubfolder
         self.revealWhenDone = Preferences.revealWhenDone
         self.rotationChoice = Preferences.rotationChoice
+        self.recentFiles = RecentFiles.load(fileManager: fileManager)
         self.runtimeStatus = locator.locate(customWineURL: Preferences.customWineURL)
         self.wineIsBlocked = Self.detectBlockedWine(in: runtimeStatus)
         self.activityMessage = Strings.table(for: Preferences.language)[.allReady]
@@ -340,6 +345,7 @@ public final class AppModel: ObservableObject {
             return
         }
         selectedProgram = url
+        remember(url, kind: .exe)
         clearError()
         add(strings(.logProgramChosen, url.lastPathComponent), level: .info)
     }
@@ -359,6 +365,7 @@ public final class AppModel: ObservableObject {
             return
         }
         selectedArchive = url
+        remember(url, kind: .rar)
         chosenDestination = nil
         archiveFacts = ArchiveFacts()
         archivePassword = ""
@@ -378,6 +385,7 @@ public final class AppModel: ObservableObject {
             return
         }
         selectedApk = url
+        remember(url, kind: .apk)
         clearError()
         add(strings(.logApkChosen, url.lastPathComponent), level: .info)
         if androidDevices.isEmpty { refreshDevices() }
@@ -1227,6 +1235,104 @@ public final class AppModel: ObservableObject {
                 activityMessage = strings[.statusCannotStart]
                 showError(error.localizedDescription)
             }
+        }
+    }
+
+    // MARK: - Abiertos hace poco
+
+    /// Los de un tipo, del más reciente al más antiguo. Cada pestaña enseña solo los suyos: una
+    /// lista mezclada obligaría a leer el icono de cada fila para saber cuáles puede abrir.
+    public func recentFiles(of kind: SupportedFileKind) -> [RecentFile] {
+        RecentFiles.files(of: kind, in: recentFiles)
+    }
+
+    private func remember(_ url: URL, kind: SupportedFileKind) {
+        RecentFiles.remember(url, kind: kind)
+        refreshRecents()
+    }
+
+    public func refreshRecents() {
+        recentFiles = RecentFiles.load(fileManager: fileManager)
+    }
+
+    /// Vuelve a abrir un archivo de la lista, como si se acabara de arrastrar.
+    public func reopen(_ file: RecentFile) {
+        guard fileManager.fileExists(atPath: file.path) else {
+            // Pudo desaparecer entre que se pintó la lista y se pulsó. Se dice y se marca.
+            showError(strings(.errRecentMissing, file.name))
+            refreshRecents()
+            return
+        }
+
+        switch file.kind {
+        case .exe: acceptProgram(file.url)
+        case .rar: acceptArchive(file.url)
+        case .apk: acceptApk(file.url)
+        }
+    }
+
+    public func renameRecent(_ file: RecentFile, to newName: String) {
+        apply(to: file) { try RecentFiles.rename(file, to: newName, fileManager: fileManager) }
+    }
+
+    /// Pregunta a dónde y mueve el archivo allí.
+    public func moveRecent(_ file: RecentFile) {
+        guard let directory = FileActions.chooseDirectory(
+            startingAt: file.url.deletingLastPathComponent(),
+            title: strings[.recentsMove]
+        ) else { return }
+        apply(to: file) { try RecentFiles.move(file, to: directory, fileManager: fileManager) }
+    }
+
+    /// Renombrar y mover comparten todo menos la orden: comprobar, contar lo que pasó y dejar
+    /// apuntando al sitio nuevo lo que estuviera seleccionado.
+    private func apply(to file: RecentFile, operation: () throws -> URL) {
+        clearError()
+        do {
+            let destination = try operation()
+            guard destination != file.url else { return }
+
+            refreshRecents()
+            followSelection(from: file, to: destination)
+            add(
+                destination.deletingLastPathComponent() == file.url.deletingLastPathComponent()
+                    ? strings(.logRenamed, destination.lastPathComponent)
+                    : strings(.logMoved, destination.deletingLastPathComponent().path),
+                level: .success
+            )
+        } catch let error as RecentFileError {
+            showError(explain(error))
+        } catch {
+            showError(error.localizedDescription)
+        }
+    }
+
+    /// Si el archivo movido era el que estaba elegido, la selección va con él. Si no, la pestaña
+    /// se quedaría apuntando a una ruta que ya no existe.
+    private func followSelection(from file: RecentFile, to destination: URL) {
+        switch file.kind {
+        case .exe where selectedProgram == file.url: selectedProgram = destination
+        case .rar where selectedArchive == file.url: selectedArchive = destination
+        case .apk where selectedApk == file.url: selectedApk = destination
+        default: break
+        }
+    }
+
+    public func forgetRecent(_ file: RecentFile) {
+        RecentFiles.forget(file)
+        refreshRecents()
+    }
+
+    public func clearRecents(of kind: SupportedFileKind) {
+        RecentFiles.clear(kind: kind)
+        refreshRecents()
+    }
+
+    private func explain(_ error: RecentFileError) -> String {
+        switch error {
+        case .emptyName: return strings[.errRenameEmpty]
+        case .alreadyExists(let name): return strings(.errNameTaken, name)
+        case .failed(let reason): return strings(.errRenameFailed, reason)
         }
     }
 
