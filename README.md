@@ -19,6 +19,9 @@ Sin cuentas, sin servidor, sin telemetría. Todo local.
 Arrastra un archivo a la ventana —o al icono de la app en el Dock— y la app se coloca sola en la
 pestaña que toca. También funciona con «Abrir con» desde el Finder.
 
+Español e inglés, con el selector de bandera arriba a la derecha. El idioma se recuerda entre
+sesiones y arranca según el del sistema.
+
 ## Instalar
 
 ```bash
@@ -60,6 +63,17 @@ HOMEBREW_CASK_OPTS=--no-quarantine brew install --cask gcenx/wine/game-porting-t
 
 Choca con `wine-stable`, así que hay que desinstalar ese antes. La app trae una hoja con estas
 opciones y la orden lista para copiar: está en el aviso «Falta Wine».
+
+## Lo que la app te dice antes de que pierdas el tiempo
+
+**Qué extractor abrirá tu archivo, y por qué.** Es la decisión menos evidente que toma y la que más
+daño hace si se equivoca.
+
+**Si tu `.exe` es de 32 o 64 bits**, leído de su cabecera PE. Los Wine que funcionan hoy en Mac con
+chip Apple son solo de 64 bits, así que un programa de 32 no va a arrancar: mejor saberlo antes de
+esperar dos minutos a que se cree el entorno de Windows.
+
+**Si el comprimido está partido en varias partes o pide contraseña**, antes de intentar extraerlo.
 
 ## Detalles que importan
 
