@@ -3,10 +3,9 @@ import UniformTypeIdentifiers
 
 public enum FileActions {
     @MainActor
-    public static func chooseFile(kind: SupportedFileKind) -> URL? {
+    public static func chooseFile(kind: SupportedFileKind, title: String) -> URL? {
         let panel = NSOpenPanel()
-        panel.title = kind == .exe ? "Elegir programa de Windows" : "Elegir archivo comprimido"
-        panel.prompt = "Elegir"
+        panel.title = title
         panel.allowsMultipleSelection = false
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
@@ -18,10 +17,9 @@ public enum FileActions {
     }
 
     @MainActor
-    public static func chooseDirectory(startingAt directory: URL? = nil) -> URL? {
+    public static func chooseDirectory(startingAt directory: URL? = nil, title: String) -> URL? {
         let panel = NSOpenPanel()
-        panel.title = "Elegir carpeta de destino"
-        panel.prompt = "Guardar aquí"
+        panel.title = title
         panel.allowsMultipleSelection = false
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
@@ -31,11 +29,9 @@ public enum FileActions {
     }
 
     @MainActor
-    public static func chooseWine() -> URL? {
+    public static func chooseWine(title: String) -> URL? {
         let panel = NSOpenPanel()
-        panel.title = "Elegir Wine"
-        panel.message = "Selecciona el ejecutable «wine» o una app como «Wine Stable.app»."
-        panel.prompt = "Usar este Wine"
+        panel.title = title
         panel.allowsMultipleSelection = false
         panel.canChooseFiles = true
         panel.canChooseDirectories = true
@@ -50,7 +46,6 @@ public enum FileActions {
         NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
-    /// Abre la carpeta en el Finder.
     @MainActor
     public static func openInFinder(_ url: URL) {
         NSWorkspace.shared.open(url)

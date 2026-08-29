@@ -11,6 +11,16 @@ public enum Preferences {
         static let extractIntoSubfolder = "extractIntoSubfolder"
         static let customWinePath = "customWinePath"
         static let lastDestinationPath = "lastDestinationPath"
+        static let language = "language"
+    }
+
+    public static var language: Language {
+        get {
+            guard let raw = defaults.string(forKey: Key.language),
+                  let language = Language(rawValue: raw) else { return .systemDefault }
+            return language
+        }
+        set { defaults.set(newValue.rawValue, forKey: Key.language) }
     }
 
     public static var overwritePolicy: OverwritePolicy {
