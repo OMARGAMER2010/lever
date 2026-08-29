@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Compila EXE & RAR y arma el bundle .app en dist/.
+# Compila Palanca y arma el bundle .app en dist/.
 #
 # OJO: `swift build --show-bin-path` NO compila, solo imprime la ruta. Usarlo como único paso
 # hacía que el .app se quedara con un binario viejo de .build/ y la ventana saliera vacía.
@@ -10,13 +10,13 @@ set -euo pipefail
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$project_root"
 
-app_path="$project_root/dist/EXE-RAR.app"
+app_path="$project_root/dist/Palanca.app"
 
 echo "▸ Compilando (release)…"
-swift build -c release --product ExeRar
+swift build -c release --product Palanca
 
-bin_dir="$(swift build -c release --product ExeRar --show-bin-path)"
-binary="$bin_dir/ExeRar"
+bin_dir="$(swift build -c release --product Palanca --show-bin-path)"
+binary="$bin_dir/Palanca"
 
 if [[ ! -x "$binary" ]]; then
     echo "✗ No se generó el binario en $binary" >&2
@@ -37,11 +37,11 @@ iconutil -c icns Resources/AppIcon.iconset -o Resources/AppIcon.icns
 echo "▸ Armando el bundle…"
 rm -rf "$app_path"
 mkdir -p "$app_path/Contents/MacOS" "$app_path/Contents/Resources"
-cp "$binary" "$app_path/Contents/MacOS/ExeRar"
+cp "$binary" "$app_path/Contents/MacOS/Palanca"
 cp "$project_root/Resources/Info.plist" "$app_path/Contents/Info.plist"
 cp "$project_root/Resources/AppIcon.icns" "$app_path/Contents/Resources/AppIcon.icns"
 printf 'APPL????' > "$app_path/Contents/PkgInfo"
-chmod +x "$app_path/Contents/MacOS/ExeRar"
+chmod +x "$app_path/Contents/MacOS/Palanca"
 
 # Sin este atributo, Gatekeeper trata la app como descargada y pide permiso al abrirla.
 xattr -cr "$app_path" 2>/dev/null || true

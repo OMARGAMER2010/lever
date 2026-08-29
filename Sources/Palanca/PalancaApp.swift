@@ -1,16 +1,26 @@
 import AppKit
 import SwiftUI
-import ExeRarCore
+import PalancaCore
 
 @main
-struct ExeRarApp: App {
+struct PalancaApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
-    @StateObject private var model = AppModel()
+    @StateObject private var model = PalancaApp.makeModel()
+
+    /// La app se llamaba «EXE & RAR». Sus datos —el entorno de Windows sobre todo— viven bajo el
+    /// nombre viejo, así que se recolocan antes de que el modelo lea nada.
+    ///
+    /// Va aquí y no en `AppModel.init` porque es un asunto del ciclo de vida de la app: metido en
+    /// el modelo, cada prueba que construye un `AppModel` movería carpetas del usuario de verdad.
+    private static func makeModel() -> AppModel {
+        Migration.runIfNeeded()
+        return AppModel()
+    }
 
     var body: some Scene {
         // `Window` y no `WindowGroup`: esta es una utilidad de una sola ventana. Con `WindowGroup`,
         // abrir un archivo desde el Finder creaba una segunda ventana duplicada.
-        Window("EXE & RAR", id: "principal") {
+        Window("Palanca", id: "principal") {
             ContentView(model: model)
                 .frame(minWidth: 700, minHeight: 620)
                 .onAppear { delegate.model = model }

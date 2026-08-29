@@ -1,5 +1,5 @@
 import SwiftUI
-import ExeRarCore
+import PalancaCore
 
 struct ContentView: View {
     @ObservedObject var model: AppModel

@@ -1,5 +1,5 @@
 import SwiftUI
-import ExeRarCore
+import PalancaCore
 
 /// Barra fija sobre el registro de actividad. La acción principal nunca se pierde al hacer scroll.
 ///

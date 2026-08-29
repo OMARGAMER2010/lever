@@ -1,5 +1,5 @@
 import SwiftUI
-import ExeRarCore
+import PalancaCore
 
 /// Hoja que explica cómo conseguir Wine. No hay una única respuesta buena en un Mac con chip
 /// Apple, así que se enseñan las opciones reales con la orden lista para copiar.

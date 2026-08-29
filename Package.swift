@@ -2,18 +2,18 @@
 import PackageDescription
 
 let package = Package(
-    name: "ExeRar",
+    name: "Palanca",
     platforms: [.macOS(.v13)],
     products: [
-        .executable(name: "ExeRar", targets: ["ExeRar"])
+        .executable(name: "Palanca", targets: ["Palanca"])
     ],
     targets: [
-        .target(name: "ExeRarCore"),
-        .executableTarget(name: "ExeRar", dependencies: ["ExeRarCore"]),
+        .target(name: "PalancaCore"),
+        .executableTarget(name: "Palanca", dependencies: ["PalancaCore"]),
         .executableTarget(
-            name: "ExeRarTests",
-            dependencies: ["ExeRarCore"],
-            path: "Tests/ExeRarTests"
+            name: "PalancaTests",
+            dependencies: ["PalancaCore"],
+            path: "Tests/PalancaTests"
         )
     ]
 )

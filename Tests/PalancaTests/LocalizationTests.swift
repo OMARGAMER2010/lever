@@ -1,5 +1,5 @@
 import Foundation
-import ExeRarCore
+import PalancaCore
 
 enum LocalizationTests {
     static func run() throws {

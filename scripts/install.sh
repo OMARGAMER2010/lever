@@ -7,11 +7,11 @@ cd "$project_root"
 
 bash scripts/build-app.sh
 
-destination="$HOME/Desktop/EXE & RAR.app"
+destination="$HOME/Desktop/Palanca.app"
 
 echo "▸ Instalando en el Escritorio…"
 rm -rf "$destination"
-cp -R "$project_root/dist/EXE-RAR.app" "$destination"
+cp -R "$project_root/dist/Palanca.app" "$destination"
 xattr -cr "$destination" 2>/dev/null || true
 
 # Refresca la caché de iconos del Finder para que se vea el nuevo de inmediato.

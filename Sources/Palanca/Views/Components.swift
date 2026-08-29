@@ -1,6 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
-import ExeRarCore
+import PalancaCore
 
 /// Zona para soltar archivos.
 ///

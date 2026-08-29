@@ -1,11 +1,15 @@
 <div align="center">
 
-# EXE & RAR
+# Palanca
 
 **Abre archivos `.exe` de Windows y descomprime `.rar` en tu Mac.**
 Sin cuentas, sin servidor, sin telemetría. Todo local.
 
 </div>
+
+> **El nombre.** Haces palanca para abrir un cajón clavado: eso es descomprimir. Y *tener palanca*
+> es tener el contacto que te abre una puerta cerrada: eso es lo que hace Wine con un `.exe`.
+> Los dos significados son reales y los dos son ciertos aquí.
 
 ---
 
@@ -28,12 +32,12 @@ sesiones y arranca según el del sistema.
 bash scripts/install.sh
 ```
 
-Compila la app, genera el icono y deja `EXE & RAR.app` en el Escritorio, lista para abrir con doble
+Compila la app, genera el icono y deja `Palanca.app` en el Escritorio, lista para abrir con doble
 clic. Si prefieres solo construirla en `dist/`:
 
 ```bash
 bash scripts/build-app.sh
-open dist/EXE-RAR.app
+open dist/Palanca.app
 ```
 
 ## Requisitos
@@ -83,7 +87,7 @@ abre todos. Para el resto de formatos manda `7zz`, que es más rápido, cubre m�
 progreso. Si el primero falla, la app reintenta sola con el otro.
 
 **Wine se ejecuta en un entorno aparte.** La app crea su propio «disco C:» en
-`~/Library/Application Support/ExeRar/wine`, así que no pisa un `~/.wine` que ya tuvieras. Se puede
+`~/Library/Application Support/Palanca/wine`, así que no pisa un `~/.wine` que ya tuvieras. Se puede
 abrir, configurar o borrar desde el menú de herramientas.
 
 **macOS bloquea Wine si viene de Homebrew.** Los `.cask` se marcan como descargados de internet y
@@ -96,7 +100,7 @@ comprimido con contraseña falla con un error legible en vez de quedarse esperan
 ## Desarrollo
 
 ```bash
-swift run ExeRarTests    # suite completa, incluidas pruebas de extracción reales
+swift run PalancaTests    # suite completa, incluidas pruebas de extracción reales
 swift build
 ```
 
@@ -105,8 +109,8 @@ incluyen XCTest. Las de integración se saltan solas si no hay extractores insta
 
 ```
 Sources/
-  ExeRarCore/     Lógica: localizar herramientas, construir órdenes, lanzar procesos
-  ExeRar/         Interfaz SwiftUI
+  PalancaCore/     Lógica: localizar herramientas, construir órdenes, lanzar procesos
+  Palanca/        Interfaz SwiftUI
 scripts/
   build-app.sh    Compila y arma el .app
   install.sh      Lo anterior + copia al Escritorio

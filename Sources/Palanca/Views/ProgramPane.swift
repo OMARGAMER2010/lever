@@ -1,5 +1,5 @@
 import SwiftUI
-import ExeRarCore
+import PalancaCore
 
 /// Pestaña «Programas»: elegir un .exe o .msi y lanzarlo con Wine.
 struct ProgramPane: View {

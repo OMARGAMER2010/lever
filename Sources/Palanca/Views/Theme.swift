@@ -1,5 +1,5 @@
 import SwiftUI
-import ExeRarCore
+import PalancaCore
 
 /// Tokens visuales, con el motivo de cada uno.
 ///

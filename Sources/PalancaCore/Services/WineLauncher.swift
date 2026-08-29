@@ -11,7 +11,7 @@ public enum WineLauncher {
     public static var prefixURL: URL {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
-        return support.appendingPathComponent("ExeRar/wine", isDirectory: true)
+        return support.appendingPathComponent("Palanca/wine", isDirectory: true)
     }
 
     /// `true` cuando el prefijo no existe **o quedó a medias**.

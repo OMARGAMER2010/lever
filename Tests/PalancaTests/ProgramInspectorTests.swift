@@ -1,5 +1,5 @@
 import Foundation
-import ExeRarCore
+import PalancaCore
 
 enum ProgramInspectorTests {
     static func run() throws {

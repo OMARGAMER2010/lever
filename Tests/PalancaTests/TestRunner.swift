@@ -2,7 +2,7 @@ import Darwin
 import Foundation
 
 @main
-struct ExeRarTests {
+struct PalancaTests {
     static func main() async {
         do {
             try LocalizationTests.run()
@@ -20,7 +20,7 @@ struct ExeRarTests {
             print("PASS AppModelTests")
             print("PASS ExtractionIntegrationTests")
         } catch {
-            fputs("FAIL ExeRarTests: \(error)\n", stderr)
+            fputs("FAIL PalancaTests: \(error)\n", stderr)
             exit(1)
         }
     }

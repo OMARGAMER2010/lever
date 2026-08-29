@@ -1,4 +1,4 @@
-// Genera el icono de EXE & RAR y lo exporta como .iconset listo para `iconutil`.
+// Genera el icono de Palanca y lo exporta como .iconset listo para `iconutil`.
 //
 // El símbolo: una caja abierta —la tapa separada del cuerpo— con un triángulo de reproducción
 // dentro. La tapa levantada dice «descomprimir»; el triángulo dice «ejecutar».
