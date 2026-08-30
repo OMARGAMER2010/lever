@@ -18,6 +18,7 @@ Sin cuentas, sin servidor, sin telemetría. Todo local.
 | | |
 |---|---|
 | **Programas** | Ejecuta `.exe` y `.msi` de Windows a través de Wine, en un entorno propio que no toca nada más de tu Mac. |
+| **Juegos nativos** | Hay `.exe` que solo son un envoltorio: en Godot el juego vive en el `.pck` de al lado, en Ren'Py son guiones de Python y en LÖVE va pegado al final del propio `.exe`. Esos archivos sirven igual en Mac. La app los junta con el motor oficial de macOS y te deja un `.app` nativo, sin Wine y sin Rosetta. |
 | **Comprimidos** | Extrae `.rar`, `.zip`, `.7z`, `.tar`, `.iso`, `.cab` y compañía. Admite contraseñas y nunca borra el original. |
 | **Android** | Ejecuta un `.apk` en el propio Mac, dentro de un emulador que la app monta y arranca sola. También sirve un móvil enchufado por USB. |
 

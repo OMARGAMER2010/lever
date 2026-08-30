@@ -11,6 +11,7 @@ public final class AppModel: ObservableObject {
     private var programSession: ProcessSession?
     private var extractionSession: ProcessSession?
     private var installSession: ProcessSession?
+    private var portSession: ProcessSession?
 
     // MARK: - Idioma
 
@@ -32,11 +33,21 @@ public final class AppModel: ObservableObject {
     @Published public var selectedProgram: URL? {
         didSet {
             programArchitecture = selectedProgram.map(ProgramInspector.architecture(of:)) ?? .unknown
+            portableGame = nil
+            inspectPortable()
         }
     }
     @Published public private(set) var programArchitecture: ProgramArchitecture = .unknown
     @Published public private(set) var isRunningProgram = false
     @Published public private(set) var isPreparingWindows = false
+
+    /// Lo que se sabe del `.exe` cuando resulta ser un juego hecho con Godot. Que no sea `nil`
+    /// cambia por completo lo que conviene ofrecer: no hay que emular nada, hay que rehacer la app.
+    @Published public private(set) var portableGame: PortableEngine?
+    @Published public private(set) var isPorting = false
+    @Published public private(set) var portStageMessage = ""
+    /// Compilar la parte que falta de un complemento nativo tarda y ocupa. Se pregunta antes.
+    @Published public var buildsMissingExtensions = true
     /// macOS bloquea Wine si viene marcado como descargado. Se detecta al arrancar.
     @Published public private(set) var wineIsBlocked = false
     @Published public private(set) var isUnblockingWine = false
@@ -112,6 +123,7 @@ public final class AppModel: ObservableObject {
     public var isBusy: Bool {
         isRunningProgram || isExtracting || isInstallingTools || isPreparingWindows
             || isRunningApk || isScanningDevices || isUninstalling || isSettingUpEmulator
+            || isPorting
     }
 
     // MARK: - Lo que la app sabe del archivo elegido
@@ -352,6 +364,7 @@ public final class AppModel: ObservableObject {
 
     public func clearProgram() {
         selectedProgram = nil
+        portableGame = nil
     }
 
     public func selectArchive() {
@@ -604,6 +617,147 @@ public final class AppModel: ObservableObject {
     public func stopProgram() {
         programSession?.cancel()
         add(strings[.logStopping], level: .warning)
+    }
+
+    // MARK: - Juegos que pueden correr nativos
+
+    /// Reconocer el motor implica leer índices con miles de entradas. Va fuera del hilo principal
+    /// para que la ventana no se quede tiesa al soltar un juego de trescientos megas.
+    private func inspectPortable() {
+        guard let program = selectedProgram, SupportedFileKind.exe.accepts(program) else { return }
+        Task { [weak self] in
+            let found = await Task.detached { PortableEngineDetector.detect(program: program) }.value
+            guard let self, self.selectedProgram == program, let found else { return }
+            self.portableGame = found
+            self.add(self.strings(.logPortableDetected, found.displayName), level: .info)
+        }
+    }
+
+    /// Hay un motor reconocido, es de una versión contemplada y no hay nada más en marcha.
+    public var canMakeNativeApp: Bool {
+        guard let portableGame, portableGame.isSupported else { return false }
+        return !isBusy
+    }
+
+    /// El motor de esta versión ya está guardado de otra vez: no hay descarga por delante.
+    public var portableRuntimeIsCached: Bool {
+        portableGame?.runtimeIsCached(in: PortLibrary.shared) ?? false
+    }
+
+    /// Partes nativas sin su versión de macOS, con lo que Lever puede hacer con cada una.
+    public var portableUnresolvedParts: [(name: String, recipe: NativePartRecipe?)] {
+        (portableGame?.unresolvedParts ?? []).map { ($0, NativePartRecipe.recipe(forAddon: $0)) }
+    }
+
+    /// Crea el `.app` nativo. El juego original no se toca en ningún momento.
+    public func makeNativeApp() {
+        guard let game = portableGame, !isPorting else { return }
+        guard game.isSupported else {
+            showError(strings(game.unsupportedKey, game.runtimeVersionText))
+            return
+        }
+
+        let needed = game.requiredBytes(
+            cached: game.runtimeIsCached(in: PortLibrary.shared),
+            buildingParts: buildsMissingExtensions
+        )
+        if let free = freeDiskBytes, free < needed {
+            showError(strings(.errPortNoSpace, ByteCountFormatter.string(fromByteCount: needed, countStyle: .file)))
+            return
+        }
+
+        clearError()
+        let session = ProcessSession()
+        portSession = session
+        isPorting = true
+        activityMessage = strings[.statusPorting]
+        showPort(stage: .reading)
+
+        let destination = desktopURL
+        let buildParts = buildsMissingExtensions
+
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let outcome = try await NativePorter.makeApp(
+                    for: game,
+                    into: destination,
+                    buildMissingParts: buildParts,
+                    runner: runner,
+                    session: session,
+                    scriptProvider: { Bundle.main.url(forResource: $0, withExtension: "sh") },
+                    onStage: { stage in Task { @MainActor [weak self] in self?.showPort(stage: stage) } },
+                    onLine: { line in Task { @MainActor [weak self] in self?.addOutput(line) } }
+                )
+                finishPort(outcome: outcome)
+            } catch PortFailure.cancelled {
+                isPorting = false
+                activityMessage = strings[.statusStopped]
+                add(strings[.statusStopped], level: .warning)
+            } catch let failure as PortFailure {
+                isPorting = false
+                activityMessage = strings[.statusFailed]
+                showError(describe(failure))
+            } catch {
+                isPorting = false
+                activityMessage = strings[.statusFailed]
+                showError(error.localizedDescription)
+            }
+            portSession = nil
+            portStageMessage = ""
+        }
+    }
+
+    public func stopPorting() {
+        portSession?.cancel()
+        add(strings[.logStopping], level: .warning)
+    }
+
+    private func finishPort(outcome: PortOutcome) {
+        isPorting = false
+        activityMessage = strings[.statusPortDone]
+        lastSuccessFolder = outcome.app
+        add(strings(.logPorted, outcome.app.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")),
+            level: .success)
+        // Decirlo aunque la app ya esté hecha: un juego que abre y peta en el primer vídeo sin
+        // explicación es peor que un aviso claro por adelantado.
+        if !outcome.unresolvedParts.isEmpty {
+            add(strings(.logPortUnresolved, outcome.unresolvedParts.joined(separator: ", ")), level: .warning)
+        }
+        if revealWhenDone { FileActions.reveal(outcome.app) }
+    }
+
+    private func showPort(stage: PortStage) {
+        let text: String
+        switch stage {
+        case .downloadingRuntime(let version): text = strings(stage.textKey, version)
+        case .buildingPart(let name): text = strings(stage.textKey, name)
+        default: text = strings[stage.textKey]
+        }
+        portStageMessage = text
+        activityMessage = text
+        add(text, level: .info)
+    }
+
+    private func describe(_ failure: PortFailure) -> String {
+        switch failure {
+        case .downloadFailed(let code): return strings(failure.textKey, String(code))
+        case .assemblyFailed(let reason): return strings(failure.textKey, reason)
+        case .notEnoughSpace(let bytes):
+            return strings(failure.textKey, ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file))
+        default: return strings[failure.textKey]
+        }
+    }
+
+    private var desktopURL: URL {
+        fileManager.urls(for: .desktopDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Desktop", isDirectory: true)
+    }
+
+    private var freeDiskBytes: Int64? {
+        guard let values = try? URL(fileURLWithPath: NSHomeDirectory())
+            .resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]) else { return nil }
+        return values.volumeAvailableCapacityForImportantUsage
     }
 
     private func finishProgram(message: String, level: LogLevel) {

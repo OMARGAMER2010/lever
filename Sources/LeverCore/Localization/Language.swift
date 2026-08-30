@@ -85,6 +85,18 @@ public enum TextKey: String, CaseIterable, Sendable {
     // Hechos del programa
     case arch64, arch32, archArm, archUnknown, arch32Warning, arch32Title
 
+    // Juegos hechos con Godot
+    case portableTitle, portableBodyGodot, portableMakeApp, portablePorting, portableWhereItGoes
+    case portablePartsNeeded, portableBuildParts, recipeGozen, portablePartUnknown
+    case portableUnsupportedGodot, portableRuntimeCached, portableRuntimeDownload
+    case portableBodyRenpy, portableUnsupportedRenpy, portableRosettaNote
+    case portableBodyLove, portableUnsupportedLove
+    case portStageReading, portStageDownloading, portStageUnpacking
+    case portStageBuilding, portStageAssembling, portStageSigning
+    case logPortableDetected, logPorted, logPortUnresolved
+    case errPortEngine, errPortNoSpace, errPortDownload, errPortRuntime, errPortAssembly
+    case statusPorting, statusPortDone
+
     // Android: hechos del .apk
     case apkMinAndroid, apkMinApi, apkNoNativeCode
     case apkSplitTitle, apkSplitBody, apkUnreadableTitle, apkUnreadableBody
