@@ -69,15 +69,38 @@ public struct NodeNativeModule: Equatable, Sendable {
     public let version: String?
     /// Ruta del `.node`, relativa a la carpeta `resources/` del reparto.
     public let relativePath: String
+    /// `owner/repo` de GitHub, del `repository` de su `package.json`. Es donde `prebuild-install`
+    /// va a buscar los binarios ya compilados, así que sin esto no hay de dónde bajar nada.
+    public let repository: String?
 
-    public init(name: String, version: String?, relativePath: String) {
+    public init(name: String, version: String?, relativePath: String, repository: String?) {
         self.name = name
         self.version = version
         self.relativePath = relativePath
+        self.repository = repository
     }
 
     /// Como se enseña en el panel: «better-sqlite3 12.2.0» o solo el nombre si no se supo.
     public var label: String { version.map { "\(name) \($0)" } ?? name }
+
+    /// Nombre del archivo del prebuild, con la convención de `prebuild-install`:
+    /// `<módulo>-v<versión>-<runtime>-v<abi>-<plataforma>-<arquitectura>.tar.gz`.
+    ///
+    /// El ámbito del paquete no entra en el nombre —`@scope/cosa` publica `cosa-v…`—, que es la
+    /// convención de la herramienta; en el proyecto no hay ningún caso con ámbito con el que
+    /// haberlo comprobado, así que va anotado.
+    public func prebuildAssetName(abi: Int, appleSilicon: Bool) -> String? {
+        guard let version else { return nil }
+        let corto = name.split(separator: "/").last.map(String.init) ?? name
+        return "\(corto)-v\(version)-electron-v\(abi)-darwin-\(appleSilicon ? "arm64" : "x64").tar.gz"
+    }
+
+    /// Los prebuilds viven en las publicaciones del propio módulo, bajo la etiqueta `v<versión>`.
+    public func prebuildURL(abi: Int, appleSilicon: Bool) -> URL? {
+        guard let repository, let version, let archivo = prebuildAssetName(abi: abi, appleSilicon: appleSilicon)
+        else { return nil }
+        return URL(string: "https://github.com/\(repository)/releases/download/v\(version)/\(archivo)")
+    }
 }
 
 /// Retrato de un `.exe` que resultó ser un juego hecho con Electron.

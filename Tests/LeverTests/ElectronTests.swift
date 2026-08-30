@@ -13,6 +13,9 @@ enum ElectronTests {
         try recognisesAPackagedGame()
         try trustsTheVersionFileOverTheExecutable()
         try findsNativeModulesAndTheirVersions()
+        try readsTheRepositoryFieldInAnyOfItsForms()
+        try namesTheNodePrebuild()
+        try resolvesTheNodeAbiFromTheRegistry()
         try renamesTheNestedHelpers()
         try infoPlistKeepsWhatChromiumNeeds()
     }
@@ -125,6 +128,15 @@ enum ElectronTests {
         try expect(game.nativeModules.map(\.label) == ["better-sqlite3 12.2.0"],
                    "el nombre sale de la ruta y la versión del package.json de dentro del asar: "
                    + "\(game.nativeModules.map(\.label))")
+        try expect(game.nativeModules.first?.repository == "WiseLibs/better-sqlite3",
+                   "y el repositorio, que es donde estarán los prebuilds")
+        // Antes de empezar no se sabe si hay binario publicado para esta combinación: averiguarlo
+        // pide red. Prometer aquí que va a faltar sería mentir la mitad de las veces.
+        guard case .electron = PortableEngineDetector.detect(program: exe) else {
+            throw TestFailure(description: "debería seguir siendo de Electron")
+        }
+        try expect(PortableEngineDetector.detect(program: exe)?.unresolvedParts == [],
+                   "el panel no promete que falten: lo dice el traslado cuando ya lo sabe")
 
         // Un paquete con ámbito ocupa dos segmentos de ruta, no uno.
         try expect(ElectronInspector.moduleName(inPath: "node_modules/@scope/cosa/build/x.node")
@@ -133,6 +145,75 @@ enum ElectronTests {
                    "manda el último node_modules: un módulo anidado es suyo, no del de fuera")
         try expect(ElectronInspector.moduleName(inPath: "build/Release/suelto.node") == nil,
                    "sin node_modules no se puede decir de quién es")
+    }
+
+    /// El campo `repository` de npm admite media docena de formas y de él depende saber dónde
+    /// están los prebuilds. Si no se saca, no hay de dónde bajar nada.
+    static func readsTheRepositoryFieldInAnyOfItsForms() throws {
+        let casos: [(Any, String?)] = [
+            ("WiseLibs/better-sqlite3", "WiseLibs/better-sqlite3"),
+            ("github:WiseLibs/better-sqlite3", "WiseLibs/better-sqlite3"),
+            (["url": "git://github.com/WiseLibs/better-sqlite3.git"], "WiseLibs/better-sqlite3"),
+            (["type": "git", "url": "git+https://github.com/WiseLibs/better-sqlite3.git"],
+             "WiseLibs/better-sqlite3"),
+            // Un repositorio fuera de GitHub no da ninguna dirección de prebuild que pedir.
+            (["url": "https://gitlab.com/otro/cosa.git"], nil),
+            ("sinbarra", nil)
+        ]
+        for (valor, esperado) in casos {
+            let salida = ElectronInspector.repository(in: ["repository": valor])
+            try expect(salida == esperado, "de \(valor) salía \(salida ?? "nil"), se esperaba \(esperado ?? "nil")")
+        }
+        try expect(ElectronInspector.repository(in: ["name": "x"]) == nil, "sin repository, nada")
+    }
+
+    /// La convención de `prebuild-install`, que es la que usan los módulos al publicar:
+    /// `<módulo>-v<versión>-<runtime>-v<abi>-<plataforma>-<arquitectura>.tar.gz`, bajo la etiqueta
+    /// `v<versión>` de sus publicaciones.
+    static func namesTheNodePrebuild() throws {
+        let modulo = NodeNativeModule(name: "better-sqlite3", version: "12.11.1",
+                                      relativePath: "app.asar.unpacked/node_modules/better-sqlite3/x.node",
+                                      repository: "WiseLibs/better-sqlite3")
+        try expect(modulo.prebuildAssetName(abi: 146, appleSilicon: true)
+                    == "better-sqlite3-v12.11.1-electron-v146-darwin-arm64.tar.gz",
+                   "el archivo: \(modulo.prebuildAssetName(abi: 146, appleSilicon: true) ?? "nil")")
+        try expect(modulo.prebuildURL(abi: 146, appleSilicon: true)?.absoluteString
+                    == "https://github.com/WiseLibs/better-sqlite3/releases/download/v12.11.1/"
+                     + "better-sqlite3-v12.11.1-electron-v146-darwin-arm64.tar.gz",
+                   "la dirección: \(modulo.prebuildURL(abi: 146, appleSilicon: true)?.absoluteString ?? "nil")")
+
+        // Sin repositorio no hay dónde mirar, y sin versión no hay etiqueta que pedir.
+        let sinRepo = NodeNativeModule(name: "x", version: "1.0.0", relativePath: "x.node", repository: nil)
+        try expect(sinRepo.prebuildURL(abi: 146, appleSilicon: true) == nil, "sin repositorio, ninguna")
+        let sinVersion = NodeNativeModule(name: "x", version: nil, relativePath: "x.node", repository: "a/b")
+        try expect(sinVersion.prebuildURL(abi: 146, appleSilicon: true) == nil, "sin versión, tampoco")
+
+        // La identidad de una parte lleva el ABI dentro: confundir un binario de un ABI con el de
+        // otro no da error al montar, solo al arrancar, que es lo peor que puede pasar.
+        let a = NativePart(name: "m", version: "1", platform: "macos-arm64", abi: 146,
+                           download: nil, fileName: "a")
+        let b = NativePart(name: "m", version: "1", platform: "macos-arm64", abi: 148,
+                           download: nil, fileName: "a")
+        try expect(a.cacheKey != b.cacheKey, "dos ABIs no pueden compartir carpeta en la caché")
+        let sinAbi = NativePart(name: "m", version: "1", platform: "macos-arm64", abi: nil,
+                                download: nil, fileName: "a")
+        try expect(sinAbi.cacheKey == "m-1-macos-arm64", "sin ABI la clave son tres señas: \(sinAbi.cacheKey)")
+    }
+
+    /// El ABI depende solo del número mayor de Electron. El registro guarda una fila por mayor,
+    /// etiquetada con su primera alfa.
+    static func resolvesTheNodeAbiFromTheRegistry() throws {
+        let registro = Data("""
+        [{"runtime":"node","target":"24.0.0","abi":"137","lts":false,"future":false},
+         {"runtime":"electron","target":"42.0.0-alpha.1","abi":"146","lts":false,"future":false},
+         {"runtime":"electron","target":"43.0.0-alpha.1","abi":"148","lts":false,"future":false}]
+        """.utf8)
+        try expect(NodeAbi.forElectron(major: 42, registry: registro) == 146, "Electron 42 usa el ABI 146")
+        try expect(NodeAbi.forElectron(major: 43, registry: registro) == 148, "y la 43 el 148")
+        // Una versión que el registro no conoce no se adivina: sin ABI no se baja nada.
+        try expect(NodeAbi.forElectron(major: 99, registry: registro) == nil, "de una que no está, nada")
+        try expect(NodeAbi.forElectron(major: 42, registry: Data("no soy json".utf8)) == nil,
+                   "y un registro roto no debería reventar nada")
     }
 
     // MARK: - Montaje
@@ -226,8 +307,10 @@ enum ElectronTests {
         ]
         var desempaquetados: [String] = []
         if conModuloNativo {
-            dentro["node_modules/better-sqlite3/package.json"] =
-                Data(#"{"name":"better-sqlite3","version":"12.2.0"}"#.utf8)
+            dentro["node_modules/better-sqlite3/package.json"] = Data(#"""
+                {"name":"better-sqlite3","version":"12.2.0",
+                 "repository":{"type":"git","url":"git://github.com/WiseLibs/better-sqlite3.git"}}
+                """#.utf8)
             desempaquetados.append("node_modules/better-sqlite3/build/Release/better_sqlite3.node")
             let suelto = resources
                 .appendingPathComponent("app.asar.unpacked/node_modules/better-sqlite3/build/Release",

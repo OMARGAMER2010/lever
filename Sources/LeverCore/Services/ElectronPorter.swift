@@ -78,10 +78,17 @@ public enum ElectronPorter {
         )
         if session.isCancelled { throw PortFailure.cancelled }
 
+        let (resueltos, sinResolver) = try await ensureNativeModules(
+            for: game, runner: runner, session: session,
+            library: library, fileManager: fileManager, onLine: onLine
+        )
+        if session.isCancelled { throw PortFailure.cancelled }
+
         onStage(.assembling)
         let destination = PortPaths.freeAppURL(named: game.suggestedAppName, in: folder, fileManager: fileManager)
         do {
-            try assemble(game: game, engine: engine, at: destination, fileManager: fileManager, onLine: onLine)
+            try assemble(game: game, engine: engine, modules: resueltos, unresolved: sinResolver,
+                         at: destination, fileManager: fileManager, onLine: onLine)
         } catch {
             try? fileManager.removeItem(at: destination)
             throw PortFailure.assemblyFailed(error.localizedDescription)
@@ -91,7 +98,86 @@ public enum ElectronPorter {
         onStage(.signing)
         await PortSigning.signNested(app: destination, runner: runner, session: session)
 
-        return PortOutcome(app: destination, unresolvedParts: game.windowsModules)
+        return PortOutcome(app: destination, unresolvedParts: sinResolver)
+    }
+
+    /// Consigue la versión de macOS de cada módulo nativo que trae el juego.
+    ///
+    /// Lo que hace falta saber antes de nada es el ABI, porque un `.node` compilado para otro no
+    /// carga: sale del registro de `node-abi` a partir del número mayor de Electron. Si no se puede
+    /// averiguar, no se inventa: los módulos se quedan sin resolver y se dicen.
+    private static func ensureNativeModules(
+        for game: ElectronGame,
+        runner: ProcessRunner,
+        session: ProcessSession,
+        library: PortLibrary,
+        fileManager: FileManager,
+        onLine: @Sendable @escaping (String) -> Void
+    ) async throws -> (resueltos: [(modulo: NodeNativeModule, contenido: URL)], sinResolver: [String]) {
+        guard !game.nativeModules.isEmpty else { return ([], []) }
+
+        guard let abi = try await nodeAbi(for: game, runner: runner, session: session,
+                                          library: library, fileManager: fileManager, onLine: onLine) else {
+            return ([], game.nativeModules.map(\.label))
+        }
+
+        var resueltos: [(modulo: NodeNativeModule, contenido: URL)] = []
+        var sinResolver: [String] = []
+        for modulo in game.nativeModules {
+            guard let version = modulo.version,
+                  let archivo = modulo.prebuildAssetName(abi: abi, appleSilicon: game.appleSilicon) else {
+                sinResolver.append(modulo.label)
+                continue
+            }
+            let parte = NativePart(
+                name: modulo.name, version: version,
+                platform: game.appleSilicon ? "macos-arm64" : "macos-x64",
+                abi: abi,
+                download: modulo.prebuildURL(abi: abi, appleSilicon: game.appleSilicon),
+                fileName: archivo
+            )
+            let resultado = try await NativeParts.obtain(
+                parte, runner: runner, session: session, library: library,
+                fileManager: fileManager, onLine: onLine
+            )
+            guard let tar = resultado.file else { sinResolver.append(modulo.label); continue }
+
+            // El prebuild viene en `.tar.gz` con un `build/Release/<algo>.node` dentro. Se despliega
+            // una vez y se deja desplegado en la caché: así el siguiente juego que use el mismo
+            // módulo, versión y ABI no vuelve ni a bajarlo ni a desempaquetarlo.
+            let contenido = tar.deletingLastPathComponent().appendingPathComponent("contenido", isDirectory: true)
+            if !fileManager.fileExists(atPath: contenido.path) {
+                try? fileManager.createDirectory(at: contenido, withIntermediateDirectories: true)
+                _ = try? await runner.run(PortCommands.untar(tar, into: contenido),
+                                          session: session, onLine: onLine)
+            }
+            resueltos.append((modulo, contenido))
+        }
+        return (resueltos, sinResolver)
+    }
+
+    /// El ABI de Node de esta versión de Electron.
+    ///
+    /// El registro se vuelve a bajar cada vez porque pesa ocho kilobytes y porque tenerlo escrito
+    /// a mano envejece: una versión de Electron nueva no estaría. Si no hay red se usa la copia
+    /// guardada, y si tampoco la hay se devuelve `nil` en vez de adivinar.
+    private static func nodeAbi(
+        for game: ElectronGame,
+        runner: ProcessRunner,
+        session: ProcessSession,
+        library: PortLibrary,
+        fileManager: FileManager,
+        onLine: @Sendable @escaping (String) -> Void
+    ) async throws -> Int? {
+        let carpeta = library.nativePartURL(key: "node-abi")
+        let archivo = carpeta.appendingPathComponent("abi_registry.json")
+        try? fileManager.createDirectory(at: carpeta, withIntermediateDirectories: true)
+        let descarga = try? await runner.run(
+            PortCommands.download(NodeAbi.registryURL, into: archivo), session: session, onLine: onLine
+        )
+        if descarga?.succeeded != true, !fileManager.fileExists(atPath: archivo.path) { return nil }
+        guard let datos = try? Data(contentsOf: archivo) else { return nil }
+        return NodeAbi.forElectron(major: game.engineVersion.major, registry: datos)
     }
 
     private static func ensureRuntime(
@@ -132,6 +218,8 @@ public enum ElectronPorter {
     private static func assemble(
         game: ElectronGame,
         engine: URL,
+        modules: [(modulo: NodeNativeModule, contenido: URL)],
+        unresolved: [String],
         at destination: URL,
         fileManager: FileManager,
         onLine: @Sendable @escaping (String) -> Void
@@ -174,9 +262,26 @@ public enum ElectronPorter {
         }
         try parcheado.write(to: plistURL)
 
+        // El binario de Windows se sustituye en su sitio: el prebuild trae `build/Release/…node`
+        // con la misma forma que el que ya está, así que desplegarlo encima del módulo lo cambia.
+        let desempaquetado = resources.appendingPathComponent("app.asar.unpacked/node_modules",
+                                                              isDirectory: true)
+        for (modulo, contenido) in modules {
+            let destino = desempaquetado.appendingPathComponent(modulo.name, isDirectory: true)
+            try? fileManager.createDirectory(at: destino, withIntermediateDirectories: true)
+            for pieza in (try? fileManager.contentsOfDirectory(atPath: contenido.path)) ?? [] {
+                let dentro = destino.appendingPathComponent(pieza)
+                try? fileManager.removeItem(at: dentro)
+                try clone(from: contenido.appendingPathComponent(pieza), to: dentro)
+            }
+        }
+
         onLine("+ \(nombre) (Electron \(game.version))")
-        for modulo in game.nativeModules {
-            onLine("· \(modulo.label): módulo nativo compilado solo para Windows")
+        for (modulo, _) in modules {
+            onLine("· \(modulo.label): cambiado por el de macOS")
+        }
+        for etiqueta in unresolved {
+            onLine("· \(etiqueta): módulo nativo sin binario de macOS publicado para este ABI")
         }
     }
 

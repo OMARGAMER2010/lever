@@ -99,9 +99,11 @@ public enum PortableEngine: Equatable, Sendable {
         case .love(let game): return game.windowsLibraries
         // Extensiones de Node y librerías que el juego trae compiladas solo para Windows.
         case .nwjs(let game): return game.windowsModules
-        // Cada `.node` es C++ compilado contra un ABI concreto de Node. Se nombran con su
-        // versión porque un sustituto tendría que coincidir en las dos cosas, plataforma y ABI.
-        case .electron(let game): return game.windowsModules
+        // Vacío a propósito. Los `.node` de Electron sí tienen sustituto —se baja el prebuild
+        // que publica el propio módulo para esa plataforma y ese ABI—, pero saber si existe para
+        // esta combinación pide red, y esto se pinta antes de empezar. Prometer aquí que van a
+        // faltar sería mentir la mitad de las veces; el traslado dice después cuáles faltaron.
+        case .electron: return []
         // Los de LWJGL no salen aquí: esos sí tienen sustituto y se cambian. Lo que queda son
         // `.dll` sueltas que alguien compiló una vez y solo para Windows.
         case .java(let game): return game.windowsLibraries

@@ -120,6 +120,14 @@ public final class PortLibrary: @unchecked Sendable {
         return fileManager.fileExists(atPath: binary.path)
     }
 
+    /// Las partes nativas ya conseguidas, una carpeta por identidad completa —nombre, versión,
+    /// plataforma y ABI—. Es la primera de las tres estrategias: lo que ya se bajó una vez no se
+    /// vuelve a bajar, y da igual para qué motor fuera.
+    public func nativePartURL(key: String) -> URL {
+        root.appendingPathComponent("partes", isDirectory: true)
+            .appendingPathComponent(key, isDirectory: true)
+    }
+
     /// El `Electron.app` que publica Electron, una carpeta por versión. Son doscientos cincuenta
     /// megas desplegados, así que reutilizarlo entre juegos de la misma versión importa.
     public func electronRuntimeURL(version: String) -> URL {
@@ -145,13 +153,6 @@ public final class PortLibrary: @unchecked Sendable {
         let java = javaRuntimeURL(feature: feature, architecture: architecture)
             .appendingPathComponent("Contents/Home/bin/java")
         return fileManager.fileExists(atPath: java.path)
-    }
-
-    /// Los jars de nativos de LWJGL, por versión y plataforma. Pesan poco de uno en uno, pero un
-    /// juego trae media docena y son los mismos para todos los juegos de esa versión.
-    public func lwjglNativesURL(version: String, platform: String) -> URL {
-        root.appendingPathComponent("lwjgl", isDirectory: true)
-            .appendingPathComponent("\(version)-\(platform)", isDirectory: true)
     }
 
     public func url(forLibraryNamed name: String) -> URL? {

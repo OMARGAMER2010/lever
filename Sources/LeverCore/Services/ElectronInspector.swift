@@ -122,10 +122,12 @@ public enum ElectronInspector {
         for ruta in rutas.sorted() {
             let nombre = moduleName(inPath: ruta) ?? (ruta as NSString).lastPathComponent
             guard vistos.insert(nombre).inserted else { continue }
+            let ficha = manifest(of: nombre, inside: asar)
             salida.append(NodeNativeModule(
                 name: nombre,
-                version: moduleVersion(of: nombre, inside: asar),
-                relativePath: ruta
+                version: ficha?["version"] as? String,
+                relativePath: ruta,
+                repository: repository(in: ficha)
             ))
         }
         return salida
@@ -141,12 +143,41 @@ public enum ElectronInspector {
         return primero
     }
 
-    /// La versión sale del `package.json` del módulo, que casi siempre sigue dentro del `.asar`
-    /// aunque su `.node` esté fuera: el empaquetador solo saca los binarios.
-    static func moduleVersion(of nombre: String, inside asar: URL) -> String? {
-        guard let datos = AsarArchive.read("node_modules/\(nombre)/package.json", from: asar),
-              let json = try? JSONSerialization.jsonObject(with: datos) as? [String: Any] else { return nil }
-        return json["version"] as? String
+    /// El `package.json` del módulo, que casi siempre sigue dentro del `.asar` aunque su `.node`
+    /// esté fuera: el empaquetador solo saca los binarios.
+    static func manifest(of nombre: String, inside asar: URL) -> [String: Any]? {
+        guard let datos = AsarArchive.read("node_modules/\(nombre)/package.json", from: asar) else { return nil }
+        return try? JSONSerialization.jsonObject(with: datos) as? [String: Any]
+    }
+
+    /// `owner/repo` **de GitHub**, de donde sea que el módulo lo haya escrito.
+    ///
+    /// El campo `repository` de npm admite media docena de formas —cadena suelta,
+    /// `github:owner/repo`, una URL de git, un objeto con `url` dentro—, así que se recorta hasta
+    /// quedarse con las dos piezas que importan en vez de intentar entenderlas todas.
+    ///
+    /// Solo GitHub a propósito: los prebuilds de Node viven en las publicaciones de GitHub, así que
+    /// de un repositorio en otro sitio no sale ninguna dirección que pedir. Devolver algo entonces
+    /// sería fabricarse una dirección que no existe.
+    public static func repository(in ficha: [String: Any]?) -> String? {
+        guard let ficha else { return nil }
+        let crudo: String?
+        if let texto = ficha["repository"] as? String { crudo = texto }
+        else { crudo = (ficha["repository"] as? [String: Any])?["url"] as? String }
+        guard var valor = crudo?.trimmingCharacters(in: .whitespaces), !valor.isEmpty else { return nil }
+
+        if valor.hasPrefix("git+") { valor = String(valor.dropFirst(4)) }
+        if valor.hasSuffix(".git") { valor = String(valor.dropLast(4)) }
+        for prefijo in ["github:", "git://github.com/", "https://github.com/", "http://github.com/",
+                        "ssh://git@github.com/", "git@github.com:"] where valor.hasPrefix(prefijo) {
+            valor = String(valor.dropFirst(prefijo.count))
+            break
+        }
+        // Lo que después de recortar sigue teniendo esquema o arroba no era de GitHub.
+        guard !valor.contains("://"), !valor.contains("@") else { return nil }
+        let partes = valor.split(separator: "/").map(String.init)
+        guard partes.count >= 2, !partes[0].isEmpty, !partes[1].isEmpty else { return nil }
+        return partes[0] + "/" + partes[1]
     }
 
     // MARK: - Qué viaja al `.app`

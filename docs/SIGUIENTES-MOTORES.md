@@ -169,7 +169,7 @@ Y hay una tercera trampa, que es donde se rompe casi siempre: **las partes nativ
   usan LWJGL —AWT/Swing, o LWJGL 2, que sí carga por `java.library.path` y necesitaría otra rama—.
   Lo medido es el camino de LWJGL 3, que es el dominante.
 
-### Electron — funcionando (falta la comprobación en la ventana)
+### Electron — funcionando
 
 - Reconoce por `resources/app.asar` al lado del `.exe`. Es como el propio Electron encuentra el
   código de la app, y ningún otro motor de los contemplados reparte así.
@@ -201,23 +201,55 @@ Y hay una tercera trampa, que es donde se rompe casi siempre: **las partes nativ
   pegados. De ahí salen el `productName` del juego y los módulos nativos.
 - **Módulos `.node`**: se encuentran en los dos sitios donde pueden estar —sueltos en
   `app.asar.unpacked/`, que es lo normal porque `dlopen` no lee de dentro de un asar, y dentro del
-  propio asar— y se nombran con su versión, que sale del `package.json` del módulo. Hoy **se
-  detectan y se dicen, no se sustituyen**: eso es el resolvedor del 3.1.
-- **El ABI sí es derivable sin ejecutar nada**: el índice `https://releases.electronjs.org/releases.json`
-  trae `modules` por versión. Comprobado cruzado: dice 149 para la 44.0.0, y la app trasladada
-  imprime `abi=149` al arrancar. Es la pieza que le falta al resolvedor.
+  propio asar—, se identifican con nombre, versión y repositorio del `package.json` del módulo, y
+  **se sustituyen** por el prebuild que publica cada uno. Ver «Partes nativas».
+- El panel **no** los lista como partes que van a faltar antes de trasladar: saber si hay binario
+  publicado para esa combinación pide red, y prometerlo antes sería mentir la mitad de las veces.
+  Lo dice el traslado, cuando ya lo sabe.
 - Probado de punta a punta con `bash scripts/probar-electron.sh [versión]`, que arma el reparto con
-  `@electron/packager` —la herramienta del propio motor, no una imitación—: la app abre, lee sus
-  datos, arranca WebGL y pinta treinta cuadros del color esperado, y el módulo nativo sale nombrado
-  con su versión.
-- **Lo que falta**: la comprobación en la ventana de Lever. El código está y el traslado se ejecuta
-  entero por el mismo camino que usa el botón, pero la sesión estaba bloqueada al terminar. Es
-  `open -a ~/Desktop/Lever.app <ruta al .exe>` y mirar que el panel diga «Electron 44.0.0» y que el
-  botón deje la app en el Escritorio.
+  `@electron/packager` —la herramienta del propio motor, no una imitación— y le mete un módulo
+  nativo **de verdad**: better-sqlite3 instalado con npm y con su binario de Windows encima. La app
+  trasladada abre, carga el módulo y lo usa (`modulo-nativo=7`), lee sus datos, arranca WebGL y
+  pinta treinta cuadros del color esperado.
+- La versión por omisión de esa prueba es la 42.10.1 a propósito: su ABI es el 146, el más nuevo
+  para el que better-sqlite3 12.11.1 publica binarios de macOS y de Windows a la vez.
+- Comprobado también en la ventana de Lever: el panel dice «Este juego está hecho con Electron
+  42.10.1», anuncia los 130 MB del motor, y el botón deja en el Escritorio una app que carga su
+  módulo nativo y dibuja.
 - **Lo que sigue sin comprobarse**: un juego comercial de Electron de verdad, una versión anterior
   a la 11 —que va por Rosetta y podría chocar con lo mismo que NW.js: Chromium viejo de x86_64 no
   arranca su proceso de dibujo en macOS 15—, y `app.asar.unpacked` con un módulo nativo que el
   juego use de verdad.
+
+### Partes nativas: un solo resolvedor — funcionando
+
+Los tres motores con partes nativas hacían lo mismo sin conocerse. Ahora comparten
+`NativeParts.swift`, y lo único que se queda con cada motor es armar la dirección, que es lo que
+depende del ecosistema.
+
+- **La identidad de una parte son cuatro señas**: nombre, versión, plataforma y —cuando va atada a
+  una— el ABI. Eso es también la clave de la caché (`PortLibrary.nativePartURL`), y llevar el ABI
+  dentro no es cosmético: un `.node` de otro ABI no da error al montar, solo al arrancar.
+- **Las tres estrategias, en orden**: lo que ya está guardado se usa; lo que se sabe de dónde bajar
+  se baja; y lo que no, se nombra. Un 404 no es un fallo del traslado: quiere decir que ese módulo
+  no publica esa combinación, que es de lo más normal.
+- **LWJGL** (Java): artefacto de Maven Central por (módulo, versión, plataforma). Sin ABI.
+- **Prebuilds de Node** (Electron): la convención de `prebuild-install`,
+  `<módulo>-v<versión>-electron-v<abi>-darwin-<arch>.tar.gz`, en las publicaciones de GitHub del
+  propio módulo bajo la etiqueta `v<versión>`. El `owner/repo` sale del campo `repository` de su
+  `package.json`, que admite media docena de formas. **Solo GitHub**: de un repositorio en otro
+  sitio no sale ninguna dirección que pedir, y devolver algo sería inventársela.
+- **El ABI sale del registro de `node-abi`**, que es el mismo que usa `prebuild-install`, así que
+  por construcción coincide con lo que los módulos publican. Depende solo del número mayor de
+  Electron. Pesa ocho kilobytes, así que se vuelve a bajar cada vez en lugar de tenerlo escrito a
+  mano y que envejezca; si no hay red se usa la copia guardada, y si tampoco, no se adivina.
+- Comprobado de punta a punta, que era lo que faltaba: un juego de Electron con better-sqlite3
+  puesto con su `.node` de Windows (`PE32+ DLL`) sale trasladado con el de macOS y el juego lo
+  carga y lo usa.
+- **Lo que sigue sin comprobarse**: un módulo con ámbito (`@scope/nombre`), donde la convención dice
+  que el ámbito no entra en el nombre del archivo pero no hay ningún caso a mano; y las otras dos
+  convenciones de prebuilds, `prebuildify` —que mete los binarios dentro del propio paquete de npm,
+  así que no hay nada que bajar— y `node-pre-gyp`, que usa otra plantilla de dirección.
 
 ### Textos que decían «Godot» y los usaban los tres
 
@@ -244,25 +276,7 @@ firmar, clonar en APFS, lanzar guiones), `PortPaths` (nombre libre, `.icns`) y `
 
 ## 3. Lo que viene, por orden
 
-### 3.1 Generalizar el resolvedor de partes nativas
-
-Ya hay tres resolvedores que se parecen mucho y no se conocen entre sí: el de GoZen, que compila
-desde fuente; el de LWJGL, que baja el artefacto de Maven por (módulo, versión, plataforma); y el
-de Electron, que hoy solo **detecta** los `.node` y los nombra. Lo que pide el problema es un
-**resolvedor** con la firma `(nombre, versión, plataforma, abi) -> URL o receta`, con las tres
-estrategias de arriba.
-
-Las piezas están todas puestas: `PortLibrary` es la caché, `NativePartRecipe` es la receta,
-`JavaPorter.ensureNatives` es la estrategia intermedia —pero atada a LWJGL—, y el ABI ya se sabe
-sacar sin ejecutar nada (`releases.json` de Electron trae `modules` por versión, comprobado contra
-lo que el runtime imprime). Falta sacar esa estrategia de dentro de `JavaPorter`, darle la tabla de
-descargas conocidas y enseñarle las convenciones de los prebuilds de Node —`prebuild`,
-`prebuildify`, `node-pre-gyp`—, que es lo que cerraría Electron del todo.
-
-Aviso al hacerlo: un módulo puede no tener prebuild para esa combinación, y entonces lo honrado es
-seguir nombrándolo, no fingir que se resolvió.
-
-### 3.2 Android — «lo mismo para los .apk»
+### 3.1 Android — «lo mismo para los .apk»
 
 Lever hoy **rechaza** los formatos empaquetados y lo dice en su propio mensaje de error. Ese es
 el hueco más claro:

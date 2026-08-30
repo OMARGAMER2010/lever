@@ -155,9 +155,10 @@ public enum JavaPorter {
 
     /// Deja bajados los jars de nativos de macOS, uno por cada jar de Windows que trae el juego.
     ///
-    /// Devuelve, por cada uno, dónde está el de Windows dentro del reparto y qué archivo lo
-    /// sustituye. Si alguno no se puede bajar se sigue sin él: el juego arrancará y fallará en lo
-    /// que dependa de ese módulo, que es más útil que no dar app ninguna.
+    /// El trabajo de mirar la caché y bajar lo que falte lo hace `NativeParts`, que es común a
+    /// todos los motores. Lo único de aquí es armar la identidad de la parte: para LWJGL no entra
+    /// ABI ninguno —eso es cosa de Node—, pero sí la versión, que tiene que ser exacta porque
+    /// LWJGL comprueba que los bindings y los binarios coincidan.
     private static func ensureNatives(
         for game: JavaGame,
         runner: ProcessRunner,
@@ -168,22 +169,22 @@ public enum JavaPorter {
     ) async throws -> [(natives: LwjglNatives, jar: URL)] {
         var listos: [(natives: LwjglNatives, jar: URL)] = []
         for nativo in game.lwjgl {
-            let plataforma = game.appleSilicon ? "macos-arm64" : "macos"
-            let carpeta = library.lwjglNativesURL(version: nativo.version, platform: plataforma)
-            let jar = carpeta.appendingPathComponent(nativo.macAssetName(appleSilicon: game.appleSilicon))
-            if fileManager.fileExists(atPath: jar.path) { listos.append((nativo, jar)); continue }
-
-            try? fileManager.createDirectory(at: carpeta, withIntermediateDirectories: true)
-            let descarga = try await runner.run(
-                PortCommands.download(nativo.macDownloadURL(appleSilicon: game.appleSilicon), into: jar),
-                session: session, onLine: onLine
+            let parte = NativePart(
+                name: nativo.module,
+                version: nativo.version,
+                platform: game.appleSilicon ? "macos-arm64" : "macos",
+                abi: nil,
+                download: nativo.macDownloadURL(appleSilicon: game.appleSilicon),
+                fileName: nativo.macAssetName(appleSilicon: game.appleSilicon)
             )
-            if session.isCancelled { throw PortFailure.cancelled }
-            if descarga.succeeded {
+            let resultado = try await NativeParts.obtain(
+                parte, runner: runner, session: session, library: library,
+                fileManager: fileManager, onLine: onLine
+            )
+            if let jar = resultado.file {
                 listos.append((nativo, jar))
             } else {
-                try? fileManager.removeItem(at: jar)
-                onLine("· \(nativo.module) \(nativo.version): no hay binarios de macOS publicados")
+                onLine("· \(parte.label): no hay binarios de macOS publicados")
             }
         }
         return listos
