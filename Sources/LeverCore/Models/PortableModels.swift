@@ -11,6 +11,7 @@ public enum PortableEngine: Equatable, Sendable {
     case renpy(RenpyGame)
     case love(LoveGame)
     case nwjs(NwjsGame)
+    case java(JavaGame)
 
     /// Nombre y versión, para el título del panel: «Godot 4.6.2», «Ren'Py 8.6.0».
     public var displayName: String {
@@ -19,6 +20,7 @@ public enum PortableEngine: Equatable, Sendable {
         case .renpy(let game): return "Ren'Py \(game.version)"
         case .love(let game): return "LÖVE \(game.version)"
         case .nwjs(let game): return "NW.js \(game.version)"
+        case .java(let game): return "Java \(game.version)"
         }
     }
 
@@ -29,6 +31,7 @@ public enum PortableEngine: Equatable, Sendable {
         case .renpy: return .portableBodyRenpy
         case .love: return .portableBodyLove
         case .nwjs: return .portableBodyNwjs
+        case .java: return .portableBodyJava
         }
     }
 
@@ -40,6 +43,7 @@ public enum PortableEngine: Equatable, Sendable {
         case .renpy(let game): return game.isSupported
         case .love(let game): return game.isSupported
         case .nwjs(let game): return game.isSupported
+        case .java(let game): return game.isSupported
         }
     }
 
@@ -49,6 +53,7 @@ public enum PortableEngine: Equatable, Sendable {
         case .renpy: return .portableUnsupportedRenpy
         case .love: return .portableUnsupportedLove
         case .nwjs: return .portableUnsupportedNwjs
+        case .java: return .portableUnsupportedJava
         }
     }
 
@@ -61,6 +66,8 @@ public enum PortableEngine: Equatable, Sendable {
         // Nunca hace falta Rosetta: lo que se monta está siempre por encima del corte y en
         // Apple silicon eso es nativo. Lo que sí hay que decir es que el motor no es el suyo.
         case .nwjs(let game): return game.engineWasReplaced ? .portableNwjsNewerEngine : nil
+        // Java 8 no existe para Apple silicon, así que un juego de Java 8 va traducido.
+        case .java(let game): return game.needsRosetta ? .portableRosettaNote : nil
         }
     }
 
@@ -70,6 +77,7 @@ public enum PortableEngine: Equatable, Sendable {
         case .renpy(let game): return game.suggestedAppName
         case .love(let game): return game.suggestedAppName
         case .nwjs(let game): return game.suggestedAppName
+        case .java(let game): return game.suggestedAppName
         }
     }
 
@@ -83,6 +91,9 @@ public enum PortableEngine: Equatable, Sendable {
         case .love(let game): return game.windowsLibraries
         // Extensiones de Node y librerías que el juego trae compiladas solo para Windows.
         case .nwjs(let game): return game.windowsModules
+        // Los de LWJGL no salen aquí: esos sí tienen sustituto y se cambian. Lo que queda son
+        // `.dll` sueltas que alguien compiló una vez y solo para Windows.
+        case .java(let game): return game.windowsLibraries
         }
     }
 
@@ -93,6 +104,8 @@ public enum PortableEngine: Equatable, Sendable {
         case .renpy(let game): return library.hasRenpyRuntime(version: game.sdkVersion)
         case .love(let game): return library.hasLoveRuntime(version: game.version)
         case .nwjs(let game): return library.hasNwjsRuntime(version: game.runtimeVersionText)
+        case .java(let game): return library.hasJavaRuntime(feature: game.runtimeVersionText,
+                                                            architecture: game.architecture)
         }
     }
 
@@ -103,6 +116,7 @@ public enum PortableEngine: Equatable, Sendable {
         case .renpy(let game): return game.sdkVersion
         case .love(let game): return game.version
         case .nwjs(let game): return game.runtimeVersionText
+        case .java(let game): return game.runtimeVersionText
         }
     }
 
@@ -113,6 +127,7 @@ public enum PortableEngine: Equatable, Sendable {
         case .renpy: return "160 MB"
         case .love(let game): return game.engineVersion.major >= 11 ? "10 MB" : "5 MB"
         case .nwjs: return "110 MB"
+        case .java: return "45 MB"
         }
     }
 
@@ -129,6 +144,10 @@ public enum PortableEngine: Equatable, Sendable {
         // NW.js es Chromium entero: trescientos megas descomprimido, más el ZIP mientras dura.
         case .nwjs(let game):
             return game.gameBytes + (cached ? 400_000_000 : 800_000_000)
+        // El JRE son cuarenta y cinco megas comprimidos y ciento treinta y cinco desplegados, y
+        // mientras dura el traslado están los dos en disco.
+        case .java(let game):
+            return game.gameBytes + (cached ? 150_000_000 : 320_000_000)
         }
     }
 }
@@ -194,7 +213,8 @@ public enum PortFailure: Error, Equatable, Sendable {
 ///
 /// El orden importa poco porque las señales no se solapan: Godot se reconoce por el paquete
 /// `GDPC`, Ren'Py por tener a la vez las carpetas `renpy/` y `game/`, LÖVE por la `love.dll`
-/// más un ZIP con `main.lua` dentro, y NW.js por la `nw.dll` con su `package.json` al lado.
+/// más un ZIP con `main.lua` dentro, NW.js por la `nw.dll` con su `package.json` al lado, y Java por un jar
+/// con `Main-Class`.
 public enum PortableEngineDetector {
     public static func detect(
         program: URL,
@@ -212,6 +232,11 @@ public enum PortableEngineDetector {
         }
         if let game = NwjsInspector.inspect(program: program, fileManager: fileManager) {
             return .nwjs(game)
+        }
+        // Java el último: su señal —un jar con `Main-Class`— es la más laxa de las cinco, y un
+        // reparto de otro motor podría traer un jar suelto para alguna herramienta suya.
+        if let game = JavaInspector.inspect(program: program, fileManager: fileManager) {
+            return .java(game)
         }
         return nil
     }

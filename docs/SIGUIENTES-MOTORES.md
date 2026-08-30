@@ -115,6 +115,60 @@ Y hay una tercera trampa, que es donde se rompe casi siempre: **las partes nativ
   puede afirmar es que ningún complemento de ningún juego dependa de algo que Chromium cambiara
   por el camino.
 
+### Java (Launch4j y LWJGL) — funcionando
+
+- Reconoce por un jar con `Main-Class` en su manifiesto: pegado al final del `.exe` —lo que hace
+  Launch4j— o suelto al lado. Un `.exe` sin eso no tiene nada que lanzar, y un jar sin `Main-Class`
+  es una librería. Va el último en el detector: su señal es la más laxa de las cinco.
+- **Qué Java hace falta**: si el reparto trae un `jre/`, su `release` manda —dice con qué lo probó
+  su autor, no el mínimo con el que compila—; si no, el número mayor del formato de la clase
+  principal menos 44, que es la tabla del propio JVM (52 es Java 8, 61 es Java 17).
+- **Motor**: el JRE de Temurin, `https://api.adoptium.net/v3/binary/latest/<N>/ga/mac/<aarch64|x64>/jre/hotspot/normal/eclipse`.
+  Viene en `.tar.gz` —el único de los cinco que no es ZIP— y como bundle firmado de macOS, así que
+  el `java` está en `Contents/Home/bin/java`. Solo se piden versiones de soporte largo: pedir una
+  que Adoptium ya no publique da un 404 a mitad del traslado.
+- **Java 8 no existe para Apple silicon.** Comprobado contra la API de Adoptium: de la 11 en
+  adelante hay `aarch64`, de la 8 solo `x64`. Un juego de Java 8 baja el de Intel y va con Rosetta,
+  que es más fiel que subirlo a la 11 —donde se quitaron cosas— sin un juego con el que
+  comprobarlo. La arquitectura elegida arrastra también a los nativos de LWJGL.
+- **Las librerías nativas sí tienen arreglo, y basta con cambiar el jar.** LWJGL 3 carga sus
+  binarios del propio classpath, no de `java.library.path`: no hay que tocar cómo se lanza el
+  juego. Medido con un juego hecho a mano: con el jar de Windows falla con
+  `UnsatisfiedLinkError: liblwjgl.dylib` y LWJGL avisa de «Platform/architecture mismatch»;
+  cambiando solo el jar, arranca y pinta. Eso responde el «por verificar» que había aquí.
+- Cada jar de nativos se reconoce por `LWJGL-Platform` de su manifiesto, no por el nombre del
+  archivo. De ahí salen también el artefacto de Maven (`Implementation-Title`: `lwjgl`,
+  `lwjgl-glfw`…) y la versión (`Specification-Version`; **`Implementation-Version` no sirve, ahí
+  pone «build 1»**). La versión tiene que ser la misma: LWJGL comprueba que los bindings y los
+  binarios coincidan y se niega a arrancar si no.
+- **Ojo con el nombre del archivo de Intel**: es `natives-macos` a secas, sin `-x64`. El de ARM sí
+  lleva sufijo, `natives-macos-arm64`. Es la misma trampa de nombre que LÖVE.
+- **Montaje**: es el único motor sin un `.app` de plantilla que copiar, porque Java no publica
+  ninguno, así que el bundle se arma entero. El juego va a `Contents/Resources/`, el JRE a
+  `Resources/jre/`, y `Contents/MacOS/<nombre>` es un guion de shell. Un guion puede ser el
+  ejecutable de un bundle y aguanta `codesign --deep`: comprobado firmando y abriendo desde el
+  Finder.
+- **`-XstartOnFirstThread` no es opcional** con GLFW: sin él, LWJGL se niega en seco con «GLFW may
+  only be used on the main thread». Y el `exec` del guion tampoco, porque esa bandera exige que la
+  máquina virtual sea el primer hilo del proceso, y eso solo se cumple si sustituye al shell.
+  **No se pone siempre**: con AWT o Swing esa bandera estorba, porque su bucle de eventos quiere
+  para sí el mismo hilo. Se pone cuando el juego trae `lwjgl-glfw`.
+- El classpath se nombra entero en el guion en vez de fiarse del `Class-Path` del manifiesto: no
+  todos los repartos lo traen, y muchos dejan esa lista en un `.bat` que no viaja. Las entradas del
+  manifiesto que quedan colgando tras el cambio de nativos se ignoran sin ruido.
+- El guion hace `cd` a `Resources` antes de lanzar: el juego busca sus datos por rutas relativas,
+  como cuando lo lanzaba su `.exe` desde la carpeta del juego.
+- Icono: solo si el reparto dejó un `.png` reconocible al lado. El de verdad va dentro del `.exe`,
+  en los recursos del PE, y sacarlo de ahí es otro trabajo; mejor sin icono que con uno inventado.
+- Probado de punta a punta con los dos repartos —`bash scripts/probar-java.sh [versión] [pegado|suelto]`—:
+  un juego de LWJGL 3.3.6 compilado con `javac` de verdad, con sus jars de Maven y su `.exe` estilo
+  Launch4j, se traslada y la app abre una ventana, arranca OpenGL sobre Metal y pinta treinta
+  cuadros del color esperado. Y desde la ventana de Lever, con el botón, hasta la app del
+  Escritorio.
+- **Lo que sigue sin comprobarse**: un juego comercial de Java de verdad, y los repartos que no
+  usan LWJGL —AWT/Swing, o LWJGL 2, que sí carga por `java.library.path` y necesitaría otra rama—.
+  Lo medido es el camino de LWJGL 3, que es el dominante.
+
 ### Textos que decían «Godot» y los usaban los tres
 
 `portStageDownloading`, `errPortEngine` y `errPortRuntime` nombraban a Godot, y Ren'Py ya pasaba
@@ -140,24 +194,7 @@ firmar, clonar en APFS, lanzar guiones), `PortPaths` (nombre libre, `.icns`) y `
 
 ## 3. Lo que viene, por orden
 
-### 3.1 Java — y aquí entra «las librerías nativas de Windows»
-
-**Sí se puede arreglar**, y por el mismo mecanismo que GoZen: identificar (nombre, versión) y
-bajar el artefacto de macOS que el propio proyecto publica.
-
-- Reconocer: `.exe` de Launch4j (lleva un ZIP con `META-INF/MANIFEST.MF`), o un `.jar` al lado,
-  o una carpeta `jre/`.
-- Motor: un JRE de Temurin —
-  `https://api.adoptium.net/v3/binary/latest/<N>/ga/mac/aarch64/jre/hotspot/normal/eclipse`.
-- **Librerías nativas**: el caso dominante es LWJGL, y publica los binarios de cada plataforma
-  en Maven Central, por versión:
-  `https://repo1.maven.org/maven2/org/lwjgl/lwjgl/<ver>/lwjgl-<ver>-natives-macos-arm64.jar`
-  (y lo mismo para `lwjgl-glfw`, `lwjgl-openal`, `lwjgl-opengl`, `lwjgl-stb`, `lwjgl-jemalloc`).
-  La versión sale del `MANIFEST.MF` del `lwjgl.jar` que trae el juego. JNA y `sqlite-jdbc`
-  también publican jars multiplataforma.
-- **Por verificar**: si conviene reescribir el `-Djava.library.path` o basta sustituir los jars.
-
-### 3.2 Electron — y aquí entra «los `.node` nativos»
+### 3.1 Electron — y aquí entra «los `.node` nativos»
 
 **También se puede**, con un matiz: hay que acertar el ABI.
 
@@ -174,14 +211,17 @@ bajar el artefacto de macOS que el propio proyecto publica.
   3. Recompilar con `@electron/rebuild` — necesita Node y las herramientas de Xcode. Es el mismo
      patrón que `build-gozen.sh`: una receta con su aviso de tiempo y espacio.
 
-### 3.3 Generalizar el resolvedor de partes nativas
+### 3.2 Generalizar el resolvedor de partes nativas
 
-Cuando estén Java y Electron, `NativePartRecipe` se queda corto. Lo que pide el problema es un
-**resolvedor** con la firma `(nombre, versión, plataforma, abi) -> URL o receta`, con las tres
-estrategias de arriba. `PortLibrary` ya es la caché; `NativePartRecipe` ya es la receta. Falta la
-estrategia intermedia: la tabla de descargas conocidas.
+Con Java ya hecho hay dos resolvedores que se parecen mucho y no se conocen: el de GoZen, que
+compila desde fuente, y el de LWJGL, que baja el artefacto de Maven por (módulo, versión,
+plataforma). Cuando entre el de Electron —que además necesita acertar el ABI— serán tres. Lo que
+pide el problema es un **resolvedor** con la firma `(nombre, versión, plataforma, abi) -> URL o
+receta`, con las tres estrategias de arriba. `PortLibrary` ya es la caché; `NativePartRecipe` ya es
+la receta; `JavaPorter.ensureNatives` ya es la estrategia intermedia, pero atada a LWJGL. Falta
+sacarla de ahí y darle la tabla de descargas conocidas.
 
-### 3.4 Android — «lo mismo para los .apk»
+### 3.3 Android — «lo mismo para los .apk»
 
 Lever hoy **rechaza** los formatos empaquetados y lo dice en su propio mensaje de error. Ese es
 el hueco más claro:
@@ -233,6 +273,15 @@ el hueco más claro:
   at all» y macOS no lanza los procesos hijos, que en Chromium son los que dibujan.
 - NW.js deja `SingletonLock` y un zócalo en el directorio temporal. Matar sus procesos a lo bruto
   deja el siguiente arranque esperando en ellos.
+- `unzip` sale con **1** —aviso, no error— cuando el ZIP lleva bytes delante: extrae bien igual.
+  Exigirle un 0 deja fuera precisamente el reparto de Launch4j, que es un jar detrás de un `.exe`.
+- **Restar cadenas para sacar una ruta relativa sale mal en el temporal.** `/var` es un enlace a
+  `/private/var` y `/tmp` a `/private/tmp`: el enumerador de archivos devuelve la ruta ya resuelta
+  y la carpeta de partida casi nunca lo está, así que la resta no encuentra nada y deja la ruta
+  absoluta entera. No falla en el acto: falla después, montando media jerarquía del disco dentro
+  del bundle. Está resuelto en `PortPaths.relativePath(of:from:)`; usarlo.
+- Un paso que dice «hecho» sin comprobar que lo hizo esconde el fallo hasta el final. El cambio de
+  nativos de LWJGL anunciaba los tres jars cambiados mientras no cambiaba ninguno.
 - Un NW.js anterior a la 0.77 en un Mac de Apple silicon abre el proceso, lo mantiene vivo y no
   ejecuta la página: ni una línea, ni un error, ni en su salida ni en la del sistema. Buscarle la
   causa al montaje, a la firma o al aislamiento es perder la sesión; lo que hay que mirar es la

@@ -120,6 +120,27 @@ public final class PortLibrary: @unchecked Sendable {
         return fileManager.fileExists(atPath: binary.path)
     }
 
+    /// Los JRE de Temurin, una carpeta por versión y arquitectura. Las dos cosas hacen falta en
+    /// la clave: un juego de Java 8 baja el de Intel y uno de Java 17 el de ARM, y los dos pueden
+    /// convivir en el mismo Mac.
+    public func javaRuntimeURL(feature: String, architecture: String) -> URL {
+        root.appendingPathComponent("java", isDirectory: true)
+            .appendingPathComponent("\(feature)-\(architecture)", isDirectory: true)
+    }
+
+    public func hasJavaRuntime(feature: String, architecture: String) -> Bool {
+        let java = javaRuntimeURL(feature: feature, architecture: architecture)
+            .appendingPathComponent("Contents/Home/bin/java")
+        return fileManager.fileExists(atPath: java.path)
+    }
+
+    /// Los jars de nativos de LWJGL, por versión y plataforma. Pesan poco de uno en uno, pero un
+    /// juego trae media docena y son los mismos para todos los juegos de esa versión.
+    public func lwjglNativesURL(version: String, platform: String) -> URL {
+        root.appendingPathComponent("lwjgl", isDirectory: true)
+            .appendingPathComponent("\(version)-\(platform)", isDirectory: true)
+    }
+
     public func url(forLibraryNamed name: String) -> URL? {
         let candidate = folderURL.appendingPathComponent(name)
         return fileManager.fileExists(atPath: candidate.path) ? candidate : nil

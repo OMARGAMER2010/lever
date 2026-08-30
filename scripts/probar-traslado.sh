@@ -8,7 +8,7 @@
 #   bash scripts/probar-traslado.sh <ruta al .exe> [carpeta de caché]
 #
 # La app trasladada se deja en una carpeta temporal y se lanza. Si el juego escribe algo en
-# /tmp/lever-nw.log (los juegos de prueba de este repositorio lo hacen), se enseña.
+# /tmp/lever-<motor>.log (los juegos de prueba de este repositorio lo hacen), se enseña.
 set -euo pipefail
 
 if [[ $# -lt 1 ]]; then
@@ -83,18 +83,18 @@ echo "▸ Abriendo la app…"
 # NW.js y Chromium dejan cerrojos si se les mata a lo bruto, y el siguiente arranque se queda
 # esperando en ellos: se limpian antes de cada intento.
 find "$(getconf DARWIN_USER_TEMP_DIR)" -maxdepth 1 -name ".io.nwjs*" -exec rm -rf {} + 2>/dev/null || true
-rm -f /tmp/lever-nw.log
+rm -f /tmp/lever-*.log
 binario="$app/Contents/MacOS/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Contents/Info.plist")"
 "$binario" > "$taller/salida-app.log" 2>&1 &
 pid=$!
 for _ in $(seq 1 20); do
-    if grep -q "cuadros=\|frames-dibujados" /tmp/lever-nw.log "$taller/salida-app.log" 2>/dev/null; then break; fi
+    if grep -q "cuadros=\|frames-dibujados" /tmp/lever-*.log "$taller/salida-app.log" 2>/dev/null; then break; fi
     sleep 1
 done
 kill "$pid" 2>/dev/null || true
 
 echo "▸ Lo que dijo el juego:"
-cat /tmp/lever-nw.log 2>/dev/null || true
+cat /tmp/lever-*.log 2>/dev/null || true
 grep -E "LEVER-PRUEBA" "$taller/salida-app.log" 2>/dev/null || true
 echo "▸ Errores del arranque:"
 head -6 "$taller/salida-app.log"

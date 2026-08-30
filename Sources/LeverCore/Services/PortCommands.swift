@@ -23,6 +23,15 @@ public enum PortCommands {
         )
     }
 
+    /// Temurin reparte sus JRE en `.tar.gz`. Es el único motor de los cinco que no viene en ZIP.
+    public static func untar(_ archive: URL, into folder: URL) -> ProcessCommand {
+        ProcessCommand(
+            executableURL: URL(fileURLWithPath: "/usr/bin/tar"),
+            arguments: ["xzf", archive.path, "-C", folder.path],
+            currentDirectoryURL: nil
+        )
+    }
+
     public static func sign(_ target: URL) -> ProcessCommand {
         ProcessCommand(
             executableURL: URL(fileURLWithPath: "/usr/bin/codesign"),
@@ -95,6 +104,19 @@ public enum PortPaths {
     ///
     /// Es un detalle: si algo falla, la app se abre igual con el icono genérico. Por eso nada de
     /// aquí lanza.
+    /// Ruta de `url` relativa a `base`, o `nil` si no cuelga de ella.
+    ///
+    /// No vale restar cadenas. En macOS `/var` es un enlace a `/private/var` y `/tmp` a
+    /// `/private/tmp`: el enumerador de archivos devuelve la ruta ya resuelta y la base casi nunca
+    /// lo está, así que la resta no encuentra nada y devuelve la ruta absoluta entera. Eso no
+    /// falla en el acto —falla después, montando media jerarquía del disco dentro del bundle—.
+    public static func relativePath(of url: URL, from base: URL) -> String? {
+        let raiz = base.resolvingSymlinksInPath().standardizedFileURL.pathComponents
+        let entera = url.resolvingSymlinksInPath().standardizedFileURL.pathComponents
+        guard entera.count > raiz.count, Array(entera.prefix(raiz.count)) == raiz else { return nil }
+        return entera.dropFirst(raiz.count).joined(separator: "/")
+    }
+
     public static func makeIcon(from image: URL, at destination: URL, fileManager: FileManager = .default) {
         guard fileManager.fileExists(atPath: image.path) else { return }
 
@@ -225,6 +247,12 @@ public enum NativePorter {
             )
         case .nwjs(let game):
             return try await NwjsPorter.makeApp(
+                for: game, into: folder,
+                runner: runner, session: session, library: library, fileManager: fileManager,
+                onStage: onStage, onLine: onLine
+            )
+        case .java(let game):
+            return try await JavaPorter.makeApp(
                 for: game, into: folder,
                 runner: runner, session: session, library: library, fileManager: fileManager,
                 onStage: onStage, onLine: onLine
