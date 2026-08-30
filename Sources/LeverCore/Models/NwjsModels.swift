@@ -25,18 +25,26 @@ public struct NwjsVersion: Equatable, Sendable, Comparable, CustomStringConverti
     /// NW.js publica cada versión en su propia carpeta, con `v` delante.
     public var releaseTag: String { "v\(description)" }
 
-    /// La versión más antigua que dibuja algo en macOS 15.
-    ///
-    /// No es una suposición: se probaron la 0.29.4, 0.31.5, 0.35.5, 0.38.2, 0.42.6, 0.43.6, 0.46.4
-    /// y 0.47.3, y en todas el proceso del navegador arranca y abre ventana pero el que dibuja
-    /// muere antes de cargar la página —ni siquiera se pide una imagen del HTML—. La 0.48.4 va
-    /// entera: lee sus datos con XHR desde `file://`, guarda con `fs`, arranca WebGL y pinta.
-    public static let oldestThatRuns = NwjsVersion(major: 0, minor: 48, patch: 0)
-
     /// NW.js empezó a publicar binarios de Apple silicon en la 0.77.0. Antes, solo Intel.
     public static let oldestOnAppleSilicon = NwjsVersion(major: 0, minor: 77, patch: 0)
 
-    public var isSupported: Bool { self >= Self.oldestThatRuns }
+    /// La versión más antigua que llega a dibujar. Que caiga en el mismo número que la primera
+    /// compilación de arm64 es el hallazgo, no una coincidencia que se pueda dar por buena.
+    ///
+    /// Medido con `probar-nwjs.sh` en macOS 15 sobre un M2: la 0.48.4 —x86_64 bajo Rosetta—
+    /// arranca el proceso y lo mantiene vivo los veinte segundos, pero la página nunca se ejecuta,
+    /// ni siquiera su primera línea. La 0.77.0 y la 0.115.0, nativas, hacen las cuatro cosas de
+    /// las que depende RPG Maker. Como por debajo de la 0.77 no existe ninguna compilación arm64,
+    /// no hay forma de separar «Rosetta» de «Chromium viejo»: lo medido es dónde está el corte,
+    /// no cuál de los dos lo causa.
+    ///
+    /// El mismo corte se aplica en Macs de Intel, donde no hay medida. Es a propósito: montar un
+    /// motor que se sabe bueno vale más que montar uno del que no se sabe nada.
+    public static let oldestThatDraws = NwjsVersion(major: 0, minor: 77, patch: 0)
+
+    /// `true` si los binarios de esta versión llegan a dibujar. Cuando es `false` el juego no se
+    /// rechaza: se le monta un motor más nuevo.
+    public var drawsOnCurrentMacOS: Bool { self >= Self.oldestThatDraws }
 
     public func macAssetName(appleSilicon: Bool) -> String {
         let architecture = (appleSilicon && self >= Self.oldestOnAppleSilicon) ? "arm64" : "x64"
@@ -118,11 +126,30 @@ public struct NwjsGame: Equatable, Sendable {
 
     public var version: String { engineVersion.description }
 
-    public var isSupported: Bool { engineVersion.isSupported }
+    /// Versión del motor que se monta de verdad, que no siempre es la que traía el juego.
+    ///
+    /// Un juego de NW.js es HTML y JavaScript y no lee ningún formato atado a su motor —al revés
+    /// que Godot con su `.pck` o Ren'Py con su bytecode—, así que cuando la suya no arranca se le
+    /// monta la más antigua que sí. Sin esto el soporte no valdría para nada: MV reparte la 0.29
+    /// y MZ la 0.48, y ninguna de las dos dibuja.
+    public var runtimeVersion: NwjsVersion {
+        engineVersion.drawsOnCurrentMacOS ? engineVersion : .oldestThatDraws
+    }
 
-    public var needsRosetta: Bool { engineVersion.needsRosetta(appleSilicon: appleSilicon) }
+    /// Cambiarle el motor a un juego por debajo tiene consecuencias aunque sea lo único que
+    /// produce una app que abre, así que se dice en el panel en vez de hacerlo callando.
+    public var engineWasReplaced: Bool { runtimeVersion != engineVersion }
 
-    public var macDownloadURL: URL { engineVersion.macDownloadURL(appleSilicon: appleSilicon) }
+    /// Lo que se descarga y lo que nombra la carpeta de la caché.
+    public var runtimeVersionText: String { runtimeVersion.description }
+
+    /// Siempre. Lo que decide que haya traslado es reconocer el motor, no su número: si el que
+    /// trae el juego no arranca, se monta otro.
+    public var isSupported: Bool { true }
+
+    public var needsRosetta: Bool { runtimeVersion.needsRosetta(appleSilicon: appleSilicon) }
+
+    public var macDownloadURL: URL { runtimeVersion.macDownloadURL(appleSilicon: appleSilicon) }
 
     /// RPG Maker llama `Game.exe` a todos sus juegos, así que el nombre del ejecutable no sirve.
     /// El bueno es el título de la ventana, que es el que escribió el autor.

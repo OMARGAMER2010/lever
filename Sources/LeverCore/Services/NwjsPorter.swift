@@ -89,13 +89,13 @@ public enum NwjsPorter {
         onStage: @Sendable (PortStage) -> Void,
         onLine: @Sendable @escaping (String) -> Void
     ) async throws -> URL {
-        let cached = library.nwjsRuntimeURL(version: game.version)
+        let cached = library.nwjsRuntimeURL(version: game.runtimeVersionText)
         let engine = cached.appendingPathComponent("nwjs.app", isDirectory: true)
-        if library.hasNwjsRuntime(version: game.version) { return engine }
+        if library.hasNwjsRuntime(version: game.runtimeVersionText) { return engine }
 
         try? fileManager.createDirectory(at: cached, withIntermediateDirectories: true)
 
-        onStage(.downloadingRuntime(game.version))
+        onStage(.downloadingRuntime(game.runtimeVersionText))
         let archive = cached.appendingPathComponent("nwjs.zip")
         let download = try await runner.run(
             PortCommands.download(game.macDownloadURL, into: archive), session: session, onLine: onLine
@@ -118,7 +118,7 @@ public enum NwjsPorter {
             try? fileManager.removeItem(at: suelto.deletingLastPathComponent())
         }
 
-        guard library.hasNwjsRuntime(version: game.version) else { throw PortFailure.runtimeMissing }
+        guard library.hasNwjsRuntime(version: game.runtimeVersionText) else { throw PortFailure.runtimeMissing }
         return engine
     }
 
@@ -175,7 +175,11 @@ public enum NwjsPorter {
         }
         try patched.write(to: plistURL)
 
-        onLine("+ \(game.bundleExecutableName) (NW.js \(game.version))")
+        if game.engineWasReplaced {
+            onLine("+ \(game.bundleExecutableName) (NW.js \(game.runtimeVersion), no la \(game.version) que traía)")
+        } else {
+            onLine("+ \(game.bundleExecutableName) (NW.js \(game.version))")
+        }
         for module in game.windowsModules {
             onLine("· \(module): solo existe para Windows")
         }

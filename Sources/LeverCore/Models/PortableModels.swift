@@ -58,7 +58,9 @@ public enum PortableEngine: Equatable, Sendable {
         case .godot: return nil
         case .renpy(let game): return game.needsRosetta ? .portableRosettaNote : nil
         case .love(let game): return game.needsRosetta ? .portableRosettaNote : nil
-        case .nwjs(let game): return game.needsRosetta ? .portableRosettaNote : nil
+        // Nunca hace falta Rosetta: lo que se monta está siempre por encima del corte y en
+        // Apple silicon eso es nativo. Lo que sí hay que decir es que el motor no es el suyo.
+        case .nwjs(let game): return game.engineWasReplaced ? .portableNwjsNewerEngine : nil
         }
     }
 
@@ -90,7 +92,7 @@ public enum PortableEngine: Equatable, Sendable {
         case .godot(let game): return library.hasTemplate(for: game.version)
         case .renpy(let game): return library.hasRenpyRuntime(version: game.sdkVersion)
         case .love(let game): return library.hasLoveRuntime(version: game.version)
-        case .nwjs(let game): return library.hasNwjsRuntime(version: game.version)
+        case .nwjs(let game): return library.hasNwjsRuntime(version: game.runtimeVersionText)
         }
     }
 
@@ -100,7 +102,7 @@ public enum PortableEngine: Equatable, Sendable {
         case .godot(let game): return game.version.description
         case .renpy(let game): return game.sdkVersion
         case .love(let game): return game.version
-        case .nwjs(let game): return game.version
+        case .nwjs(let game): return game.runtimeVersionText
         }
     }
 

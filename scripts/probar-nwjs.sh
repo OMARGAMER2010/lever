@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # Arma un reparto de Windows como el que exporta RPG Maker y lo pasa por el porteador entero.
 #
-#   bash scripts/probar-nwjs.sh
+#   bash scripts/probar-nwjs.sh [versión] [mv|mz]
+#
+# Los dos repartos no se parecen y conviene probar los dos: MZ deja el juego suelto en la raíz y
+# MV lo mete entero dentro de `www/`, con el manifiesto apuntando ahí.
 #
 # El juego de prueba hace exactamente las cuatro cosas de las que depende RPG Maker —leer sus
 # datos con XHR desde file://, guardar con fs, arrancar WebGL y pintar— y deja el resultado en
@@ -13,11 +16,20 @@ set -euo pipefail
 
 raiz="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 version="${1:-0.48.4}"
+reparto="${2:-mz}"
+case "$reparto" in
+    mv) interior="www/" ;;
+    mz) interior="" ;;
+    *)  echo "reparto desconocido: $reparto (se espera mv o mz)" >&2; exit 2 ;;
+esac
+etiqueta="$(printf '%s' "$reparto" | tr '[:lower:]' '[:upper:]')"
+
 taller="${TMPDIR:-/tmp}/lever-nwjs-$(date +%s)"
 juego="$taller/reparto"
-mkdir -p "$juego/js" "$juego/data" "$juego/img" "$juego/css" "$juego/icon"
+contenido="$juego/$interior"
+mkdir -p "${contenido}js" "${contenido}data" "${contenido}img" "${contenido}css" "${contenido}icon"
 
-echo "▸ Fabricando un reparto de RPG Maker MZ con NW.js ${version}…"
+echo "▸ Fabricando un reparto de RPG Maker ${etiqueta} con NW.js ${version}…"
 
 python3 - "$juego/nw.dll" "$version" <<'PY'
 import struct, sys
@@ -74,18 +86,18 @@ mkdir -p "$juego/locales" "$juego/swiftshader"
 printf 'x' > "$juego/locales/en-US.pak"
 printf 'nw.exe renombrado, como hace RPG Maker' > "$juego/Game.exe"
 printf 'MZ' > "$juego/greenworks.node"
-printf '{"nombre":"mapa uno","eventos":3}' > "$juego/data/Map001.json"
+printf '{"nombre":"mapa uno","eventos":3}' > "${contenido}data/Map001.json"
 
-cat > "$juego/package.json" <<'JSON'
+cat > "$juego/package.json" <<JSON
 {
-  "name": "prueba-lever-mz",
-  "main": "index.html",
+  "name": "prueba-lever-${reparto}",
+  "main": "${interior}index.html",
   "js-flags": "--expose-gc",
-  "window": { "title": "Prueba Lever MZ", "width": 816, "height": 624, "icon": "icon/icon.png" }
+  "window": { "title": "Prueba Lever ${etiqueta}", "width": 816, "height": 624, "icon": "${interior}icon/icon.png" }
 }
 JSON
 
-cat > "$juego/index.html" <<'HTML'
+cat > "${contenido}index.html" <<'HTML'
 <!doctype html>
 <html><head><meta charset="utf-8"><title>Prueba Lever</title>
 <style>html,body{margin:0;background:#141a2e;overflow:hidden}canvas{display:block}</style></head>
@@ -93,7 +105,7 @@ cat > "$juego/index.html" <<'HTML'
 <script src="js/main.js"></script></body></html>
 HTML
 
-cat > "$juego/js/main.js" <<'JS'
+cat > "${contenido}js/main.js" <<'JS'
 var lineas = [];
 function apunta(t) {
   lineas.push('LEVER-PRUEBA ' + t);
@@ -144,7 +156,7 @@ function sigue() {
 }
 JS
 
-python3 - "$juego/icon/icon.png" <<'PY'
+python3 - "${contenido}icon/icon.png" <<'PY'
 import sys, zlib, struct
 w = h = 256
 filas = b''

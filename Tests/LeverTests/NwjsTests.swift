@@ -10,6 +10,7 @@ enum NwjsTests {
     static func run() throws {
         try namesEveryDownloadCorrectly()
         try knowsWhichVersionsDrawSomething()
+        try replacesAnEngineThatNoLongerDraws()
         try readsTheManifest()
         try needsBothTheEngineAndTheManifest()
         try separatesTheGameFromTheEngine()
@@ -45,13 +46,50 @@ enum NwjsTests {
         try expect(!mz.needsRosetta(appleSilicon: false), "en un Mac de Intel no hay Rosetta que valga")
     }
 
-    /// El corte no es de gusto: por debajo de la 0.48 el proceso que dibuja muere antes de cargar
-    /// la página y la ventana se queda en negro.
+    /// El corte está medido, no elegido, y no está donde se creía: la 0.48.4 —la que reparte
+    /// RPG Maker MZ— ni siquiera llega a ejecutar la primera línea de la página. Lo que arranca
+    /// entero es lo nativo de arm64, de la 0.77 en adelante.
     static func knowsWhichVersionsDrawSomething() throws {
-        try expect(!NwjsVersion(major: 0, minor: 29, patch: 4).isSupported, "la 0.29 no dibuja")
-        try expect(!NwjsVersion(major: 0, minor: 47, patch: 3).isSupported, "la 0.47 tampoco")
-        try expect(NwjsVersion(major: 0, minor: 48, patch: 0).isSupported, "la 0.48 es la primera que va")
-        try expect(NwjsVersion(major: 0, minor: 115, patch: 0).isSupported, "y de ahí en adelante")
+        try expect(!NwjsVersion(major: 0, minor: 29, patch: 4).drawsOnCurrentMacOS, "la 0.29 de MV no dibuja")
+        try expect(!NwjsVersion(major: 0, minor: 48, patch: 4).drawsOnCurrentMacOS, "la 0.48.4 de MZ tampoco")
+        try expect(NwjsVersion(major: 0, minor: 77, patch: 0).drawsOnCurrentMacOS, "la 0.77 es la primera que va")
+        try expect(NwjsVersion(major: 0, minor: 115, patch: 0).drawsOnCurrentMacOS, "y de ahí en adelante")
+    }
+
+    /// Que el motor del juego no dibuje no deja al juego fuera: se le monta uno que sí. Es lo que
+    /// salva a RPG Maker entero, porque las dos versiones que reparte están por debajo del corte.
+    static func replacesAnEngineThatNoLongerDraws() throws {
+        let fixture = try TemporaryFixture()
+        let viejo = try makeGame(in: fixture, version: (0, 48, 4, 0), layout: .mz)
+        guard case .nwjs(let mz)? = PortableEngineDetector.detect(program: viejo) else {
+            throw TestFailure(description: "no se reconoció")
+        }
+        try expect(mz.isSupported, "un motor que no dibuja ya no deja al juego fuera")
+        try expect(mz.version == "0.48.4", "el panel sigue diciendo la que trae el juego")
+        try expect(mz.engineWasReplaced, "la 0.48.4 no dibuja: hay que cambiarla")
+        try expect(mz.runtimeVersionText == "0.77.0",
+                   "se monta la más antigua que va, no la última: \(mz.runtimeVersionText)")
+
+        // Cambiar un motor que sí funciona sería peor que no tocarlo: el juego se queda con el suyo.
+        let nuevo = try makeGame(in: fixture, version: (0, 90, 0, 0), layout: .mz)
+        guard case .nwjs(let moderno)? = PortableEngineDetector.detect(program: nuevo) else {
+            throw TestFailure(description: "no se reconoció el moderno")
+        }
+        try expect(!moderno.engineWasReplaced, "la 0.90 dibuja: se respeta")
+        try expect(moderno.runtimeVersionText == "0.90.0", "y es la que se descarga")
+
+        // La descarga y el aviso de Rosetta dependen de la máquina, así que se fijan a mano en vez
+        // de preguntarle a esta.
+        let enArm = juego(version: NwjsVersion(major: 0, minor: 48, patch: 4), appleSilicon: true)
+        try expect(enArm.macDownloadURL.absoluteString
+                    == "https://dl.nwjs.io/v0.77.0/nwjs-v0.77.0-osx-arm64.zip",
+                   "se baja el sustituto, no el del juego: \(enArm.macDownloadURL)")
+        try expect(!enArm.needsRosetta, "lo que se monta es nativo: ya no hay Rosetta que avisar")
+
+        let enIntel = juego(version: NwjsVersion(major: 0, minor: 48, patch: 4), appleSilicon: false)
+        try expect(enIntel.macDownloadURL.absoluteString
+                    == "https://dl.nwjs.io/v0.77.0/nwjs-v0.77.0-osx-x64.zip",
+                   "en un Mac de Intel, el sustituto de Intel: \(enIntel.macDownloadURL)")
     }
 
     // MARK: - Manifiesto
@@ -218,6 +256,21 @@ enum NwjsTests {
         </plist>
         """.utf8)
     }()
+
+    /// Un juego mínimo con la versión y la arquitectura puestas a mano, para lo que no debe
+    /// depender de en qué Mac corran las pruebas.
+    private static func juego(version: NwjsVersion, appleSilicon: Bool) -> NwjsGame {
+        NwjsGame(
+            executable: URL(fileURLWithPath: "/tmp/Game.exe"),
+            root: URL(fileURLWithPath: "/tmp"),
+            engineVersion: version,
+            manifest: NwjsManifest(main: "index.html", name: nil, title: "El Faro Rojo", icon: nil),
+            gameEntries: ["index.html", "package.json"],
+            gameBytes: 1,
+            windowsModules: [],
+            appleSilicon: appleSilicon
+        )
+    }
 
     private enum Layout { case mv, mz }
 

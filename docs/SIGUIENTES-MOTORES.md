@@ -78,6 +78,43 @@ Y hay una tercera trampa, que es donde se rompe casi siempre: **las partes nativ
   (`copy /b love.exe+juego.love juego.exe`), trasladado, abierto desde el Finder y comprobado que
   dibuja noventa fotogramas y lee sus datos de dentro del bundle.
 
+### NW.js (RPG Maker MV y MZ) — funcionando
+
+- Reconoce por dos señales a la vez: `nw.dll` en la carpeta y un `package.json` con `main`. Por
+  separado no dicen nada; `package.json` lo tiene medio mundo.
+- **La versión sale de `nw.dll`**, con el mismo lector que LÖVE. RPG Maker renombra `nw.exe` a
+  `Game.exe` y hay herramientas que de paso le reescriben la versión al ejecutable.
+- Descarga `https://dl.nwjs.io/v<X.Y.Z>/nwjs-v<X.Y.Z>-osx-<x64|arm64>.zip`. La lista de versiones
+  y de qué archivos existen para cada una está en `https://nwjs.io/versions.json`. Binarios de
+  Apple silicon desde la 0.77.0; antes solo Intel.
+- **El motor que se monta casi nunca es el del juego, y eso es lo que hace que esto sirva de
+  algo.** El suelo medido en macOS 15 sobre un M2 es la **0.77.0**: la 0.48.4 arranca el proceso y
+  lo mantiene vivo los veinte segundos, pero la página no llega a ejecutar ni su primera línea; la
+  0.77.0 y la 0.115.0 la ejecutan entera. El corte cae justo en la primera compilación de arm64, y
+  como por debajo no existe ninguna, no se puede separar «Rosetta» de «Chromium viejo»: lo medido
+  es dónde está el corte, no cuál de los dos lo causa. Como MV reparte la 0.29 y MZ la 0.48,
+  respetar la versión del juego habría dejado fuera a todo RPG Maker.
+- Se puede sustituir porque un juego de NW.js es HTML y JavaScript y no lee ningún formato atado a
+  su motor, al revés que Godot con su `.pck` o Ren'Py con su bytecode. Comprobado en la 0.77.0 y en
+  la 0.115.0 que van las cuatro cosas de las que depende RPG Maker: leer sus datos con XHR desde
+  `file://`, guardar con `fs`, WebGL y pintar. Y `require('nw.gui')` —la API anterior a la 0.13—
+  sigue existiendo en la 0.115, así que ni siquiera un juego muy viejo se queda sin ella.
+- Se monta **la más antigua que dibuja**, no la última: mover el suelo bajo el juego lo menos
+  posible. Y se dice en el panel, con su aviso propio, en vez de cambiárselo callando.
+- Montaje: el juego entero, sin los archivos del motor, va a `Contents/Resources/app.nw/`. La
+  separación se hace por descarte porque los repartos no se parecen —MV mete todo en `www/`, MZ lo
+  deja suelto—, mientras que la lista de archivos que pone NW.js sí es fija.
+- Nombre: del `window.title` del `package.json`, no del `.exe`. RPG Maker llama `Game.exe` a todo
+  lo que exporta.
+- Probado de punta a punta con los dos repartos —`bash scripts/probar-nwjs.sh [versión] [mv|mz]`—:
+  un MZ con 0.48.4 y un MV con 0.29.4 se trasladan montando la 0.77.0, y la app abre, lee sus datos
+  desde `file://`, guarda y pinta treinta cuadros. Y desde la ventana de Lever: el panel dice las
+  dos versiones, el botón descarga la 0.77.0 y la app que deja en el Escritorio dibuja.
+- **Lo que sigue sin comprobarse**: un juego de RPG Maker de verdad. No hay ninguno a mano y el
+  editor es de pago. Lo medido es que el motor nuevo hace lo que MV y MZ necesitan; lo que no se
+  puede afirmar es que ningún complemento de ningún juego dependa de algo que Chromium cambiara
+  por el camino.
+
 ### Textos que decían «Godot» y los usaban los tres
 
 `portStageDownloading`, `errPortEngine` y `errPortRuntime` nombraban a Godot, y Ren'Py ya pasaba
@@ -103,53 +140,7 @@ firmar, clonar en APFS, lanzar guiones), `PortPaths` (nombre libre, `.icns`) y `
 
 ## 3. Lo que viene, por orden
 
-### 3.1 NW.js — RPG Maker MV y MZ — **escrito, sin la comprobación final**
-
-El código está entero y con sus pruebas en verde, y el traslado se ejecutó de punta a punta: baja
-el motor, lo monta, escribe la ficha, saca el icono y firma. Lo que **falta** es la última
-comprobación —abrir la app y ver que dibuja—. Para repetirla:
-
-```
-bash scripts/probar-nwjs.sh
-```
-
-Ese guion arma un reparto de RPG Maker MZ completo —con su `nw.dll` de mentira pero con recurso de
-versión de verdad—, lo pasa por el porteador y lanza la app. Si sale `cuadros=30` y el píxel leído
-es naranja, funciona. `scripts/probar-traslado.sh <ruta al .exe>` hace lo mismo con cualquier motor.
-
-Falta por una razón que conviene apuntar: durante
-la sesión el mismo `nwjs.app` 0.48.4 pasó de arrancar y pintar a no cargar la página, sin tocar el
-código y con la copia recién sacada del ZIP. Se descartaron el aislamiento de Chromium
-(`--no-sandbox`), la firma, el renombrado del ejecutable, el cerrojo `SingletonLock` y el perfil de
-usuario. Queda pendiente repetirlo con la máquina limpia.
-
-Lo que **sí** quedó medido:
-
-- **Reconocimiento**: `nw.dll` en la carpeta más un `package.json` con `main`. Ninguna de las dos
-  por separado dice nada: `package.json` lo tiene medio mundo.
-- **Versión**: del recurso `VS_VERSION_INFO` de `nw.dll`, con el mismo lector que LÖVE. RPG Maker
-  renombra `nw.exe` a `Game.exe` y hay herramientas que de paso le reescriben la versión.
-- **Descarga**: `https://dl.nwjs.io/v<X.Y.Z>/nwjs-v<X.Y.Z>-osx-<x64|arm64>.zip`. La lista buena de
-  versiones y de qué archivos existen para cada una está en `https://nwjs.io/versions.json`.
-  Binarios de Apple silicon **desde la 0.77.0**; antes solo Intel.
-- **Suelo: la 0.48.** Probadas en macOS 15 la 0.12.3, 0.29.4, 0.31.5, 0.35.5, 0.38.2, 0.42.6,
-  0.43.6, 0.46.4 y 0.47.3: en todas el proceso del navegador abre ventana pero el que dibuja muere
-  antes de cargar la página —ni siquiera se pide una imagen del HTML—. La 0.29.4 además revienta
-  con SIGSEGV. Solo la 0.47.3 se salva añadiendo `--no-sandbox`, y ninguna otra.
-- **Y aquí está el problema de fondo**: RPG Maker MV reparte NW.js 0.29, que es justo la que
-  revienta. Con el criterio de arriba, MV se queda fuera. La salida sería sustituir el motor por
-  uno moderno —los juegos de NW.js son HTML y JavaScript, no van atados a su versión como Godot o
-  Ren'Py—, y en la 0.48.4 se comprobó que funcionan las cuatro cosas de las que depende RPG Maker:
-  leer sus datos con XHR desde `file://`, guardar con `fs`, WebGL y WebAudio. Pero eso cambia el
-  motor bajo los pies del juego y no hay un MV de verdad a mano para comprobarlo, así que hoy está
-  sin hacer y anotado, no a medias.
-- **Montaje**: el juego entero, sin los archivos del motor, va a `Contents/Resources/app.nw/`. La
-  separación se hace por descarte porque los repartos no se parecen —MV mete todo en `www/`, MZ lo
-  deja suelto—, mientras que la lista de archivos que pone NW.js sí es fija.
-- **Nombre**: del `window.title` del `package.json`, no del `.exe`. RPG Maker llama `Game.exe` a
-  todo lo que exporta.
-
-### 3.2 Java — y aquí entra «las librerías nativas de Windows»
+### 3.1 Java — y aquí entra «las librerías nativas de Windows»
 
 **Sí se puede arreglar**, y por el mismo mecanismo que GoZen: identificar (nombre, versión) y
 bajar el artefacto de macOS que el propio proyecto publica.
@@ -166,7 +157,7 @@ bajar el artefacto de macOS que el propio proyecto publica.
   también publican jars multiplataforma.
 - **Por verificar**: si conviene reescribir el `-Djava.library.path` o basta sustituir los jars.
 
-### 3.3 Electron — y aquí entra «los `.node` nativos»
+### 3.2 Electron — y aquí entra «los `.node` nativos»
 
 **También se puede**, con un matiz: hay que acertar el ABI.
 
@@ -183,14 +174,14 @@ bajar el artefacto de macOS que el propio proyecto publica.
   3. Recompilar con `@electron/rebuild` — necesita Node y las herramientas de Xcode. Es el mismo
      patrón que `build-gozen.sh`: una receta con su aviso de tiempo y espacio.
 
-### 3.4 Generalizar el resolvedor de partes nativas
+### 3.3 Generalizar el resolvedor de partes nativas
 
 Cuando estén Java y Electron, `NativePartRecipe` se queda corto. Lo que pide el problema es un
 **resolvedor** con la firma `(nombre, versión, plataforma, abi) -> URL o receta`, con las tres
 estrategias de arriba. `PortLibrary` ya es la caché; `NativePartRecipe` ya es la receta. Falta la
 estrategia intermedia: la tabla de descargas conocidas.
 
-### 3.5 Android — «lo mismo para los .apk»
+### 3.4 Android — «lo mismo para los .apk»
 
 Lever hoy **rechaza** los formatos empaquetados y lo dice en su propio mensaje de error. Ese es
 el hueco más claro:
@@ -242,6 +233,10 @@ el hueco más claro:
   at all» y macOS no lanza los procesos hijos, que en Chromium son los que dibujan.
 - NW.js deja `SingletonLock` y un zócalo en el directorio temporal. Matar sus procesos a lo bruto
   deja el siguiente arranque esperando en ellos.
+- Un NW.js anterior a la 0.77 en un Mac de Apple silicon abre el proceso, lo mantiene vivo y no
+  ejecuta la página: ni una línea, ni un error, ni en su salida ni en la del sistema. Buscarle la
+  causa al montaje, a la firma o al aislamiento es perder la sesión; lo que hay que mirar es la
+  versión del motor.
 - `requestAnimationFrame` no corre si la ventana queda detrás. Para una sonda automática, temporizador.
 - `process.stdout` desde la página no llega a la terminal en las versiones viejas de NW.js. Para
   saber hasta dónde llega el arranque, una baliza HTTP contra un servidor local: no depende de Node
