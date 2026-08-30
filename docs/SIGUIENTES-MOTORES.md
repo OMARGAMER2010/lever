@@ -169,6 +169,56 @@ Y hay una tercera trampa, que es donde se rompe casi siempre: **las partes nativ
   usan LWJGL —AWT/Swing, o LWJGL 2, que sí carga por `java.library.path` y necesitaría otra rama—.
   Lo medido es el camino de LWJGL 3, que es el dominante.
 
+### Electron — funcionando (falta la comprobación en la ventana)
+
+- Reconoce por `resources/app.asar` al lado del `.exe`. Es como el propio Electron encuentra el
+  código de la app, y ningún otro motor de los contemplados reparte así.
+- **La versión del motor sale del archivo `version` de la raíz.** No del recurso del PE, y esto no
+  es una precaución teórica: comprobado con `electron-packager`, que renombra `electron.exe` al
+  nombre del juego y de paso le reescribe el recurso con la versión **del juego**. Un reparto de
+  Electron 44 declara ahí «1.0.0.0». Es la misma trampa que en LÖVE, con otro disfraz.
+- Respaldo, si el reparto no trae el archivo: la cadena `Chrome/… Electron/<X.Y.Z>` que queda
+  dentro del ejecutable y sobrevive al renombrado. Cae por el último tercio de un binario de 244 MB,
+  así que se busca por trozos con solape —y con `Data.range(of:)`, no comparando a mano: recorrer
+  eso rebanada a rebanada tarda **minutos**—.
+- **Motor**: `https://github.com/electron/electron/releases/download/v<X>/electron-v<X>-darwin-<arm64|x64>.zip`.
+  Binarios de Apple silicon **desde la 11.0.0**, comprobado contra sus publicaciones: la 10.4.7
+  solo tiene `darwin-x64`. Antes de la 11 la app irá con Rosetta y se avisa.
+- **Montaje comparado con el que produce `electron-packager` para el mismo juego**, que es lo único
+  que evita adivinar: copiar `Electron.app`, renombrar `Contents/MacOS/Electron`, poner el
+  `app.asar` donde estaba el `default_app.asar`, y reescribir la ficha. La estructura sale idéntica
+  salvo el `_CodeSignature` —Lever sí firma— y el identificador, que va en el espacio de Lever.
+- **Hay que renombrar los cuatro ayudantes anidados** (`Electron Helper.app`, `… (GPU)`,
+  `… (Plugin)`, `… (Renderer)`), su binario de dentro y su `Info.plist`. En Chromium los procesos
+  que dibujan son esos y el principal los busca por un nombre derivado del suyo. Los binarios son
+  **idénticos** —mismo SHA1 antes y después—: lo único que cambia es el nombre. Ojo: los ayudantes
+  del motor **no traen `CFBundleExecutable`**, así que no basta con reescribirlo, hay que ponerlo.
+- `NSPrincipalClass` se queda como está: en Electron es `AtomApplication`. Y hay que firmar con
+  `codesign --deep`, como en NW.js, por los `.app` anidados.
+- Se lee el `.asar` desde Swift, en `AsarArchive.swift`. No es un ZIP y no comprime: cuatro enteros
+  de 32 bits, un JSON con el árbol —tamaño y desplazamiento de cada archivo, **el desplazamiento
+  como cadena** porque en JavaScript un entero grande pierde precisión— y detrás los contenidos
+  pegados. De ahí salen el `productName` del juego y los módulos nativos.
+- **Módulos `.node`**: se encuentran en los dos sitios donde pueden estar —sueltos en
+  `app.asar.unpacked/`, que es lo normal porque `dlopen` no lee de dentro de un asar, y dentro del
+  propio asar— y se nombran con su versión, que sale del `package.json` del módulo. Hoy **se
+  detectan y se dicen, no se sustituyen**: eso es el resolvedor del 3.1.
+- **El ABI sí es derivable sin ejecutar nada**: el índice `https://releases.electronjs.org/releases.json`
+  trae `modules` por versión. Comprobado cruzado: dice 149 para la 44.0.0, y la app trasladada
+  imprime `abi=149` al arrancar. Es la pieza que le falta al resolvedor.
+- Probado de punta a punta con `bash scripts/probar-electron.sh [versión]`, que arma el reparto con
+  `@electron/packager` —la herramienta del propio motor, no una imitación—: la app abre, lee sus
+  datos, arranca WebGL y pinta treinta cuadros del color esperado, y el módulo nativo sale nombrado
+  con su versión.
+- **Lo que falta**: la comprobación en la ventana de Lever. El código está y el traslado se ejecuta
+  entero por el mismo camino que usa el botón, pero la sesión estaba bloqueada al terminar. Es
+  `open -a ~/Desktop/Lever.app <ruta al .exe>` y mirar que el panel diga «Electron 44.0.0» y que el
+  botón deje la app en el Escritorio.
+- **Lo que sigue sin comprobarse**: un juego comercial de Electron de verdad, una versión anterior
+  a la 11 —que va por Rosetta y podría chocar con lo mismo que NW.js: Chromium viejo de x86_64 no
+  arranca su proceso de dibujo en macOS 15—, y `app.asar.unpacked` con un módulo nativo que el
+  juego use de verdad.
+
 ### Textos que decían «Godot» y los usaban los tres
 
 `portStageDownloading`, `errPortEngine` y `errPortRuntime` nombraban a Godot, y Ren'Py ya pasaba
@@ -194,34 +244,25 @@ firmar, clonar en APFS, lanzar guiones), `PortPaths` (nombre libre, `.icns`) y `
 
 ## 3. Lo que viene, por orden
 
-### 3.1 Electron — y aquí entra «los `.node` nativos»
+### 3.1 Generalizar el resolvedor de partes nativas
 
-**También se puede**, con un matiz: hay que acertar el ABI.
+Ya hay tres resolvedores que se parecen mucho y no se conocen entre sí: el de GoZen, que compila
+desde fuente; el de LWJGL, que baja el artefacto de Maven por (módulo, versión, plataforma); y el
+de Electron, que hoy solo **detecta** los `.node` y los nombra. Lo que pide el problema es un
+**resolvedor** con la firma `(nombre, versión, plataforma, abi) -> URL o receta`, con las tres
+estrategias de arriba.
 
-- Reconocer: `resources/app.asar` junto al `.exe`.
-- Motor: `https://github.com/electron/electron/releases/download/v<X>/electron-v<X>-darwin-arm64.zip`.
-- Versión de Electron: **por verificar**. La pista más fiable suele ser la cadena
-  `Chrome/… Electron/<X.Y.Z>` que queda dentro del binario; también el recurso de versión del PE.
-- **Módulos `.node`**: cada uno es una librería compilada. Tres estrategias, en este orden:
-  1. Ya lo tenemos guardado en `PortLibrary`.
-  2. Descargar el *prebuild* que publica el módulo (convenciones `prebuild`, `prebuildify`,
-     `node-pre-gyp`) para `darwin-arm64` **y el ABI de esa versión de Electron**
-     (`process.versions.modules`). El nombre y la versión del módulo salen de
-     `app.asar` → `node_modules/<mod>/package.json`.
-  3. Recompilar con `@electron/rebuild` — necesita Node y las herramientas de Xcode. Es el mismo
-     patrón que `build-gozen.sh`: una receta con su aviso de tiempo y espacio.
+Las piezas están todas puestas: `PortLibrary` es la caché, `NativePartRecipe` es la receta,
+`JavaPorter.ensureNatives` es la estrategia intermedia —pero atada a LWJGL—, y el ABI ya se sabe
+sacar sin ejecutar nada (`releases.json` de Electron trae `modules` por versión, comprobado contra
+lo que el runtime imprime). Falta sacar esa estrategia de dentro de `JavaPorter`, darle la tabla de
+descargas conocidas y enseñarle las convenciones de los prebuilds de Node —`prebuild`,
+`prebuildify`, `node-pre-gyp`—, que es lo que cerraría Electron del todo.
 
-### 3.2 Generalizar el resolvedor de partes nativas
+Aviso al hacerlo: un módulo puede no tener prebuild para esa combinación, y entonces lo honrado es
+seguir nombrándolo, no fingir que se resolvió.
 
-Con Java ya hecho hay dos resolvedores que se parecen mucho y no se conocen: el de GoZen, que
-compila desde fuente, y el de LWJGL, que baja el artefacto de Maven por (módulo, versión,
-plataforma). Cuando entre el de Electron —que además necesita acertar el ABI— serán tres. Lo que
-pide el problema es un **resolvedor** con la firma `(nombre, versión, plataforma, abi) -> URL o
-receta`, con las tres estrategias de arriba. `PortLibrary` ya es la caché; `NativePartRecipe` ya es
-la receta; `JavaPorter.ensureNatives` ya es la estrategia intermedia, pero atada a LWJGL. Falta
-sacarla de ahí y darle la tabla de descargas conocidas.
-
-### 3.3 Android — «lo mismo para los .apk»
+### 3.2 Android — «lo mismo para los .apk»
 
 Lever hoy **rechaza** los formatos empaquetados y lo dice en su propio mensaje de error. Ese es
 el hueco más claro:
@@ -273,6 +314,10 @@ el hueco más claro:
   at all» y macOS no lanza los procesos hijos, que en Chromium son los que dibujan.
 - NW.js deja `SingletonLock` y un zócalo en el directorio temporal. Matar sus procesos a lo bruto
   deja el siguiente arranque esperando en ellos.
+- El recurso de versión de un `.exe` **de Electron** dice la versión del juego, no la del motor:
+  `electron-packager` se lo reescribe al renombrarlo. La del motor está en el archivo `version`.
+- Buscar una cadena en un binario de doscientos megas comparando rebanadas a mano tarda minutos.
+  `Data.range(of:)` lo hace en menos de un segundo. Es una función que corre al elegir un archivo.
 - `unzip` sale con **1** —aviso, no error— cuando el ZIP lleva bytes delante: extrae bien igual.
   Exigirle un 0 deja fuera precisamente el reparto de Launch4j, que es un jar detrás de un `.exe`.
 - **Restar cadenas para sacar una ruta relativa sale mal en el temporal.** `/var` es un enlace a

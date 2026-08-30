@@ -251,6 +251,12 @@ public enum NativePorter {
                 runner: runner, session: session, library: library, fileManager: fileManager,
                 onStage: onStage, onLine: onLine
             )
+        case .electron(let game):
+            return try await ElectronPorter.makeApp(
+                for: game, into: folder,
+                runner: runner, session: session, library: library, fileManager: fileManager,
+                onStage: onStage, onLine: onLine
+            )
         case .java(let game):
             return try await JavaPorter.makeApp(
                 for: game, into: folder,

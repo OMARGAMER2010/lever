@@ -93,6 +93,7 @@ public enum TextKey: String, CaseIterable, Sendable {
     case portableBodyLove, portableUnsupportedLove
     case portableBodyNwjs, portableUnsupportedNwjs, portableNwjsNewerEngine
     case portableBodyJava, portableUnsupportedJava
+    case portableBodyElectron, portableUnsupportedElectron
     case portStageReading, portStageDownloading, portStageUnpacking
     case portStageBuilding, portStageAssembling, portStageSigning
     case logPortableDetected, logPorted, logPortUnresolved

@@ -1,0 +1,245 @@
+import Foundation
+
+/// Convierte un juego de Electron repartido para Windows en un `.app` de macOS.
+///
+/// El molde no está adivinado: se comparó con el que produce `electron-packager` para el mismo
+/// juego. Lo que hace es copiar el `Electron.app` del motor, renombrar el ejecutable, **renombrar
+/// también los cuatro ayudantes anidados**, reescribir las fichas y poner el `app.asar` del juego
+/// donde estaba el de bienvenida.
+public enum ElectronPorter {
+    // MARK: - Fichas
+
+    public static func infoPlist(
+        from original: Data,
+        game: ElectronGame,
+        displayName: String,
+        hasCustomIcon: Bool
+    ) -> Data? {
+        guard var plist = (try? PropertyListSerialization.propertyList(from: original, format: nil))
+            as? [String: Any] else { return nil }
+
+        plist["CFBundleExecutable"] = displayName
+        plist["CFBundleIdentifier"] = identifier(for: game)
+        plist["CFBundleName"] = displayName
+        plist["CFBundleDisplayName"] = displayName
+
+        // `NSPrincipalClass` se queda como está. En un `.app` de Chromium no es `NSApplication`
+        // sino una clase suya —aquí `AtomApplication`—, y quitarla deja la app sin nada que
+        // arrancar. Es la misma trampa que en NW.js.
+
+        if hasCustomIcon {
+            plist["CFBundleIconFile"] = "icon"
+            plist.removeValue(forKey: "CFBundleIconName")
+        }
+        return try? PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+    }
+
+    /// La ficha de un ayudante: el mismo cambio de nombre, y el identificador colgando del de la
+    /// app para que no haya dos procesos distintos diciendo llamarse igual.
+    public static func helperPlist(from original: Data, helperName: String, appIdentifier: String) -> Data? {
+        guard var plist = (try? PropertyListSerialization.propertyList(from: original, format: nil))
+            as? [String: Any] else { return nil }
+        plist["CFBundleExecutable"] = helperName
+        plist["CFBundleName"] = helperName
+        plist["CFBundleDisplayName"] = helperName
+        plist["CFBundleIdentifier"] = appIdentifier + ".helper"
+        return try? PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+    }
+
+    static func identifier(for game: ElectronGame) -> String {
+        let slug = game.suggestedAppName
+            .replacingOccurrences(of: " ", with: "-")
+            .filter { $0.isLetter || $0.isNumber || $0 == "-" }
+        return slug.isEmpty ? "com.lever.electron.juego" : "com.lever.electron." + slug
+    }
+
+    /// Nombre nuevo de un ayudante: se le cambia el «Electron» de delante y se le deja el resto,
+    /// que es lo que distingue al de la GPU del de dibujo.
+    public static func renamedHelper(_ original: String, to appName: String) -> String? {
+        guard original.hasPrefix("Electron") else { return nil }
+        return appName + original.dropFirst("Electron".count)
+    }
+
+    // MARK: - El traslado completo
+
+    public static func makeApp(
+        for game: ElectronGame,
+        into folder: URL,
+        runner: ProcessRunner,
+        session: ProcessSession,
+        library: PortLibrary = .shared,
+        fileManager: FileManager = .default,
+        onStage: @Sendable @escaping (PortStage) -> Void,
+        onLine: @Sendable @escaping (String) -> Void
+    ) async throws -> PortOutcome {
+        let engine = try await ensureRuntime(
+            for: game, runner: runner, session: session,
+            library: library, fileManager: fileManager, onStage: onStage, onLine: onLine
+        )
+        if session.isCancelled { throw PortFailure.cancelled }
+
+        onStage(.assembling)
+        let destination = PortPaths.freeAppURL(named: game.suggestedAppName, in: folder, fileManager: fileManager)
+        do {
+            try assemble(game: game, engine: engine, at: destination, fileManager: fileManager, onLine: onLine)
+        } catch {
+            try? fileManager.removeItem(at: destination)
+            throw PortFailure.assemblyFailed(error.localizedDescription)
+        }
+        if session.isCancelled { throw PortFailure.cancelled }
+
+        onStage(.signing)
+        await PortSigning.signNested(app: destination, runner: runner, session: session)
+
+        return PortOutcome(app: destination, unresolvedParts: game.windowsModules)
+    }
+
+    private static func ensureRuntime(
+        for game: ElectronGame,
+        runner: ProcessRunner,
+        session: ProcessSession,
+        library: PortLibrary,
+        fileManager: FileManager,
+        onStage: @Sendable (PortStage) -> Void,
+        onLine: @Sendable @escaping (String) -> Void
+    ) async throws -> URL {
+        let cache = library.electronRuntimeURL(version: game.version)
+        let engine = cache.appendingPathComponent("Electron.app", isDirectory: true)
+        if library.hasElectronRuntime(version: game.version) { return engine }
+
+        try? fileManager.createDirectory(at: cache, withIntermediateDirectories: true)
+        onStage(.downloadingRuntime(game.version))
+        let archive = cache.appendingPathComponent("electron.zip")
+        let download = try await runner.run(
+            PortCommands.download(game.macDownloadURL, into: archive), session: session, onLine: onLine
+        )
+        if session.isCancelled { throw PortFailure.cancelled }
+        guard download.succeeded else {
+            try? fileManager.removeItem(at: archive)
+            throw PortFailure.downloadFailed(download.exitCode)
+        }
+
+        onStage(.unpackingRuntime)
+        _ = try? await runner.run(PortCommands.unzip(archive, into: cache), session: session, onLine: onLine)
+        try? fileManager.removeItem(at: archive)
+
+        guard library.hasElectronRuntime(version: game.version) else { throw PortFailure.runtimeMissing }
+        return engine
+    }
+
+    // MARK: - Montaje
+
+    private static func assemble(
+        game: ElectronGame,
+        engine: URL,
+        at destination: URL,
+        fileManager: FileManager,
+        onLine: @Sendable @escaping (String) -> Void
+    ) throws {
+        try clone(from: engine, to: destination)
+        guard fileManager.fileExists(atPath: destination.path) else { throw PortFailure.runtimeMissing }
+
+        let nombre = game.suggestedAppName
+        let contents = destination.appendingPathComponent("Contents")
+        let resources = contents.appendingPathComponent("Resources")
+
+        // El ejecutable, para que el Dock y el diálogo de forzar salida no digan «Electron».
+        let lanzador = contents.appendingPathComponent("MacOS/\(nombre)")
+        if lanzador.lastPathComponent != "Electron" {
+            try? fileManager.removeItem(at: lanzador)
+            try fileManager.moveItem(at: contents.appendingPathComponent("MacOS/Electron"), to: lanzador)
+        }
+        try? fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: lanzador.path)
+
+        try renameHelpers(in: contents, to: nombre, identifier: identifier(for: game), fileManager: fileManager)
+
+        // El `default_app.asar` es la pantalla de bienvenida de Electron: sobra en cuanto hay juego.
+        try? fileManager.removeItem(at: resources.appendingPathComponent("default_app.asar"))
+        for entrada in game.resourceEntries {
+            let destino = resources.appendingPathComponent(entrada)
+            try? fileManager.removeItem(at: destino)
+            try clone(from: game.root.appendingPathComponent("resources/\(entrada)"), to: destino)
+        }
+        guard fileManager.fileExists(atPath: resources.appendingPathComponent("app.asar").path) else {
+            throw PortFailure.assemblyFailed("app.asar")
+        }
+
+        let icono = makeIcon(game: game, at: resources.appendingPathComponent("icon.icns"),
+                             fileManager: fileManager)
+        let plistURL = contents.appendingPathComponent("Info.plist")
+        guard let original = try? Data(contentsOf: plistURL),
+              let parcheado = infoPlist(from: original, game: game,
+                                        displayName: nombre, hasCustomIcon: icono) else {
+            throw PortFailure.assemblyFailed("Info.plist")
+        }
+        try parcheado.write(to: plistURL)
+
+        onLine("+ \(nombre) (Electron \(game.version))")
+        for modulo in game.nativeModules {
+            onLine("· \(modulo.label): módulo nativo compilado solo para Windows")
+        }
+    }
+
+    /// Renombra los cuatro `.app` de ayuda que Chromium esconde dentro del framework.
+    ///
+    /// No es cosmético. En Chromium los procesos que dibujan son estos, y el principal los busca
+    /// por un nombre derivado del suyo: si la app se llama distinto que sus ayudantes, la ventana
+    /// abre y se queda en negro. `electron-packager` los renombra, y por eso se renombran aquí.
+    private static func renameHelpers(
+        in contents: URL,
+        to appName: String,
+        identifier: String,
+        fileManager: FileManager
+    ) throws {
+        let frameworks = contents.appendingPathComponent("Frameworks", isDirectory: true)
+        for entrada in (try? fileManager.contentsOfDirectory(atPath: frameworks.path))?.sorted() ?? [] {
+            guard entrada.hasSuffix(".app") else { continue }
+            let base = String(entrada.dropLast(4))
+            guard let nuevoBase = renamedHelper(base, to: appName), nuevoBase != base else { continue }
+
+            let viejo = frameworks.appendingPathComponent(entrada, isDirectory: true)
+            let nuevo = frameworks.appendingPathComponent(nuevoBase + ".app", isDirectory: true)
+            try? fileManager.removeItem(at: nuevo)
+            try fileManager.moveItem(at: viejo, to: nuevo)
+
+            let macOS = nuevo.appendingPathComponent("Contents/MacOS", isDirectory: true)
+            try? fileManager.moveItem(at: macOS.appendingPathComponent(base),
+                                      to: macOS.appendingPathComponent(nuevoBase))
+
+            let ficha = nuevo.appendingPathComponent("Contents/Info.plist")
+            if let original = try? Data(contentsOf: ficha),
+               let parcheado = helperPlist(from: original, helperName: nuevoBase, appIdentifier: identifier) {
+                try parcheado.write(to: ficha)
+            }
+        }
+    }
+
+    /// Un icono, si el reparto dejó uno reconocible. Si no, se queda el de Electron, que es lo
+    /// mismo que hace `electron-packager` cuando no se le da ninguno.
+    private static func makeIcon(game: ElectronGame, at destination: URL, fileManager: FileManager) -> Bool {
+        let base = game.executable.deletingPathExtension().lastPathComponent
+        let sitios = ["resources/\(base).png", "resources/icon.png", "\(base).png", "icon.png"]
+        for relativa in sitios {
+            let imagen = game.root.appendingPathComponent(relativa)
+            guard fileManager.fileExists(atPath: imagen.path) else { continue }
+            PortPaths.makeIcon(from: imagen, at: destination, fileManager: fileManager)
+            if fileManager.fileExists(atPath: destination.path) { return true }
+        }
+        return false
+    }
+
+    /// Copia clonando en APFS: un Electron desplegado son doscientos cincuenta megas.
+    private static func clone(from source: URL, to destination: URL) throws {
+        guard FileManager.default.fileExists(atPath: source.path) else { return }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/cp")
+        process.arguments = ["-Rc", source.path, destination.path]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        try process.run()
+        process.waitUntilExit()
+        if !FileManager.default.fileExists(atPath: destination.path) {
+            try FileManager.default.copyItem(at: source, to: destination)
+        }
+    }
+}

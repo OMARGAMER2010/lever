@@ -120,6 +120,19 @@ public final class PortLibrary: @unchecked Sendable {
         return fileManager.fileExists(atPath: binary.path)
     }
 
+    /// El `Electron.app` que publica Electron, una carpeta por versión. Son doscientos cincuenta
+    /// megas desplegados, así que reutilizarlo entre juegos de la misma versión importa.
+    public func electronRuntimeURL(version: String) -> URL {
+        root.appendingPathComponent("electron", isDirectory: true)
+            .appendingPathComponent(version, isDirectory: true)
+    }
+
+    public func hasElectronRuntime(version: String) -> Bool {
+        let binario = electronRuntimeURL(version: version)
+            .appendingPathComponent("Electron.app/Contents/MacOS/Electron")
+        return fileManager.fileExists(atPath: binario.path)
+    }
+
     /// Los JRE de Temurin, una carpeta por versión y arquitectura. Las dos cosas hacen falta en
     /// la clave: un juego de Java 8 baja el de Intel y uno de Java 17 el de ARM, y los dos pueden
     /// convivir en el mismo Mac.
