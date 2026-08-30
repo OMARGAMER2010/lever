@@ -31,6 +31,20 @@ public enum PortCommands {
         )
     }
 
+    /// Firma un bundle con todo lo que lleve dentro, de dentro hacia fuera.
+    ///
+    /// Hace falta cuando el motor trae bundles anidados —NW.js esconde cuatro `.app` de ayudantes
+    /// dentro de su framework—. A esos hay que firmarlos como bundles, no archivo a archivo: si
+    /// se sellan sueltos, el `.app` de fuera queda «not signed at all» y macOS no arranca los
+    /// procesos hijos, que en Chromium son los que dibujan.
+    public static func signNested(_ target: URL) -> ProcessCommand {
+        ProcessCommand(
+            executableURL: URL(fileURLWithPath: "/usr/bin/codesign"),
+            arguments: ["--force", "--deep", "--sign", "-", target.path],
+            currentDirectoryURL: nil
+        )
+    }
+
     /// Sin esto macOS trata el `.app` como descargado y pide permiso al abrirlo.
     public static func clearQuarantine(_ target: URL) -> ProcessCommand {
         ProcessCommand(
@@ -132,6 +146,16 @@ public enum PortSigning {
     /// estén firmadas —«code object is not signed at all, in subcomponent…»— y las piezas que
     /// vienen sueltas del SDK de un motor no siempre traen firma propia. Así que primero los
     /// binarios auxiliares, y el ejecutable principal al final, dentro del sello del bundle.
+    /// Para los motores que traen bundles anidados. `codesign --deep` los recorre él solo.
+    public static func signNested(
+        app: URL,
+        runner: ProcessRunner,
+        session: ProcessSession
+    ) async {
+        _ = try? await runner.run(PortCommands.clearQuarantine(app), session: session)
+        _ = try? await runner.run(PortCommands.signNested(app), session: session)
+    }
+
     public static func sign(
         app: URL,
         mainExecutable: String,
@@ -195,6 +219,12 @@ public enum NativePorter {
             )
         case .love(let game):
             return try await LovePorter.makeApp(
+                for: game, into: folder,
+                runner: runner, session: session, library: library, fileManager: fileManager,
+                onStage: onStage, onLine: onLine
+            )
+        case .nwjs(let game):
+            return try await NwjsPorter.makeApp(
                 for: game, into: folder,
                 runner: runner, session: session, library: library, fileManager: fileManager,
                 onStage: onStage, onLine: onLine

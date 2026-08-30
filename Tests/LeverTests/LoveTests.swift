@@ -68,12 +68,12 @@ enum LoveTests {
         guard let version = WindowsVersionResource.productVersion(of: dll) else {
             throw TestFailure(description: "no se leyó el recurso de versión")
         }
-        try expect(version == LoveVersion(major: 11, minor: 5, patch: 0),
+        try expect(version == WindowsFileVersion(major: 11, minor: 5, patch: 0, build: 2),
                    "la versión leída no cuadra: \(version)")
 
         let vieja = fixture.directoryURL.appendingPathComponent("vieja.dll")
         try WindowsBinary(productVersion: (0, 10, 2, 0)).data.write(to: vieja)
-        try expect(WindowsVersionResource.productVersion(of: vieja) == LoveVersion(major: 0, minor: 10, patch: 2),
+        try expect(WindowsVersionResource.productVersion(of: vieja) == WindowsFileVersion(major: 0, minor: 10, patch: 2),
                    "la serie 0.x lleva las tres cifras en el recurso")
     }
 
@@ -342,7 +342,7 @@ enum LoveTests {
 /// Se arma byte a byte porque no se puede meter una `love.dll` de verdad en el repositorio, y
 /// porque un archivo inventado a medias haría pasar la prueba sin recorrer el árbol de recursos,
 /// que es justo la parte que puede salir mal.
-private struct WindowsBinary {
+struct WindowsBinary {
     let productVersion: (Int, Int, Int, Int)
 
     private static let sectionRVA: UInt32 = 0x1000

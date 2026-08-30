@@ -107,6 +107,19 @@ public final class PortLibrary: @unchecked Sendable {
         return fileManager.fileExists(atPath: binary.path)
     }
 
+    /// El `nwjs.app` que publica NW.js, una carpeta por versión. Son trescientos megas cada una,
+    /// así que reutilizarla entre juegos de la misma versión no es un lujo.
+    public func nwjsRuntimeURL(version: String) -> URL {
+        root.appendingPathComponent("nwjs", isDirectory: true)
+            .appendingPathComponent(version, isDirectory: true)
+    }
+
+    public func hasNwjsRuntime(version: String) -> Bool {
+        let binary = nwjsRuntimeURL(version: version)
+            .appendingPathComponent("nwjs.app/Contents/MacOS/nwjs")
+        return fileManager.fileExists(atPath: binary.path)
+    }
+
     public func url(forLibraryNamed name: String) -> URL? {
         let candidate = folderURL.appendingPathComponent(name)
         return fileManager.fileExists(atPath: candidate.path) ? candidate : nil

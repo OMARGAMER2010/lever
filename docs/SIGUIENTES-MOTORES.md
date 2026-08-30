@@ -103,14 +103,41 @@ firmar, clonar en APFS, lanzar guiones), `PortPaths` (nombre libre, `.icns`) y `
 
 ## 3. Lo que viene, por orden
 
-### 3.1 NW.js — RPG Maker MV y MZ
+### 3.1 NW.js — RPG Maker MV y MZ — **escrito, sin la comprobación final**
 
-- Reconocer: `www/index.html` + `package.json` (MV), o `package.json` con `js/` y `data/` (MZ).
-- Motor: `https://dl.nwjs.io/v<X.Y.Z>/nwjs-v<X.Y.Z>-osx-arm64.zip`.
-- Montaje: el juego entero va como `nwjs.app/Contents/Resources/app.nw`.
-- **Por verificar**, y es el punto delicado: de dónde sacar la versión de NW.js. El
-  `package.json` no la dice; probablemente haya que leerla del recurso de versión del `.exe` o
-  de `nw.dll`. Una versión demasiado nueva rompe juegos viejos: mejor errar por abajo.
+El código está entero y con sus pruebas en verde, y el traslado se ejecutó de punta a punta: baja
+el motor, lo monta, escribe la ficha, saca el icono y firma. Lo que **falta** es la última
+comprobación —abrir la app y ver que dibuja—, y falta por una razón que conviene apuntar: durante
+la sesión el mismo `nwjs.app` 0.48.4 pasó de arrancar y pintar a no cargar la página, sin tocar el
+código y con la copia recién sacada del ZIP. Se descartaron el aislamiento de Chromium
+(`--no-sandbox`), la firma, el renombrado del ejecutable, el cerrojo `SingletonLock` y el perfil de
+usuario. Queda pendiente repetirlo con la máquina limpia.
+
+Lo que **sí** quedó medido:
+
+- **Reconocimiento**: `nw.dll` en la carpeta más un `package.json` con `main`. Ninguna de las dos
+  por separado dice nada: `package.json` lo tiene medio mundo.
+- **Versión**: del recurso `VS_VERSION_INFO` de `nw.dll`, con el mismo lector que LÖVE. RPG Maker
+  renombra `nw.exe` a `Game.exe` y hay herramientas que de paso le reescriben la versión.
+- **Descarga**: `https://dl.nwjs.io/v<X.Y.Z>/nwjs-v<X.Y.Z>-osx-<x64|arm64>.zip`. La lista buena de
+  versiones y de qué archivos existen para cada una está en `https://nwjs.io/versions.json`.
+  Binarios de Apple silicon **desde la 0.77.0**; antes solo Intel.
+- **Suelo: la 0.48.** Probadas en macOS 15 la 0.12.3, 0.29.4, 0.31.5, 0.35.5, 0.38.2, 0.42.6,
+  0.43.6, 0.46.4 y 0.47.3: en todas el proceso del navegador abre ventana pero el que dibuja muere
+  antes de cargar la página —ni siquiera se pide una imagen del HTML—. La 0.29.4 además revienta
+  con SIGSEGV. Solo la 0.47.3 se salva añadiendo `--no-sandbox`, y ninguna otra.
+- **Y aquí está el problema de fondo**: RPG Maker MV reparte NW.js 0.29, que es justo la que
+  revienta. Con el criterio de arriba, MV se queda fuera. La salida sería sustituir el motor por
+  uno moderno —los juegos de NW.js son HTML y JavaScript, no van atados a su versión como Godot o
+  Ren'Py—, y en la 0.48.4 se comprobó que funcionan las cuatro cosas de las que depende RPG Maker:
+  leer sus datos con XHR desde `file://`, guardar con `fs`, WebGL y WebAudio. Pero eso cambia el
+  motor bajo los pies del juego y no hay un MV de verdad a mano para comprobarlo, así que hoy está
+  sin hacer y anotado, no a medias.
+- **Montaje**: el juego entero, sin los archivos del motor, va a `Contents/Resources/app.nw/`. La
+  separación se hace por descarte porque los repartos no se parecen —MV mete todo en `www/`, MZ lo
+  deja suelto—, mientras que la lista de archivos que pone NW.js sí es fija.
+- **Nombre**: del `window.title` del `package.json`, no del `.exe`. RPG Maker llama `Game.exe` a
+  todo lo que exporta.
 
 ### 3.2 Java — y aquí entra «las librerías nativas de Windows»
 
@@ -198,6 +225,17 @@ el hueco más claro:
   el icono que montes no se ve nunca.
 - El recurso de versión de un `.exe` de un juego lo reescriben las herramientas de empaquetado. La
   versión del motor hay que buscarla en su DLL.
+- `NSPrincipalClass` en un `.app` de Chromium **no** es `NSApplication`, es `BrowserCrApplication`.
+  Quitarla deja la app sin nada que arrancar.
+- Un motor con `.app` anidados dentro (NW.js esconde cuatro ayudantes en su framework) hay que
+  firmarlo con `codesign --deep`. Firmando archivo a archivo, el bundle de fuera queda «not signed
+  at all» y macOS no lanza los procesos hijos, que en Chromium son los que dibujan.
+- NW.js deja `SingletonLock` y un zócalo en el directorio temporal. Matar sus procesos a lo bruto
+  deja el siguiente arranque esperando en ellos.
+- `requestAnimationFrame` no corre si la ventana queda detrás. Para una sonda automática, temporizador.
+- `process.stdout` desde la página no llega a la terminal en las versiones viejas de NW.js. Para
+  saber hasta dónde llega el arranque, una baliza HTTP contra un servidor local: no depende de Node
+  ni de que la página tenga permisos.
 
 ---
 

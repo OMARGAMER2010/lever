@@ -91,6 +91,7 @@ public enum TextKey: String, CaseIterable, Sendable {
     case portableUnsupportedGodot, portableRuntimeCached, portableRuntimeDownload
     case portableBodyRenpy, portableUnsupportedRenpy, portableRosettaNote
     case portableBodyLove, portableUnsupportedLove
+    case portableBodyNwjs, portableUnsupportedNwjs
     case portStageReading, portStageDownloading, portStageUnpacking
     case portStageBuilding, portStageAssembling, portStageSigning
     case logPortableDetected, logPorted, logPortUnresolved
