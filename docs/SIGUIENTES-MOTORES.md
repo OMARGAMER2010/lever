@@ -107,7 +107,17 @@ firmar, clonar en APFS, lanzar guiones), `PortPaths` (nombre libre, `.icns`) y `
 
 El código está entero y con sus pruebas en verde, y el traslado se ejecutó de punta a punta: baja
 el motor, lo monta, escribe la ficha, saca el icono y firma. Lo que **falta** es la última
-comprobación —abrir la app y ver que dibuja—, y falta por una razón que conviene apuntar: durante
+comprobación —abrir la app y ver que dibuja—. Para repetirla:
+
+```
+bash scripts/probar-nwjs.sh
+```
+
+Ese guion arma un reparto de RPG Maker MZ completo —con su `nw.dll` de mentira pero con recurso de
+versión de verdad—, lo pasa por el porteador y lanza la app. Si sale `cuadros=30` y el píxel leído
+es naranja, funciona. `scripts/probar-traslado.sh <ruta al .exe>` hace lo mismo con cualquier motor.
+
+Falta por una razón que conviene apuntar: durante
 la sesión el mismo `nwjs.app` 0.48.4 pasó de arrancar y pintar a no cargar la página, sin tocar el
 código y con la copia recién sacada del ZIP. Se descartaron el aislamiento de Chromium
 (`--no-sandbox`), la firma, el renombrado del ejecutable, el cerrojo `SingletonLock` y el perfil de
