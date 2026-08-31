@@ -15,16 +15,26 @@ public struct NativePart: Equatable, Sendable {
     /// ABI de Node contra el que se compiló. `nil` para las partes que no dependen de ninguno,
     /// como las de LWJGL.
     public let abi: Int?
+    /// Contra qué se compiló, cuando no es el ABI de una versión concreta.
+    ///
+    /// Un módulo escrito contra N-API no va atado a ninguna versión de Electron: publica un solo
+    /// binario por plataforma y vale para todas. Su identidad no es el ABI —sería mentira guardarlo
+    /// bajo uno— sino la versión de N-API, y eso es lo que va aquí («napi3»).
+    public let runtime: String?
     /// De dónde bajarla. `nil` cuando no se conoce ningún sitio: entonces solo cabe nombrarla.
     public let download: URL?
     /// Con qué nombre se guarda el archivo.
     public let fileName: String
 
-    public init(name: String, version: String, platform: String, abi: Int?, download: URL?, fileName: String) {
+    public init(
+        name: String, version: String, platform: String, abi: Int?,
+        download: URL?, fileName: String, runtime: String? = nil
+    ) {
         self.name = name
         self.version = version
         self.platform = platform
         self.abi = abi
+        self.runtime = runtime
         self.download = download
         self.fileName = fileName
     }
@@ -32,9 +42,10 @@ public struct NativePart: Equatable, Sendable {
     /// Cómo se enseña: «better-sqlite3 12.11.1».
     public var label: String { "\(name) \(version)" }
 
-    /// Nombre de la carpeta en la caché, con las cuatro señas dentro.
+    /// Nombre de la carpeta en la caché, con las señas dentro.
     public var cacheKey: String {
         let base = "\(name)-\(version)-\(platform)".replacingOccurrences(of: "/", with: "-")
+        if let runtime { return "\(base)-\(runtime)" }
         return abi.map { "\(base)-abi\($0)" } ?? base
     }
 }

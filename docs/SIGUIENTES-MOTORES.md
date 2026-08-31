@@ -306,6 +306,39 @@ al usuario a buscarse la vida. Ahora entran los cuatro formatos y el `.apk` sin 
   —elegir entre las apps del aparato— y se dejó sin hacer en vez de dejar los mandos escritos y sin
   llamar por nadie.
 
+### Programas reales: la primera pasada
+
+Los seis motores estaban probados contra juegos que generé con las herramientas del propio motor.
+Eso comprueba el caso limpio; lo que sigue es lo que apareció al pasar programas de verdad,
+descargados de las publicaciones de sus autores.
+
+- **Godot 4 — funciona con una app real.** Pixelorama 1.2.1 (Godot 4.7.1), el editor de píxeles
+  de Orama Interactive, repartido para Windows: se traslada, abre su ventana en tres segundos,
+  arranca OpenGL sobre Metal en el M2 y pinta el editor entero. Sin tocar nada.
+- **Godot 3 se reconoce y se dice, y ahora está comprobado con un juego real.** Pixelorama 0.11.4
+  es Godot 3.5.2: el detector lo nombra y avisa de que no se traslada, que es lo que promete el
+  documento. El motivo de que no se traslade sigue en pie, pero ya no es «no hay con qué probarlo».
+- **Electron: dos fallos de verdad, los dos arreglados.**
+  1. **El `package.json` de un módulo nativo no siempre está dentro del `.asar`.** Cuando
+     `electron-builder` saca un módulo, saca su carpeta entera y a veces no deja copia dentro.
+     Lever solo miraba en el `.asar`, así que los tres módulos de Mark Text salían **sin versión y
+     sin repositorio**: sin eso no hay dirección que pedir y el traslado decía «sin binario de macOS
+     publicado», que suena a que el módulo no lo publica cuando lo que pasaba es que ni se había
+     mirado. Ahora se mira en los dos sitios.
+  2. **Un módulo de N-API no publica con el ABI de Electron.** Publica **un solo** binario por
+     plataforma, con `napi-v3` donde los demás ponen `electron-v146`; esa es justo la promesa de
+     N-API. Lever solo armaba el nombre con el ABI, así que pedía un archivo que no existe. Ahora
+     lee `binary.napi_versions` del módulo y prueba primero esos nombres. Medido con `keytar`
+     7.9.0, que publica `keytar-v7.9.0-napi-v3-darwin-arm64.tar.gz` y ninguno con ABI.
+  Con las dos cosas, el `keytar.node` del reparto de Mark Text sale del traslado como **Mach-O
+  arm64** en vez de como la DLL de Windows que entraba.
+- **Lo que sigue sin resolverse, y no es culpa de Lever**: `ced` y `native-keymap`, los otros dos
+  módulos de Mark Text, no publican binario de macOS **en ninguna parte** —comprobado abriendo sus
+  paquetes de npm: no traen ningún `.node`, se compilan al instalar—. Lever lo dice y no lo
+  disimula. Esa app concreta, por tanto, se traslada pero no llega a abrir su ventana.
+- **Lo que sigue sin comprobarse**: Ren'Py, LÖVE, NW.js y Java con programas reales. No es que
+  fallen: es que no les he pasado ninguno todavía.
+
 ### Textos que decían «Godot» y los usaban los tres
 
 `portStageDownloading`, `errPortEngine` y `errPortRuntime` nombraban a Godot, y Ren'Py ya pasaba
@@ -391,6 +424,14 @@ comprobado está en cada motor, en su párrafo de «lo que sigue sin comprobarse
   causa al montaje, a la firma o al aislamiento es perder la sesión; lo que hay que mirar es la
   versión del motor.
 - `requestAnimationFrame` no corre si la ventana queda detrás. Para una sonda automática, temporizador.
+- **El `package.json` de un módulo de Electron puede estar fuera del `.asar`.** Si solo se mira
+  dentro, un módulo desempaquetado se queda sin versión y sin repositorio, y el traslado acaba
+  diciendo «no publica binario de macOS» sobre un módulo que ni se ha llegado a identificar. Un
+  mensaje que culpa al módulo esconde un fallo propio.
+- **N-API cambia el nombre del archivo que hay que pedir**: `napi-v3` en vez de `electron-v146`, y
+  un solo binario para todas las versiones de Electron. Está en `binary.napi_versions` del módulo.
+- `open` no siempre lanza un `.app` recién montado en una carpeta temporal, y no dice por qué. Para
+  comprobar que una app trasladada abre, ejecutar su binario directamente.
 - **`compression_stream_init` deja el flujo a cero**: si los punteros de entrada y salida se ponen
   en el constructor, `init` los borra, y con `dst_size` en cero la librería no descomprime nada
   mientras «lo escrito» —`chunkSize - dst_size`— sale el búfer entero. El archivo salía con un mega

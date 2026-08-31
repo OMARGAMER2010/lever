@@ -101,6 +101,32 @@ public enum ElectronPorter {
         return PortOutcome(app: destination, unresolvedParts: sinResolver)
     }
 
+    /// Los sitios donde puede estar el binario de macOS de un módulo, por orden de probabilidad.
+    ///
+    /// Son varios porque el nombre del archivo depende de contra qué se compilara el módulo, y eso
+    /// no se sabe hasta mirarlo: los de N-API publican un solo binario por plataforma —vale para
+    /// cualquier Electron— y los demás uno por cada ABI.
+    static func parts(for modulo: NodeNativeModule, abi: Int, appleSilicon: Bool) -> [NativePart] {
+        guard let version = modulo.version else { return [] }
+        let plataforma = appleSilicon ? "macos-arm64" : "macos-x64"
+        let nombres = modulo.prebuildAssetNames(abi: abi, appleSilicon: appleSilicon)
+        let direcciones = modulo.prebuildURLs(abi: abi, appleSilicon: appleSilicon)
+        let napi = modulo.napiVersions.sorted(by: >)
+
+        return nombres.enumerated().map { índice, archivo in
+            // Las primeras son las de N-API, en el mismo orden que las versiones que declara el
+            // módulo; la última siempre es la del ABI.
+            let esNapi = índice < napi.count
+            return NativePart(
+                name: modulo.name, version: version, platform: plataforma,
+                abi: esNapi ? nil : abi,
+                download: índice < direcciones.count ? direcciones[índice] : nil,
+                fileName: archivo,
+                runtime: esNapi ? "napi\(napi[índice])" : nil
+            )
+        }
+    }
+
     /// Consigue la versión de macOS de cada módulo nativo que trae el juego.
     ///
     /// Lo que hace falta saber antes de nada es el ABI, porque un `.node` compilado para otro no
@@ -124,23 +150,23 @@ public enum ElectronPorter {
         var resueltos: [(modulo: NodeNativeModule, contenido: URL)] = []
         var sinResolver: [String] = []
         for modulo in game.nativeModules {
-            guard let version = modulo.version,
-                  let archivo = modulo.prebuildAssetName(abi: abi, appleSilicon: game.appleSilicon) else {
+            let candidatas = parts(for: modulo, abi: abi, appleSilicon: game.appleSilicon)
+            guard !candidatas.isEmpty else {
                 sinResolver.append(modulo.label)
                 continue
             }
-            let parte = NativePart(
-                name: modulo.name, version: version,
-                platform: game.appleSilicon ? "macos-arm64" : "macos-x64",
-                abi: abi,
-                download: modulo.prebuildURL(abi: abi, appleSilicon: game.appleSilicon),
-                fileName: archivo
-            )
-            let resultado = try await NativeParts.obtain(
-                parte, runner: runner, session: session, library: library,
-                fileManager: fileManager, onLine: onLine
-            )
-            guard let tar = resultado.file else { sinResolver.append(modulo.label); continue }
+
+            // Se prueban por orden hasta que una traiga archivo. Un 404 no es un fallo: es que
+            // ese módulo no publica con ese nombre, y el siguiente nombre puede ser el bueno.
+            var encontrado: URL?
+            for parte in candidatas {
+                let resultado = try await NativeParts.obtain(
+                    parte, runner: runner, session: session, library: library,
+                    fileManager: fileManager, onLine: onLine
+                )
+                if let archivo = resultado.file { encontrado = archivo; break }
+            }
+            guard let tar = encontrado else { sinResolver.append(modulo.label); continue }
 
             // El prebuild viene en `.tar.gz` con un `build/Release/<algo>.node` dentro. Se despliega
             // una vez y se deja desplegado en la caché: así el siguiente juego que use el mismo

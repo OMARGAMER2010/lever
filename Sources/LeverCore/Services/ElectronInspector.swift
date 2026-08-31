@@ -122,12 +122,13 @@ public enum ElectronInspector {
         for ruta in rutas.sorted() {
             let nombre = moduleName(inPath: ruta) ?? (ruta as NSString).lastPathComponent
             guard vistos.insert(nombre).inserted else { continue }
-            let ficha = manifest(of: nombre, inside: asar)
+            let ficha = manifest(of: nombre, inside: asar, unpacked: desempaquetado, fileManager: fileManager)
             salida.append(NodeNativeModule(
                 name: nombre,
                 version: ficha?["version"] as? String,
                 relativePath: ruta,
-                repository: repository(in: ficha)
+                repository: repository(in: ficha),
+                napiVersions: napiVersions(in: ficha)
             ))
         }
         return salida
@@ -143,10 +144,27 @@ public enum ElectronInspector {
         return primero
     }
 
-    /// El `package.json` del módulo, que casi siempre sigue dentro del `.asar` aunque su `.node`
-    /// esté fuera: el empaquetador solo saca los binarios.
-    static func manifest(of nombre: String, inside asar: URL) -> [String: Any]? {
-        guard let datos = AsarArchive.read("node_modules/\(nombre)/package.json", from: asar) else { return nil }
+    /// El `package.json` del módulo, mirando en los dos sitios donde puede estar.
+    ///
+    /// **Y hay que mirar en los dos.** Cuando `electron-builder` saca un módulo del asar, saca su
+    /// carpeta entera —`package.json` incluido— y a veces no deja copia dentro. Mirando solo en el
+    /// asar, un módulo desempaquetado se queda sin versión, sin repositorio y sin nada: entonces no
+    /// hay dirección que pedir y el traslado dice «sin binario de macOS publicado», que suena a que
+    /// el módulo no lo publica cuando lo que pasa es que ni se ha mirado. Medido con Mark Text,
+    /// cuyos tres módulos salían sin identificar y uno de ellos —keytar— sí publica el suyo.
+    static func manifest(
+        of nombre: String, inside asar: URL, unpacked: URL? = nil, fileManager: FileManager = .default
+    ) -> [String: Any]? {
+        let relativa = "node_modules/\(nombre)/package.json"
+
+        if let desempaquetado = unpacked {
+            let suelto = desempaquetado.appendingPathComponent(relativa)
+            if let datos = try? Data(contentsOf: suelto),
+               let ficha = try? JSONSerialization.jsonObject(with: datos) as? [String: Any] {
+                return ficha
+            }
+        }
+        guard let datos = AsarArchive.read(relativa, from: asar) else { return nil }
         return try? JSONSerialization.jsonObject(with: datos) as? [String: Any]
     }
 
@@ -179,6 +197,23 @@ public enum ElectronInspector {
         guard partes.count >= 2, !partes[0].isEmpty, !partes[1].isEmpty else { return nil }
         return partes[0] + "/" + partes[1]
     }
+
+    /// Las versiones de N-API que el módulo dice soportar, de `binary.napi_versions`.
+    ///
+    /// Es el mismo campo que mira `prebuild-install` para decidir cómo se llama el archivo que
+    /// tiene que pedir, y por eso hay que leerlo: un módulo de N-API publica `napi-v3` y no
+    /// publica nada con el ABI de Electron. Sin esto se le pide un nombre que no existe y parece
+    /// que no tiene binario de macOS.
+    public static func napiVersions(in ficha: [String: Any]?) -> [Int] {
+        guard let binario = ficha?["binary"] as? [String: Any] else { return [] }
+        guard let crudas = binario["napi_versions"] as? [Any] else { return [] }
+        return crudas.compactMap { valor in
+            if let entero = valor as? Int { return entero }
+            if let texto = valor as? String { return Int(texto) }
+            return nil
+        }
+    }
+
 
     // MARK: - Qué viaja al `.app`
 

@@ -13,6 +13,7 @@ enum ElectronTests {
         try recognisesAPackagedGame()
         try trustsTheVersionFileOverTheExecutable()
         try findsNativeModulesAndTheirVersions()
+        try readsTheManifestOfAModuleTakenOutOfTheAsar()
         try readsTheRepositoryFieldInAnyOfItsForms()
         try namesTheNodePrebuild()
         try resolvesTheNodeAbiFromTheRegistry()
@@ -167,6 +168,44 @@ enum ElectronTests {
         try expect(ElectronInspector.repository(in: ["name": "x"]) == nil, "sin repository, nada")
     }
 
+    /// Un módulo que `electron-builder` sacó del `.asar` se lleva su `package.json` con él, y a
+    /// veces no deja copia dentro. Mirando solo en el `.asar`, ese módulo se queda sin versión y
+    /// sin repositorio: no hay dirección que pedir, y el traslado acaba diciendo «sin binario de
+    /// macOS publicado» cuando lo que ha pasado es que ni se ha mirado.
+    ///
+    /// Medido con Mark Text 0.19.1: sus tres módulos salían sin identificar, y uno de ellos
+    /// —keytar 7.9.0— sí publica su binario de macOS.
+    static func readsTheManifestOfAModuleTakenOutOfTheAsar() throws {
+        let fixture = try TemporaryFixture()
+        let resources = fixture.directoryURL.appendingPathComponent("resources", isDirectory: true)
+        let suelto = resources.appendingPathComponent("app.asar.unpacked/node_modules/keytar", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: suelto.appendingPathComponent("build/Release", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        try Data("PE".utf8).write(to: suelto.appendingPathComponent("build/Release/keytar.node"))
+        try Data("""
+            {"name": "keytar", "version": "7.9.0",
+             "repository": {"type": "git", "url": "https://github.com/atom/node-keytar.git"},
+             "binary": {"napi_versions": [3]}}
+            """.utf8).write(to: suelto.appendingPathComponent("package.json"))
+
+        // El `.asar` no sabe nada de ese módulo: es justo el caso.
+        let asar = resources.appendingPathComponent("app.asar")
+        try makeAsar(at: asar, files: ["package.json": Data(#"{"productName":"Prueba"}"#.utf8)], unpacked: [])
+
+        let modulos = ElectronInspector.nativeModules(in: resources, asar: asar)
+        try expect(modulos.count == 1, "un módulo: \(modulos.count)")
+        guard let keytar = modulos.first else { return }
+        try expect(keytar.name == "keytar", "el nombre sale de la ruta")
+        try expect(keytar.version == "7.9.0",
+                   "la versión sale de su package.json de fuera del asar: \(keytar.version ?? "nada")")
+        try expect(keytar.repository == "atom/node-keytar", "y el repositorio también")
+        try expect(keytar.napiVersions == [3], "y las versiones de N-API: \(keytar.napiVersions)")
+        try expect(!keytar.prebuildURLs(abi: 146, appleSilicon: true).isEmpty,
+                   "con eso ya hay una dirección que pedir, que era lo que faltaba")
+    }
+
     /// La convención de `prebuild-install`, que es la que usan los módulos al publicar:
     /// `<módulo>-v<versión>-<runtime>-v<abi>-<plataforma>-<arquitectura>.tar.gz`, bajo la etiqueta
     /// `v<versión>` de sus publicaciones.
@@ -174,19 +213,56 @@ enum ElectronTests {
         let modulo = NodeNativeModule(name: "better-sqlite3", version: "12.11.1",
                                       relativePath: "app.asar.unpacked/node_modules/better-sqlite3/x.node",
                                       repository: "WiseLibs/better-sqlite3")
-        try expect(modulo.prebuildAssetName(abi: 146, appleSilicon: true)
-                    == "better-sqlite3-v12.11.1-electron-v146-darwin-arm64.tar.gz",
-                   "el archivo: \(modulo.prebuildAssetName(abi: 146, appleSilicon: true) ?? "nil")")
-        try expect(modulo.prebuildURL(abi: 146, appleSilicon: true)?.absoluteString
+        try expect(modulo.prebuildAssetNames(abi: 146, appleSilicon: true)
+                    == ["better-sqlite3-v12.11.1-electron-v146-darwin-arm64.tar.gz"],
+                   "el archivo: \(modulo.prebuildAssetNames(abi: 146, appleSilicon: true))")
+        try expect(modulo.prebuildURLs(abi: 146, appleSilicon: true).first?.absoluteString
                     == "https://github.com/WiseLibs/better-sqlite3/releases/download/v12.11.1/"
                      + "better-sqlite3-v12.11.1-electron-v146-darwin-arm64.tar.gz",
-                   "la dirección: \(modulo.prebuildURL(abi: 146, appleSilicon: true)?.absoluteString ?? "nil")")
+                   "la dirección: \(modulo.prebuildURLs(abi: 146, appleSilicon: true))")
+
+        // Un módulo de N-API no publica con el ABI de Electron: publica **un solo** binario por
+        // plataforma, con `napi-v<n>`, porque esa es la promesa de N-API. Pedirle el nombre con el
+        // ABI da un 404 y parece que no hay binario de macOS. Medido con keytar 7.9.0, que publica
+        // `keytar-v7.9.0-napi-v3-darwin-arm64.tar.gz` y ninguno con ABI.
+        let napi = NodeNativeModule(name: "keytar", version: "7.9.0", relativePath: "keytar.node",
+                                    repository: "atom/node-keytar", napiVersions: [3])
+        let nombres = napi.prebuildAssetNames(abi: 146, appleSilicon: true)
+        try expect(nombres.first == "keytar-v7.9.0-napi-v3-darwin-arm64.tar.gz",
+                   "el de N-API va primero: \(nombres)")
+        try expect(nombres.count == 2 && nombres[1].contains("electron-v146"),
+                   "y detrás se sigue probando el del ABI, por si acaso: \(nombres)")
+        try expect(napi.prebuildURLs(abi: 146, appleSilicon: true).first?.absoluteString
+                    == "https://github.com/atom/node-keytar/releases/download/v7.9.0/"
+                     + "keytar-v7.9.0-napi-v3-darwin-arm64.tar.gz",
+                   "la dirección de N-API: \(napi.prebuildURLs(abi: 146, appleSilicon: true))")
+
+        // Si declara varias, la más alta primero: es la que se compiló con lo más nuevo.
+        let varias = NodeNativeModule(name: "m", version: "1.0.0", relativePath: "m.node",
+                                      repository: "a/b", napiVersions: [3, 8, 6])
+        try expect(varias.prebuildAssetNames(abi: 146, appleSilicon: true).first?.contains("napi-v8") == true,
+                   "la más alta primero: \(varias.prebuildAssetNames(abi: 146, appleSilicon: true))")
+
+        // Y la caché las distingue: un binario de N-API no está atado a ningún ABI, así que
+        // guardarlo bajo uno haría que el siguiente Electron se lo volviera a bajar.
+        let comoNapi = NativePart(name: "keytar", version: "7.9.0", platform: "macos-arm64",
+                                  abi: nil, download: nil, fileName: "x", runtime: "napi3")
+        let comoAbi = NativePart(name: "keytar", version: "7.9.0", platform: "macos-arm64",
+                                 abi: 146, download: nil, fileName: "x")
+        try expect(comoNapi.cacheKey != comoAbi.cacheKey, "no comparten sitio en la caché")
+        try expect(comoNapi.cacheKey.hasSuffix("napi3"), "la de N-API se guarda por su N-API: \(comoNapi.cacheKey)")
 
         // Sin repositorio no hay dónde mirar, y sin versión no hay etiqueta que pedir.
         let sinRepo = NodeNativeModule(name: "x", version: "1.0.0", relativePath: "x.node", repository: nil)
-        try expect(sinRepo.prebuildURL(abi: 146, appleSilicon: true) == nil, "sin repositorio, ninguna")
+        try expect(sinRepo.prebuildURLs(abi: 146, appleSilicon: true).isEmpty, "sin repositorio, ninguna")
         let sinVersion = NodeNativeModule(name: "x", version: nil, relativePath: "x.node", repository: "a/b")
-        try expect(sinVersion.prebuildURL(abi: 146, appleSilicon: true) == nil, "sin versión, tampoco")
+        try expect(sinVersion.prebuildURLs(abi: 146, appleSilicon: true).isEmpty, "sin versión, tampoco")
+
+        // Y el campo se lee del `package.json` del módulo, que es de donde sale.
+        try expect(ElectronInspector.napiVersions(in: ["binary": ["napi_versions": [3]]]) == [3],
+                   "se lee binary.napi_versions")
+        try expect(ElectronInspector.napiVersions(in: ["version": "1"]).isEmpty,
+                   "un módulo que no lo declara no tiene ninguna")
 
         // La identidad de una parte lleva el ABI dentro: confundir un binario de un ABI con el de
         // otro no da error al montar, solo al arrancar, que es lo peor que puede pasar.

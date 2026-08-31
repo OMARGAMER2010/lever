@@ -72,34 +72,59 @@ public struct NodeNativeModule: Equatable, Sendable {
     /// `owner/repo` de GitHub, del `repository` de su `package.json`. Es donde `prebuild-install`
     /// va a buscar los binarios ya compilados, así que sin esto no hay de dónde bajar nada.
     public let repository: String?
+    /// Las versiones de N-API que declara en `binary.napi_versions` de su `package.json`.
+    ///
+    /// Cambian el nombre del archivo que hay que pedir, y por tanto si se encuentra o no. Un
+    /// módulo escrito contra N-API no se compila contra el ABI de una versión de Electron —esa es
+    /// justo la promesa de N-API—, así que publica **un solo binario por plataforma**, con
+    /// `napi-v<n>` donde los demás ponen `electron-v<abi>`.
+    public let napiVersions: [Int]
 
-    public init(name: String, version: String?, relativePath: String, repository: String?) {
+    public init(
+        name: String, version: String?, relativePath: String,
+        repository: String?, napiVersions: [Int] = []
+    ) {
         self.name = name
         self.version = version
         self.relativePath = relativePath
         self.repository = repository
+        self.napiVersions = napiVersions
     }
 
     /// Como se enseña en el panel: «better-sqlite3 12.2.0» o solo el nombre si no se supo.
     public var label: String { version.map { "\(name) \($0)" } ?? name }
 
-    /// Nombre del archivo del prebuild, con la convención de `prebuild-install`:
-    /// `<módulo>-v<versión>-<runtime>-v<abi>-<plataforma>-<arquitectura>.tar.gz`.
+    /// Nombres de archivo del prebuild que hay que probar, con la convención de `prebuild-install`:
+    /// `<módulo>-v<versión>-<tiempo de ejecución>-v<número>-<plataforma>-<arquitectura>.tar.gz`.
+    ///
+    /// Son varios y en este orden porque **el «tiempo de ejecución» no es siempre `electron`**.
+    /// Un módulo escrito contra N-API publica `napi-v3` y nada más: su binario vale para cualquier
+    /// versión de Electron, que es la razón de ser de N-API. Pedirle el nombre con el ABI da un
+    /// 404 y el módulo parece no tener binario de macOS cuando sí lo tiene. Comprobado con
+    /// `keytar` 7.9.0, que publica `keytar-v7.9.0-napi-v3-darwin-arm64.tar.gz` y ninguno con ABI.
     ///
     /// El ámbito del paquete no entra en el nombre —`@scope/cosa` publica `cosa-v…`—, que es la
     /// convención de la herramienta; en el proyecto no hay ningún caso con ámbito con el que
     /// haberlo comprobado, así que va anotado.
-    public func prebuildAssetName(abi: Int, appleSilicon: Bool) -> String? {
-        guard let version else { return nil }
+    public func prebuildAssetNames(abi: Int, appleSilicon: Bool) -> [String] {
+        guard let version else { return [] }
         let corto = name.split(separator: "/").last.map(String.init) ?? name
-        return "\(corto)-v\(version)-electron-v\(abi)-darwin-\(appleSilicon ? "arm64" : "x64").tar.gz"
+        let arquitectura = appleSilicon ? "arm64" : "x64"
+
+        // La más alta primero: si publica varias, la más nueva es la que compila con lo de hoy.
+        var nombres = napiVersions.sorted(by: >).map {
+            "\(corto)-v\(version)-napi-v\($0)-darwin-\(arquitectura).tar.gz"
+        }
+        nombres.append("\(corto)-v\(version)-electron-v\(abi)-darwin-\(arquitectura).tar.gz")
+        return nombres
     }
 
     /// Los prebuilds viven en las publicaciones del propio módulo, bajo la etiqueta `v<versión>`.
-    public func prebuildURL(abi: Int, appleSilicon: Bool) -> URL? {
-        guard let repository, let version, let archivo = prebuildAssetName(abi: abi, appleSilicon: appleSilicon)
-        else { return nil }
-        return URL(string: "https://github.com/\(repository)/releases/download/v\(version)/\(archivo)")
+    public func prebuildURLs(abi: Int, appleSilicon: Bool) -> [URL] {
+        guard let repository, version != nil else { return [] }
+        return prebuildAssetNames(abi: abi, appleSilicon: appleSilicon).compactMap {
+            URL(string: "https://github.com/\(repository)/releases/download/v\(version!)/\($0)")
+        }
     }
 }
 

@@ -260,6 +260,8 @@ public enum AndroidInstaller {
         }
 
         var apks = url
+        var nombre = package.facts.packageName
+
         if package.kind == .aab {
             onStage(.buildingApks)
             let clave = try await AndroidTools.signingKey(
@@ -275,6 +277,12 @@ public enum AndroidInstaller {
             )
             guard !construir.wasCancelled else { throw AndroidInstallFailure.cancelled }
             guard construir.succeeded else { throw AndroidInstallFailure.failed(construir.exitCode) }
+
+            // Aquí es donde por fin se sabe cómo se llama la app. El manifiesto de un `.aab` está
+            // en protobuf y no se lee, así que hasta ahora no había nombre de paquete; los `.apk`
+            // que acaba de generar `bundletool` sí traen el manifiesto de siempre. Sin esto la app
+            // se instala y Lever la pierde de vista: no puede ni abrirla ni desinstalarla.
+            nombre = AndroidBundleInspector.inspect(apks).facts.packageName ?? nombre
         }
 
         // Cuántos trozos van a entrar no se sabe: eso lo decide `bundletool` leyendo su tabla, y
@@ -287,8 +295,7 @@ public enum AndroidInstaller {
             runner: runner, session: session, onLine: onLine
         )
         return AndroidInstallOutcome(
-            packageName: package.facts.packageName,
-            installedParts: 1, pushedExpansions: 0, wasSigned: false
+            packageName: nombre, installedParts: 1, pushedExpansions: 0, wasSigned: false
         )
     }
 

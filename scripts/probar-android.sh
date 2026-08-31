@@ -372,6 +372,12 @@ fi
 
 if toca aab; then
     probar "5 · un .aab, que ni siquiera es instalable" "$archivos/juego.aab"
+    # De un `.aab` no se puede leer el nombre del paquete —su manifiesto está en protobuf—, así
+    # que tiene que salir de los `.apk` que genera bundletool. Sin él, la app queda instalada y
+    # Lever no puede ni abrirla ni desinstalarla.
+    grep -q "^INSTALADO=$PAQUETE\$" "$taller/juego.aab.log" \
+        && ok "Lever sabe cómo se llama la app que acaba de instalar" \
+        || mal "tras instalar el .aab, Lever se queda sin el nombre del paquete"
 fi
 
 paso "Resultado"
