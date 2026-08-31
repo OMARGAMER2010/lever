@@ -104,6 +104,21 @@ public enum TextKey: String, CaseIterable, Sendable {
     case apkMinAndroid, apkMinApi, apkNoNativeCode
     case apkSplitTitle, apkSplitBody, apkUnreadableTitle, apkUnreadableBody
 
+    // Emulación: máquinas, ROMs y controles
+    case tabEmulation, dropRomTitle, dropRomSubtitle, menuOpenRom
+    case archBits8, archBits16, archBits32, archBits64, archDualScreen, archHybrid
+    case romEvidenceHeader, romEvidenceExtension, romEvidenceNone
+    case romUnknownTitle, romUnknownBody, romNeedsBiosTitle, romNeedsBiosBody
+    case romTouchTitle, romTouchBody
+    case retroMissingTitle, retroMissingBody, retroCardTitle, retroCardBody
+    case retroCoreSection, retroCoreCached, retroCoreToDownload, retroArchNote
+    case controlsSection, controlsProfile, controlsEdit, controlsScopeGlobal
+    case controlsScopePlatform, controlsScopeGame, controlsSaveHere, controlsReset
+    case controlsPressPrompt, controlsUnassigned, controlsListening, controlsGamepads
+    case controlsNoGamepad, controlsKeyboardTab, controlsGamepadTab
+    case playRom, playingRom, statusGettingCore, statusLaunchingRetro
+    case errNoRetroArch, errNoCore, errUnknownRom, errPickRom, emulationDisclaimer
+
     // Android: los formatos que envuelven varios .apk
     case bundleKindXapk, bundleKindApks, bundleKindAab
     case bundleParts, bundleExpansions, bundleModules, bundleUnreadableTitle, bundleUnreadableBody

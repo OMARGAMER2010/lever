@@ -6,6 +6,10 @@ public final class AppModel: ObservableObject {
     private let locator: RuntimeLocator
     private let runner: ProcessRunner
     private let fileManager: FileManager
+    /// La biblioteca de motores y núcleos. Se inyecta para que las pruebas no toquen —ni ensucien—
+    /// lo que el usuario tenga descargado de verdad.
+    private let portLibrary: PortLibrary
+    private let controlLibrary: ControlLibrary
 
     private var customWineURL: URL?
     private var programSession: ProcessSession?
@@ -113,6 +117,23 @@ public final class AppModel: ObservableObject {
     @Published public private(set) var installedPackage: String?
     @Published public private(set) var avdNames: [String] = []
     @Published public private(set) var startingAvd: String?
+
+    // MARK: - Juegos de consola
+
+    @Published public var selectedRom: URL? {
+        didSet {
+            guard selectedRom != oldValue else { return }
+            inspectRom()
+        }
+    }
+    @Published public private(set) var romFacts = RomFacts()
+    @Published public private(set) var isInspectingRom = false
+    @Published public private(set) var isPlayingRom = false
+    /// El perfil de controles que se va a usar. Sale de la biblioteca al elegir el juego, y el
+    /// usuario lo cambia en el diagrama.
+    @Published public var controlProfile = ControlProfile.standard
+    /// A qué se le van a guardar los cambios: a todo, a esta consola o a este juego.
+    @Published public var controlScope = ControlScope.global
 
     // MARK: - Abiertos hace poco
 
@@ -235,6 +256,30 @@ public final class AppModel: ObservableObject {
             && !isRunningApk && !isUninstalling
     }
 
+    /// El RetroArch instalado, si lo hay.
+    public var retroArchURL: URL? { RetroTools.locate(fileManager: fileManager) }
+
+    /// **La arquitectura de RetroArch, no la del Mac.** Es la que decide qué núcleo hay que bajar:
+    /// el núcleo se carga dentro de su proceso, así que tiene que ser de la suya.
+    public var retroArchitecture: String? { retroArchURL.flatMap(RetroTools.architecture) }
+
+    /// Si el núcleo de este juego ya está descargado, para poder decirlo antes de pulsar.
+    public var romCoreIsReady: Bool {
+        guard let núcleo = romFacts.platform?.core, let arquitectura = retroArchitecture else { return false }
+        return portLibrary.hasRetroCore(núcleo, architecture: arquitectura)
+    }
+
+    public var canPlayRom: Bool {
+        guard let selectedRom, !isPlayingRom, romFacts.isRecognised else { return false }
+        return fileManager.isReadableFile(atPath: selectedRom.path) && retroArchURL != nil
+    }
+
+    /// Los controles que de verdad existen en esta consola. Enseñar dieciséis botones para una
+    /// Game Boy sería enseñar catorce casillas que no hacen nada.
+    public var availableInputs: [RetroPadInput] {
+        RetroPadInput.available(on: romFacts.platform)
+    }
+
     public var canInstallTools: Bool {
         !isInstallingTools && runtimeStatus.homebrewURL != nil && !missingFormulae.isEmpty
     }
@@ -309,11 +354,15 @@ public final class AppModel: ObservableObject {
     public init(
         locator: RuntimeLocator = RuntimeLocator(),
         runner: ProcessRunner = ProcessRunner(),
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        portLibrary: PortLibrary = .shared,
+        controlLibrary: ControlLibrary = .shared
     ) {
         self.locator = locator
         self.runner = runner
         self.fileManager = fileManager
+        self.portLibrary = portLibrary
+        self.controlLibrary = controlLibrary
         self.language = Preferences.language
         self.strings = Strings.table(for: Preferences.language)
         self.customWineURL = Preferences.customWineURL
@@ -435,6 +484,11 @@ public final class AppModel: ObservableObject {
                 handled = true
             } else if SupportedFileKind.apk.accepts(url) {
                 acceptApk(url)
+                handled = true
+            } else if SupportedFileKind.rom.accepts(url), RomInspector.inspect(url).isRecognised {
+                // Antes que los comprimidos porque un `.iso` y un `.bin` los reclaman los dos, y
+                // aquí decide lo que el archivo tiene dentro, no cómo se llama.
+                acceptRom(url)
                 handled = true
             } else if SupportedFileKind.rar.accepts(url) {
                 acceptArchive(url)
@@ -1397,6 +1451,145 @@ public final class AppModel: ObservableObject {
         }
     }
 
+    // MARK: - Consolas
+
+    public func selectRom() {
+        guard let url = FileActions.chooseFile(kind: .rom, title: strings[.menuOpenRom]) else { return }
+        acceptRom(url)
+    }
+
+    public func acceptRom(_ url: URL) {
+        selectedRom = url
+        remember(url, kind: .rom)
+        clearError()
+        add(strings(.logApkChosen, url.lastPathComponent), level: .info)
+    }
+
+    public func clearRom() {
+        selectedRom = nil
+        romFacts = RomFacts()
+    }
+
+    private func inspectRom() {
+        guard let rom = selectedRom else {
+            romFacts = RomFacts()
+            return
+        }
+        isInspectingRom = true
+        Task { [weak self] in
+            // Fuera del hilo principal: una imagen de disco puede pesar gigas y hay que leerle la
+            // cabecera.
+            let leído = await Task.detached { RomInspector.inspect(rom) }.value
+            guard let self, selectedRom == rom else { return }
+            romFacts = leído
+            // Los controles se cargan aquí porque dependen de qué consola sea: el perfil de la
+            // Nintendo 64 no vale para una Game Boy.
+            controlProfile = controlLibrary.resolved(platform: leído.platform, gameName: rom.lastPathComponent)
+            controlScope = controlLibrary.effectiveScope(
+                platform: leído.platform, gameName: rom.lastPathComponent
+            )
+            isInspectingRom = false
+        }
+    }
+
+    /// Guarda los controles en el nivel elegido y los deja listos para el próximo lanzamiento.
+    public func saveControls() {
+        do {
+            try controlLibrary.save(controlProfile, for: controlScope)
+            add(strings[.controlsSaveHere], level: .success)
+        } catch {
+            showError(error.localizedDescription)
+        }
+    }
+
+    public func resetControls() {
+        controlLibrary.remove(controlScope)
+        controlProfile = controlLibrary.resolved(
+            platform: romFacts.platform, gameName: selectedRom?.lastPathComponent
+        )
+    }
+
+    /// Consigue el núcleo si hace falta, escribe la configuración y lanza el juego.
+    ///
+    /// Un solo botón porque es una sola intención. Y la configuración se escribe **cada vez**: es
+    /// lo que hace que un cambio en los controles se note sin tener que reiniciar nada.
+    public func playRom() {
+        guard !isPlayingRom else { return }
+        guard let rom = selectedRom, let plataforma = romFacts.platform else {
+            showError(strings[.errPickRom])
+            return
+        }
+        guard let retroarch = retroArchURL, let arquitectura = retroArchitecture else {
+            showError(strings[.errNoRetroArch])
+            return
+        }
+
+        clearError()
+        isPlayingRom = true
+        let session = ProcessSession()
+        installSession = session
+
+        Task { [weak self] in
+            guard let self else { return }
+            defer { isPlayingRom = false; installSession = nil }
+
+            let núcleo: URL
+            do {
+                if !portLibrary.hasRetroCore(plataforma.core, architecture: arquitectura) {
+                    activityMessage = strings(.statusGettingCore, plataforma.name)
+                    add(activityMessage, level: .info)
+                }
+                núcleo = try await RetroTools.ensureCore(
+                    plataforma.core, architecture: arquitectura,
+                    runner: runner, session: session, library: portLibrary,
+                    onLine: { línea in Task { @MainActor [weak self] in self?.addOutput(línea) } }
+                )
+            } catch {
+                activityMessage = strings[.statusFailed]
+                showError(strings[.errNoCore])
+                return
+            }
+
+            do {
+                let configuración = try writeRetroConfig(for: plataforma)
+                activityMessage = strings[.statusLaunchingRetro]
+                add(strings(.logInstallingApk, rom.lastPathComponent, plataforma.name), level: .info)
+
+                try RetroTools.open(
+                    retroarch: retroarch, core: núcleo, rom: rom, config: configuración,
+                    log: portLibrary.retroDataURL.appendingPathComponent("retroarch.log")
+                )
+                // El juego es otro programa: se abre y sigue por su cuenta, como el emulador de
+                // Android. Lever no se queda esperando a que alguien termine de jugar.
+                activityMessage = strings[.statusApkRunning]
+            } catch {
+                activityMessage = strings[.statusFailed]
+                showError(error.localizedDescription)
+            }
+        }
+    }
+
+    /// Deja escrita la configuración con la que se lanza. Es un archivo de Lever, no el del
+    /// usuario: RetroArch usa solo el que se le pasa con `-c`.
+    private func writeRetroConfig(for platform: RetroPlatform) throws -> URL {
+        let datos = portLibrary.retroDataURL
+        let partidas = datos.appendingPathComponent("partidas", isDirectory: true)
+        let estados = datos.appendingPathComponent("estados", isDirectory: true)
+        let sistema = datos.appendingPathComponent("sistema", isDirectory: true)
+        let listas = datos.appendingPathComponent("listas", isDirectory: true)
+        for carpeta in [partidas, estados, sistema, listas] {
+            try fileManager.createDirectory(at: carpeta, withIntermediateDirectories: true)
+        }
+
+        let archivo = datos.appendingPathComponent("lever.cfg")
+        let texto = RetroConfig.makeConfig(
+            profile: controlProfile, platform: platform,
+            saves: partidas, states: estados, systemFiles: sistema, data: datos
+        )
+        try texto.write(to: archivo, atomically: true, encoding: .utf8)
+        return archivo
+    }
+
     // MARK: - Instalar herramientas
 
     public func installTools() {
@@ -1485,6 +1678,7 @@ public final class AppModel: ObservableObject {
         case .exe: acceptProgram(file.url)
         case .rar: acceptArchive(file.url)
         case .apk: acceptApk(file.url)
+        case .rom: acceptRom(file.url)
         }
     }
 

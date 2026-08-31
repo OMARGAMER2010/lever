@@ -339,6 +339,42 @@ descargados de las publicaciones de sus autores.
 - **Lo que sigue sin comprobarse**: Ren'Py, LÖVE, NW.js y Java con programas reales. No es que
   fallen: es que no les he pasado ninguno todavía.
 
+### Consolas: emulación y mapeo de mandos — primera entrega
+
+Lever ya tenía tres formas de ejecutar algo ajeno —Wine, los motores nativos y Android—. La cuarta
+son las consolas: una ROM no se ejecuta ni se instala, se **interpreta**.
+
+- **La arquitectura, igual que con los motores**: Lever no reimplementa nada. RetroArch es a una
+  ROM lo que Wine es a un `.exe`, y los núcleos de libretro son las piezas que le faltan,
+  publicadas por el propio proyecto. Lever reconoce el archivo, consigue el núcleo, escribe la
+  configuración y lanza.
+- **Se reconoce por la cabecera, no por la extensión.** `.bin` y `.chd` los usan media docena de
+  máquinas y un archivo renombrado se cuela. Casi todas las consolas marcan sus ROMs —el `NES` del
+  principio, el logotipo que la Game Boy comprueba antes de arrancar, el `SEGA` de la Mega Drive,
+  la suma y su complemento de la Super Nintendo—, así que se mira ahí y solo se cae en la extensión
+  cuando la máquina no marca nada. La interfaz **dice cuál de las dos** ha sido.
+- **Doce máquinas**, cubriendo las seis clases del plan: 8 bits (NES, Game Boy, Master System),
+  16 (Super Nintendo, Mega Drive), 32 (Game Boy Advance, PlayStation), 64 (Nintendo 64), dos
+  pantallas y táctil (DS, 3DS) e híbridas (Dreamcast, PSP).
+- **Controles en tres niveles**: para todo, para una consola o para un juego, y gana el más
+  concreto. La disposición de fábrica es la de siempre —cursores, Z y X, Enter— a propósito: es la
+  que asumen todas las guías, y tener otra es una pelea que no vale la pena.
+- **El diagrama del mando**: se pulsa el botón dibujado y luego la tecla de verdad. Solo salen los
+  botones que esa consola tiene: enseñar dieciséis para una Game Boy sería enseñar catorce que no
+  hacen nada.
+- Probado de punta a punta con `nestest.nes`, la ROM de dominio público con la que se validan los
+  emuladores de NES: desde la ventana de Lever, el panel dice «NES / Famicom · 8 bits · reconocido
+  por su cabecera», el botón descarga el núcleo y **el juego arranca y dibuja**.
+- **Lo que sigue sin comprobarse, y hay que decirlo**: asignar un botón de un **mando físico**. Los
+  mandos se detectan —`GameController` cubre Xbox, DualShock/DualSense y los Bluetooth genéricos, y
+  no hace falta ningún controlador— pero traducir un botón suyo al número que RetroArch espera
+  depende de cada mando, y aquí no hay ninguno con el que medirlo. Antes que guardar un número
+  inventado, no se guarda nada: el mando lo sigue configurando RetroArch por su cuenta, que para
+  los conocidos funciona sin tocar nada. El teclado sí está entero y comprobado.
+- **Y tampoco está jugada ninguna otra máquina**: de las doce, solo la NES se ha llegado a jugar.
+  El reconocimiento de las once restantes sí está cubierto con cabeceras reales en las pruebas,
+  pero una cosa es reconocer la ROM y otra que ese núcleo arranque en este Mac.
+
 ### Textos que decían «Godot» y los usaban los tres
 
 `portStageDownloading`, `errPortEngine` y `errPortRuntime` nombraban a Godot, y Ren'Py ya pasaba
@@ -424,6 +460,22 @@ comprobado está en cada motor, en su párrafo de «lo que sigue sin comprobarse
   causa al montaje, a la firma o al aislamiento es perder la sesión; lo que hay que mirar es la
   versión del motor.
 - `requestAnimationFrame` no corre si la ventana queda detrás. Para una sonda automática, temporizador.
+- **RetroArch se cuelga si toca `~/Documents`.** Guarda ahí sus listas y su historial, y esa
+  carpeta la protege macOS: lanzado desde otra app el permiso no se puede pedir y la lectura se
+  queda esperando **para siempre**. El síntoma es una ventana que no llega a abrirse y un registro
+  que se corta en «Loading history file», sin ningún error. Se le dan sus carpetas dentro de las de
+  Lever y no las toca.
+- **El núcleo tiene que ser de la arquitectura de RetroArch, no la del Mac.** El cask de Homebrew
+  instala el de Intel, así que en un Mac con chip Apple hay que bajarle núcleos de Intel; el de ARM
+  lo rechaza con «incompatible architecture» al cargarlo, no antes.
+- **`menu_driver = ozone` deja la ventana en negro** si RetroArch no tiene su paquete de recursos
+  gráficos, que la versión de Homebrew no trae. No hay error en ninguna parte. `rgui` va dibujado
+  dentro del programa y siempre funciona.
+- **RetroArch reescribe el archivo de configuración al salir.** Sesenta líneas vuelven convertidas
+  en tres mil trescientas con todo lo suyo dentro, y el siguiente lanzamiento ya no es el que se
+  pidió. `config_save_on_exit = false`.
+- RetroArch **pausa el juego cuando su ventana no tiene el foco**, y un emulador lanzado desde otra
+  app no lo tiene: se abre parado, con el icono de pausa y sin nada que lo explique.
 - **El `package.json` de un módulo de Electron puede estar fuera del `.asar`.** Si solo se mira
   dentro, un módulo desempaquetado se queda sin versión y sin repositorio, y el traslado acaba
   diciendo «no publica binario de macOS» sobre un módulo que ni se ha llegado a identificar. Un

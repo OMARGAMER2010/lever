@@ -32,6 +32,7 @@ struct ActionBar: View {
         case .archive: archiveStatus
         case .program: programStatus
         case .android: androidStatus
+        case .rom: romStatus
         }
     }
 
@@ -116,6 +117,21 @@ struct ActionBar: View {
         }
     }
 
+    @ViewBuilder
+    private var romStatus: some View {
+        if model.isPlayingRom {
+            busy(s[.playingRom])
+        } else if model.retroArchURL == nil {
+            hint(s[.retroMissingTitle])
+        } else if model.selectedRom == nil {
+            hint(s[.dropRomTitle])
+        } else if let máquina = model.romFacts.platform {
+            hint("\(máquina.name) · \(s[model.romFacts.evidence.textKey])")
+        } else {
+            hint(s[.romUnknownTitle])
+        }
+    }
+
     private func busy(_ text: String) -> some View {
         HStack(spacing: Theme.Spacing.tight) {
             ProgressView().controlSize(.small)
@@ -168,6 +184,17 @@ struct ActionBar: View {
                     .controlSize(.large)
                     .keyboardShortcut(.return, modifiers: [.command])
                     .disabled(!model.canRunApk)
+
+            case .rom:
+                if model.isPlayingRom {
+                    Button(s[.stop], action: model.stopRun)
+                        .controlSize(.large)
+                }
+                Button(model.isPlayingRom ? s[.playingRom] : s[.playRom], action: model.playRom)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .keyboardShortcut(.return, modifiers: [.command])
+                    .disabled(!model.canPlayRom)
             }
         }
     }

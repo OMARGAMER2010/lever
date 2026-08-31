@@ -175,6 +175,28 @@ public final class PortLibrary: @unchecked Sendable {
         androidToolsURL.appendingPathComponent("claves", isDirectory: true)
     }
 
+    /// Los núcleos de libretro, una carpeta por arquitectura.
+    ///
+    /// La arquitectura va en la ruta y no es cosmética: un núcleo lo carga RetroArch dentro de su
+    /// propio proceso, así que tiene que ser de la suya, no de la del Mac. Un Mac puede acabar con
+    /// las dos carpetas si el usuario cambia de RetroArch, y mezclarlas es justo lo que rompe.
+    public func retroCoreURL(architecture: String) -> URL {
+        root.appendingPathComponent("nucleos", isDirectory: true)
+            .appendingPathComponent(architecture, isDirectory: true)
+    }
+
+    public func hasRetroCore(_ core: String, architecture: String) -> Bool {
+        let archivo = retroCoreURL(architecture: architecture)
+            .appendingPathComponent("\(core)_libretro.dylib")
+        return fileManager.fileExists(atPath: archivo.path)
+    }
+
+    /// Donde van las partidas guardadas, los estados y las BIOS que ponga el usuario. Aparte de
+    /// las de su RetroArch a propósito: Lever no le toca lo suyo.
+    public var retroDataURL: URL {
+        root.appendingPathComponent("emulacion", isDirectory: true)
+    }
+
     public func url(forLibraryNamed name: String) -> URL? {
         let candidate = folderURL.appendingPathComponent(name)
         return fileManager.fileExists(atPath: candidate.path) ? candidate : nil

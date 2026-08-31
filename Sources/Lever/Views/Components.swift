@@ -293,6 +293,7 @@ enum WorkMode: String, CaseIterable, Identifiable {
     case program
     case archive
     case android
+    case rom
 
     var id: String { rawValue }
 
@@ -301,6 +302,7 @@ enum WorkMode: String, CaseIterable, Identifiable {
         case .program: return .tabPrograms
         case .archive: return .tabArchives
         case .android: return .tabAndroid
+        case .rom: return .tabEmulation
         }
     }
 
@@ -308,6 +310,9 @@ enum WorkMode: String, CaseIterable, Identifiable {
     static func forDroppedFile(_ url: URL) -> WorkMode {
         if SupportedFileKind.exe.accepts(url) { return .program }
         if SupportedFileKind.apk.accepts(url) { return .android }
+        // Un `.iso` o un `.bin` los reclama también la pestaña de comprimidos, así que aquí no
+        // decide la extensión: decide si el archivo tiene por dentro la cabecera de una consola.
+        if SupportedFileKind.rom.accepts(url), RomInspector.inspect(url).isRecognised { return .rom }
         return .archive
     }
 }

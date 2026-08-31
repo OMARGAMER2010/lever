@@ -12,6 +12,8 @@ public enum SupportedFileKind: String, Codable, CaseIterable, Sendable {
     case rar
     /// Aplicaciones de Android: el `.apk` de siempre y los envoltorios que llevan varios dentro.
     case apk
+    /// Juegos de consola: ROMs e imágenes de disco.
+    case rom
 
     public var extensions: [String] {
         switch self {
@@ -21,6 +23,10 @@ public enum SupportedFileKind: String, Codable, CaseIterable, Sendable {
             // Los cuatro últimos no se instalan tal cual: hay que abrirlos y decidir qué trozos
             // le tocan al aparato. Se aceptan porque Lever ya sabe hacerlo.
             return ["apk", "xapk", "apks", "aab", "apkm"]
+        case .rom:
+            // La lista sale de las máquinas contempladas, para que añadir una consola no obligue
+            // a acordarse de tocar también esto.
+            return Array(Set(RetroPlatforms.all.flatMap(\.extensions))).sorted()
         case .rar:
             return [
                 "rar", "zip", "7z", "tar", "gz", "tgz", "bz2", "tbz",
@@ -42,6 +48,7 @@ public enum SupportedFileKind: String, Codable, CaseIterable, Sendable {
         case .exe: return "programa de Windows (.exe o .msi)"
         case .rar: return "archivo comprimido (.rar, .zip, .7z…)"
         case .apk: return "aplicación de Android (.apk, .xapk, .apks, .aab)"
+        case .rom: return "juego de consola (.nes, .sfc, .gba, .nds…)"
         }
     }
 }
