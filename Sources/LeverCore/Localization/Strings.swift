@@ -239,6 +239,11 @@ public struct Strings: Sendable {
         .controlsNoGamepad: "Ninguno. Enchufa uno por USB o empareja uno por Bluetooth y aparecerá aquí.",
         .controlsKeyboardTab: "Teclado",
         .controlsGamepadTab: "Mando",
+        .controlsButton: "botón %@",
+        .controlsAxis: "eje %@",
+        .controlsHat: "cruceta %@",
+        .controlsGamepadHint: "El mando se asigna con el mando: pulsa una casilla y luego el botón "
+            + "que quieras. La tecla que tenga puesta se queda como está.",
         .playRom: "Jugar",
         .playingRom: "Jugando",
         .statusGettingCore: "Descargando el núcleo de %@…",
@@ -673,6 +678,11 @@ public struct Strings: Sendable {
         .controlsNoGamepad: "None. Plug one in over USB or pair one over Bluetooth and it will show up here.",
         .controlsKeyboardTab: "Keyboard",
         .controlsGamepadTab: "Controller",
+        .controlsButton: "button %@",
+        .controlsAxis: "axis %@",
+        .controlsHat: "d-pad %@",
+        .controlsGamepadHint: "The controller is mapped with the controller: click a slot and then "
+            + "press the button you want. The key it already has stays put.",
         .playRom: "Play",
         .playingRom: "Playing",
         .statusGettingCore: "Downloading the %@ core…",

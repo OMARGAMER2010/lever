@@ -112,13 +112,26 @@ public enum ControlBinding: Equatable, Sendable, Codable {
     case none
 
     /// Cómo se enseña en el diagrama.
-    public var label: String {
+    ///
+    /// Los nombres internos de RetroArch valen para el archivo y se leen mal en pantalla: `rshift`
+    /// es «⇧ der.» y `up` de una cruceta es una flecha, no la palabra.
+    public func label(_ strings: Strings) -> String {
         switch self {
-        case .key(let tecla): return tecla
-        case .button(let número): return "botón \(número)"
-        case .axis(let eje): return "eje \(eje)"
-        case .hat(_, let dirección): return "cruceta \(dirección)"
-        case .none: return "—"
+        case .key(let tecla): return RetroKeyNames.label(for: tecla)
+        case .button(let número): return strings(.controlsButton, String(número))
+        case .axis(let eje): return strings(.controlsAxis, eje)
+        case .hat(_, let dirección): return strings(.controlsHat, Self.arrow(for: dirección))
+        case .none: return strings[.controlsUnassigned]
+        }
+    }
+
+    private static func arrow(for direction: String) -> String {
+        switch direction {
+        case "up": return "↑"
+        case "down": return "↓"
+        case "left": return "←"
+        case "right": return "→"
+        default: return direction
         }
     }
 
@@ -186,6 +199,13 @@ public struct ControlProfile: Equatable, Sendable, Codable, Identifiable {
 
     public func binding(for input: RetroPadInput) -> ControlBinding {
         keyboard[input] ?? .none
+    }
+
+    /// Lo que tenga el mando para ese control. Va aparte del teclado a propósito: RetroArch
+    /// escribe las dos cosas por control —una línea para la tecla y otra para el botón— y las dos
+    /// valen a la vez, así que asignar un botón no debe borrar la tecla.
+    public func gamepadBinding(for input: RetroPadInput) -> ControlBinding {
+        gamepad[input] ?? .none
     }
 }
 

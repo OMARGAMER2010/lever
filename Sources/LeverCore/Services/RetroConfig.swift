@@ -90,6 +90,13 @@ public enum RetroConfig {
             // **en negro**: no da ningún error, ni en pantalla ni en su registro, que se corta
             // justo después de «Found display driver». `rgui` va dibujado en el propio programa.
             línea("menu_driver", valor: "rgui"),
+            // **El número de un botón solo significa algo dentro de su driver.** Lever los cuenta
+            // como los cuenta `hid` sobre `iohidmanager` (ver `RetroPadNumbering`); con otro driver
+            // el mismo número sería otro botón, y no habría ningún error que lo dijera. Es el que
+            // RetroArch elige solo en un Mac, así que fijarlo no cambia nada hoy: lo que hace es
+            // que no cambie mañana. Y si algún día no existiera, RetroArch coge el primero que
+            // arranque en vez de quedarse sin mando.
+            línea("input_joypad_driver", valor: "hid"),
             // Un emulador lanzado desde otra app no se queda con el foco, y RetroArch pausa el
             // juego cuando pierde la ventana: se abriría siempre parado, con el icono de pausa
             // y sin que nada explique por qué.

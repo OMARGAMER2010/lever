@@ -149,7 +149,13 @@ struct EmulationPane: View {
 
     private var summary: String {
         model.availableInputs.prefix(6).map { control in
-            "\(control.symbol) \(model.controlProfile.binding(for: control).label)"
+            let mando = model.controlProfile.gamepadBinding(for: control)
+            let tecla = model.controlProfile.binding(for: control).label(s)
+            // El mando solo sale si se ha tocado: cuando está sin asignar lo pone RetroArch por su
+            // cuenta, y anunciar «sin asignar» sería decir que no funciona.
+            return mando.isAssigned
+                ? "\(control.symbol) \(tecla)/\(mando.label(s))"
+                : "\(control.symbol) \(tecla)"
         }.joined(separator: "   ")
     }
 

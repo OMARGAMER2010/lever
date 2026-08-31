@@ -144,21 +144,31 @@ struct ControlMapperSheet: View {
     }
 
     /// Un botón del dibujo: su nombre, lo que tiene asignado, y el estado de escucha.
+    ///
+    /// Enseña las dos asignaciones, la del teclado y la del mando, porque las dos valen a la vez:
+    /// RetroArch escribe una línea para cada una. Con una sola casilla, asignar el mando parecería
+    /// haber borrado la tecla.
     private func buttonChip(_ input: RetroPadInput) -> some View {
         let escuchando = listening == input
-        let asignado = model.controlProfile.binding(for: input)
+        let tecla = model.controlProfile.binding(for: input)
+        let mando = model.controlProfile.gamepadBinding(for: input)
 
         return Button {
             escuchando ? stopListening() : startListening(input)
         } label: {
-            VStack(spacing: 2) {
+            VStack(spacing: 1) {
                 Text(input.symbol)
                     .font(.system(size: 12, weight: .semibold))
-                Text(escuchando ? "…" : etiqueta(de: asignado))
+                Text(escuchando ? "…" : tecla.label(s))
                     .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(asignado.isAssigned ? Color.secondary : Theme.attention)
+                    .foregroundStyle(tecla.isAssigned ? Color.secondary : Theme.attention)
+                if mando.isAssigned, !escuchando {
+                    Text(mando.label(s))
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundStyle(Color.accentColor)
+                }
             }
-            .frame(width: 62, height: 40)
+            .frame(width: 66, height: 46)
             .background(
                 escuchando ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.05),
                 in: RoundedRectangle(cornerRadius: Theme.Radius.inline)
@@ -171,12 +181,7 @@ struct ControlMapperSheet: View {
         }
         .buttonStyle(.plain)
         .help(escuchando ? s[.controlsListening] : s(.controlsPressPrompt, input.symbol))
-        .accessibilityLabel("\(input.symbol): \(etiqueta(de: asignado))")
-    }
-
-    private func etiqueta(de binding: ControlBinding) -> String {
-        if case .key(let tecla) = binding { return RetroKeyNames.label(for: tecla) }
-        return binding.isAssigned ? binding.label : s[.controlsUnassigned]
+        .accessibilityLabel("\(input.symbol): \(tecla.label(s)), \(mando.label(s))")
     }
 
     // MARK: - Mandos conectados
@@ -198,12 +203,13 @@ struct ControlMapperSheet: View {
                         Text(mando.family.rawValue)
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
-                        if let batería = mando.batteryPercent {
-                            Text("\(batería)%").font(.system(size: 11)).foregroundStyle(.tertiary)
-                        }
                         Spacer()
                     }
                 }
+                Text(s[.controlsGamepadHint])
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -239,16 +245,19 @@ struct ControlMapperSheet: View {
         }
 
         // Y a la vez el mando, para que dé igual con qué se conteste.
-        gamepads.listen { _ in
-            // El botón físico llega con el nombre que le da el sistema; lo que RetroArch necesita
-            // es su número, y ese depende de cada mando. Mientras no se pueda comprobar con un
-            // mando de verdad, no se guarda nada inventado: se deja de escuchar y ya está.
-            stopListening()
+        gamepads.listen { enlace in
+            assign(enlace, to: input)
         }
     }
 
+    /// Guarda la asignación donde le toca. Una tecla y un botón del mando no compiten por el mismo
+    /// sitio: RetroArch admite los dos para el mismo control, así que asignar uno deja el otro.
     private func assign(_ binding: ControlBinding, to input: RetroPadInput) {
-        model.controlProfile.keyboard[input] = binding
+        if case .key = binding {
+            model.controlProfile.keyboard[input] = binding
+        } else {
+            model.controlProfile.gamepad[input] = binding
+        }
         stopListening()
     }
 

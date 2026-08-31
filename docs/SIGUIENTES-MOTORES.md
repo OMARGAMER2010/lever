@@ -359,18 +359,33 @@ son las consolas: una ROM no se ejecuta ni se instala, se **interpreta**.
 - **Controles en tres niveles**: para todo, para una consola o para un juego, y gana el más
   concreto. La disposición de fábrica es la de siempre —cursores, Z y X, Enter— a propósito: es la
   que asumen todas las guías, y tener otra es una pelea que no vale la pena.
-- **El diagrama del mando**: se pulsa el botón dibujado y luego la tecla de verdad. Solo salen los
-  botones que esa consola tiene: enseñar dieciséis para una Game Boy sería enseñar catorce que no
-  hacen nada.
+- **El diagrama del mando**: se pulsa el botón dibujado y luego la tecla o el botón de verdad. Solo
+  salen los botones que esa consola tiene: enseñar dieciséis para una Game Boy sería enseñar catorce
+  que no hacen nada. Cada casilla enseña **las dos** asignaciones, la del teclado y la del mando,
+  porque las dos valen a la vez: RetroArch escribe una línea para cada una.
 - Probado de punta a punta con `nestest.nes`, la ROM de dominio público con la que se validan los
   emuladores de NES: desde la ventana de Lever, el panel dice «NES / Famicom · 8 bits · reconocido
   por su cabecera», el botón descarga el núcleo y **el juego arranca y dibuja**.
-- **Lo que sigue sin comprobarse, y hay que decirlo**: asignar un botón de un **mando físico**. Los
-  mandos se detectan —`GameController` cubre Xbox, DualShock/DualSense y los Bluetooth genéricos, y
-  no hace falta ningún controlador— pero traducir un botón suyo al número que RetroArch espera
-  depende de cada mando, y aquí no hay ninguno con el que medirlo. Antes que guardar un número
-  inventado, no se guarda nada: el mando lo sigue configurando RetroArch por su cuenta, que para
-  los conocidos funciona sin tocar nada. El teclado sí está entero y comprobado.
+
+#### El mando físico
+
+El número que RetroArch escribe en `input_playerN_<control>_btn` **no es una propiedad del botón**:
+es la posición que ese botón ocupa en la lista que arma el emulador al reconocer el mando. Por eso
+no se puede deducir del nombre que le dé el sistema. Lo que se hace es armar la misma lista con la
+misma regla, traducida de `input/drivers_hid/iohidmanager_hid.c` de RetroArch 1.22.2, en
+`Services/RetroPadNumbering.swift`. Tres pasos, y ninguno es evidente:
+
+1. Los elementos HID se ordenan por página, uso y galleta **antes** de mirarlos.
+2. Cada botón entra ordenado por su uso, no por el orden en que aparece.
+3. Un uso repetido no pisa al primero: se va **al final**, detrás de todos.
+
+Lo comprobado hasta ahora: la regla, contra las dos únicas tablas que no son de esta casa —la del
+Nimbus, que la propia fuente de RetroArch documenta en un comentario, y la de un **DualSense de
+verdad** leída de este Mac por IOKit (catorce botones, seis ejes y una cruceta, con las galletas de
+las palancas desordenadas)—, y que la app instalada abre el diagrama y lo dibuja con los ocho
+botones de la NES. **Lo que falta**: pulsar el botón físico con el diagrama escuchando, lanzar el
+juego y ver que hace lo asignado. El mando de la casa se duerme y no volvió a aparecer en la
+sesión; sin eso no se puede dar por bueno.
 - **Y tampoco está jugada ninguna otra máquina**: de las doce, solo la NES se ha llegado a jugar.
   El reconocimiento de las once restantes sí está cubierto con cabeceras reales en las pruebas,
   pero una cosa es reconocer la ROM y otra que ese núcleo arranque en este Mac.
@@ -476,6 +491,36 @@ comprobado está en cada motor, en su párrafo de «lo que sigue sin comprobarse
   pidió. `config_save_on_exit = false`.
 - RetroArch **pausa el juego cuando su ventana no tiene el foco**, y un emulador lanzado desde otra
   app no lo tiene: se abre parado, con el icono de pausa y sin nada que lo explique.
+- **`strings` esconde los nombres de tres letras.** Por omisión solo saca cadenas de cuatro o más,
+  así que buscar `hid` o `mfi` en el binario de RetroArch no encuentra nada y parece que esos
+  drivers no están. Hace falta `strings -n 3`. Con la respuesta equivocada se diseña el mapeo
+  entero contra el driver que no es.
+- **RetroArch de Homebrew no trae el driver `mfi`.** En un Mac usa `hid` sobre `iohidmanager`, es
+  decir, HID en crudo. Lo dice su propio registro: «Found HID driver: "iohidmanager"», «Found joypad
+  driver: "hid"». Importa porque `mfi` numera los botones como el RetroPad y `hid` los numera por
+  posición en la lista de elementos: **son numeraciones distintas para el mismo botón**.
+- **El número de un botón solo significa algo dentro de su driver.** Por eso la configuración fija
+  `input_joypad_driver`: sin esa línea, un cambio de driver movería todos los botones de sitio sin
+  dar ningún error. Y si algún día no existiera, RetroArch coge el primero que arranque en vez de
+  quedarse sin mando, así que fijarlo no puede dejar a nadie tirado.
+- **`GameController` no ve el mando.** Con un DualSense emparejado por Bluetooth en este Mac
+  devuelve **cero mandos**: ni desde un ejecutable suelto, ni desde una app con su ventana delante y
+  activa. IOKit lo ve sin dudar. Además `GameController` no enseña galletas ni usos HID, que es de
+  donde sale el número. Se usa IOKit para las dos cosas, que además es lo que ve RetroArch: enseñar
+  una lista de mandos que no es la suya sería mentir. Lo que se pierde es el porcentaje de batería,
+  que IOKit no publica para este mando.
+- **Un gatillo en reposo no vale cero: vale el extremo.** Un umbral que mire solo el valor da por
+  pulsado un gatillo que nadie ha tocado, y la primera casilla que se intente asignar se lleva ese
+  gatillo sola. Hay que guardar cómo estaba cada eje al empezar a escuchar y mirar el movimiento.
+- **RetroArch solo lee los treinta y dos primeros botones** (`joykey < 32`). El treinta y tres se
+  guarda sin error y no hace nada nunca.
+- **Una asignación explícita gana a la autoconfiguración de RetroArch, y `nul` se la deja puesta.**
+  Está en `input_driver.c`: `bind_joykey != NO_BTN ? bind_joykey : autobind_joykey`. Es justo lo que
+  se quiere —solo se pisa lo que el usuario ha tocado— pero conviene saberlo: escribir `nul` no
+  desactiva un botón, lo devuelve a lo que RetroArch decida.
+- **El DualSense no está en la tabla de mandos conocidos de RetroArch 1.22.2** (sí el DualShock 3 y
+  el 4). Por eso va por el camino genérico de elementos HID, que es el que Lever replica. Si algún
+  día lo añaden, RetroArch pasará a leerlo por informe y **la numeración cambiará**.
 - **El `package.json` de un módulo de Electron puede estar fuera del `.asar`.** Si solo se mira
   dentro, un módulo desempaquetado se queda sin versión y sin repositorio, y el traslado acaba
   diciendo «no publica binario de macOS» sobre un módulo que ni se ha llegado a identificar. Un
