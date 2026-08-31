@@ -273,7 +273,7 @@ enum ApkInspectorTests {
 
     // MARK: - Construcción de un .apk a mano
 
-    private static func makeApk(
+    static func makeApk(
         in fixture: TemporaryFixture,
         named name: String,
         manifest: Data?,
@@ -354,7 +354,7 @@ enum ApkInspectorTests {
 
     /// `orientation` es el valor crudo de `android:screenOrientation`; `nil` lo omite, como hace
     /// un `.apk` que no fija ninguna postura.
-    private static func makeManifest(utf8: Bool, orientation: UInt32? = nil) -> Data {
+    static func makeManifest(utf8: Bool, orientation: UInt32? = nil) -> Data {
         var body = stringPool(utf8: utf8) + resourceMap()
 
         // <manifest package="com.ejemplo.app" android:versionCode="42" android:versionName="1.4.2">

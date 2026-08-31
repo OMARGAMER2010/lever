@@ -85,8 +85,14 @@ public final class AppModel: ObservableObject {
             inspectApk()
         }
     }
-    @Published public private(set) var apkFacts = ApkFacts()
+    /// Lo leído del archivo elegido: un `.apk` suelto o un envoltorio con varios dentro.
+    @Published public private(set) var androidPackage = AndroidPackage(kind: .apk)
+    /// Lo que se sabe de la app. En un envoltorio sale de su `.apk` de base, no de la ficha que
+    /// lo acompaña: la ficha la escribe quien empaquetó y a veces no dice la verdad.
+    public var apkFacts: ApkFacts { androidPackage.facts }
     @Published public private(set) var isInspectingApk = false
+    /// Herramientas que habría que descargar para poder instalar el archivo elegido.
+    @Published public private(set) var androidToolNeeds: [AndroidToolNeed] = []
     @Published public private(set) var androidDevices: [AndroidDevice] = []
     @Published public var selectedDeviceSerial: String?
     @Published public private(set) var isScanningDevices = false
@@ -406,7 +412,8 @@ public final class AppModel: ObservableObject {
 
     public func clearApk() {
         selectedApk = nil
-        apkFacts = ApkFacts()
+        androidPackage = AndroidPackage(kind: .apk)
+        androidToolNeeds = []
         installedPackage = nil
     }
 
@@ -435,12 +442,7 @@ public final class AppModel: ObservableObject {
             }
         }
         if !handled, let first = urls.first {
-            // Un `.aab` o un `.xapk` tienen arreglo, y decir cuál ahorra una búsqueda.
-            showError(
-                first.looksLikeAndroidBundle
-                    ? strings(.errAndroidBundle, first.lastPathComponent)
-                    : strings(.errUnknownFile, first.lastPathComponent)
-            )
+            showError(strings(.errUnknownFile, first.lastPathComponent))
         }
         return handled
     }
@@ -939,16 +941,19 @@ public final class AppModel: ObservableObject {
 
     private func inspectApk() {
         guard let apk = selectedApk else {
-            apkFacts = ApkFacts()
+            androidPackage = AndroidPackage(kind: .apk)
+            androidToolNeeds = []
             return
         }
         isInspectingApk = true
         Task { [weak self] in
             // Fuera del hilo principal: leer el directorio de un `.apk` de un giga con decenas
-            // de miles de entradas no debe congelar la ventana.
-            let facts = await Task.detached { ApkInspector.inspect(apk) }.value
+            // de miles de entradas no debe congelar la ventana, y de un envoltorio hay además
+            // que sacar su `.apk` de base para poder leerlo.
+            let leído = await Task.detached { AndroidBundleInspector.inspect(apk) }.value
             guard let self, selectedApk == apk else { return }
-            apkFacts = facts
+            androidPackage = leído
+            androidToolNeeds = AndroidTools.needs(for: leído, having: AndroidTools.locate())
             isInspectingApk = false
         }
     }
@@ -1074,10 +1079,11 @@ public final class AppModel: ObservableObject {
                 activityMessage = strings[.statusStopped]
                 return
             }
-            guard await install(apk: apk, adb: adb, serial: serial, session: session) else { return }
+            guard let resultado = await install(apk: apk, adb: adb, serial: serial, session: session)
+            else { return }
 
-            installedPackage = apkFacts.packageName
-            await open(package: apkFacts.packageName, adb: adb, serial: serial)
+            installedPackage = resultado.packageName
+            await open(package: resultado.packageName, adb: adb, serial: serial)
             await rotate(adb: adb, serial: serial, to: effectiveOrientation)
         }
     }
@@ -1143,42 +1149,99 @@ public final class AppModel: ObservableObject {
         return nil
     }
 
-    private func install(apk: URL, adb: URL, serial: String, session: ProcessSession) async -> Bool {
+    private func install(
+        apk: URL, adb: URL, serial: String, session: ProcessSession
+    ) async -> AndroidInstallOutcome? {
         activityMessage = strings(.statusInstallingApk, apk.lastPathComponent)
         add(strings(.logInstallingApk, apk.lastPathComponent, selectedDevice?.displayName ?? serial), level: .info)
 
-        do {
-            let result = try await runner.run(
-                AndroidLauncher.installCommand(adb: adb, serial: serial, apk: apk),
-                session: session
-            ) { line in
-                Task { @MainActor [weak self] in self?.addOutput(line) }
-            }
+        // Los ABI del aparato se preguntan aquí y no se cogen de la lista: cuando el emulador se
+        // acaba de arrancar, la lista todavía no los tiene, y sin ellos no se puede elegir qué
+        // trozo de una app partida le toca.
+        let device = await deviceForInstall(adb: adb, serial: serial)
+        let paquete = androidPackage
 
-            if result.wasCancelled {
-                activityMessage = strings[.statusStopped]
-                add(strings[.logStopped], level: .warning)
-                return false
-            }
-            // `adb install` no siempre devuelve un código distinto de cero al fallar: hay
-            // versiones que terminan en 0 y escriben «Failure [...]». Manda el texto.
-            if let failure = AndroidLauncher.installFailure(inOutput: result.output) {
-                activityMessage = strings[.statusFailed]
-                showError(explain(installFailure: failure))
-                return false
-            }
-            guard result.succeeded else {
-                activityMessage = strings[.statusFailed]
-                showError(strings(.errInstallOther, String(result.exitCode)))
-                return false
-            }
+        do {
+            let resultado = try await AndroidInstaller.install(
+                package: paquete, at: apk, adb: adb, device: device,
+                runner: runner, session: session,
+                onStage: { stage in
+                    Task { @MainActor [weak self] in self?.announce(stage) }
+                },
+                onLine: { line in
+                    Task { @MainActor [weak self] in self?.addOutput(line) }
+                }
+            )
 
             add(strings[.logApkInstalled], level: .success)
-            return true
+            if resultado.wasSigned { add(strings[.logApkSigned], level: .info) }
+            if resultado.installedParts > 1 {
+                add(strings(.logPartsInstalled, String(resultado.installedParts)), level: .info)
+            }
+            if resultado.pushedExpansions > 0 {
+                add(strings(.logExpansionsPushed, String(resultado.pushedExpansions)), level: .success)
+            }
+            return resultado
+        } catch let failure as AndroidInstallFailure {
+            if case .cancelled = failure {
+                activityMessage = strings[.statusStopped]
+                add(strings[.logStopped], level: .warning)
+                return nil
+            }
+            activityMessage = strings[.statusFailed]
+            showError(explain(failure))
+            return nil
         } catch {
             activityMessage = strings[.statusCannotStart]
             showError(error.localizedDescription)
-            return false
+            return nil
+        }
+    }
+
+    /// Pregunta al aparato por sus datos justo antes de instalar.
+    private func deviceForInstall(adb: URL, serial: String) async -> AndroidDevice {
+        if let known = androidDevices.first(where: { $0.serial == serial }), !known.abis.isEmpty {
+            return known
+        }
+        let result = try? await runner.run(AndroidLauncher.propertiesCommand(adb: adb, serial: serial))
+        let properties = AndroidLauncher.properties(fromOutput: result?.output ?? "")
+        return AndroidDevice(
+            serial: serial, availability: .ready, model: properties.model,
+            abis: properties.abis, sdk: properties.sdk, release: properties.release
+        )
+    }
+
+    /// Traduce el paso en el que va la instalación al texto que se enseña.
+    private func announce(_ stage: AndroidInstallStage) {
+        switch stage {
+        case .gettingTool(let need):
+            let texto = strings(.statusGettingAndroidTool, strings[need.tool.textKey], String(need.megabytes))
+            activityMessage = texto
+            add(texto, level: .info)
+        case .unpacking:
+            activityMessage = strings[.statusUnpackingBundle]
+        case .signing:
+            activityMessage = strings[.statusSigningApk]
+            add(strings[.statusSigningApk], level: .info)
+        case .buildingApks:
+            activityMessage = strings[.statusBuildingApks]
+            add(strings[.statusBuildingApks], level: .info)
+        case .installing(let parts):
+            activityMessage = parts > 1
+                ? strings(.statusInstallingParts, String(parts))
+                : strings(.statusInstallingApk, selectedApk?.lastPathComponent ?? "")
+        case .pushingExpansion(let name, let index, let total):
+            activityMessage = strings(.statusPushingExpansion, name, String(index), String(total))
+        }
+    }
+
+    private func explain(_ failure: AndroidInstallFailure) -> String {
+        switch failure {
+        case .cancelled: return strings[.statusStopped]
+        case .missingTool(let tool): return strings(.errAndroidToolMissing, strings[tool.textKey])
+        case .rejected(let motivo): return explain(installFailure: motivo)
+        case .failed(let code): return strings(.errInstallOther, String(code))
+        case .unreadable: return strings[.errBundleUnreadable]
         }
     }
 

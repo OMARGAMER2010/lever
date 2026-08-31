@@ -13,7 +13,7 @@ enum AppModelTests {
         try testSwitchingLanguageChangesTextAndKeepsState()
         try testProgramArchitectureIsReadOnSelection()
         try testApkNeedsADeviceBeforeInstalling()
-        try testAndroidBundlesGetTheirOwnExplanation()
+        try testAndroidBundlesAreAccepted()
     }
 
     private static func emptyModel() -> AppModel {
@@ -209,17 +209,21 @@ enum AppModelTests {
         model.rotationChoice = .automatic
     }
 
-    /// Un `.aab` o un `.xapk` tienen arreglo, y el mensaje debe decir cuál en vez de soltar un
-    /// «no reconozco este archivo».
-    private static func testAndroidBundlesGetTheirOwnExplanation() throws {
-        let model = readyModel()
+    /// Los cuatro formatos entran por la misma puerta. Antes se rechazaban con un aviso que
+    /// mandaba al usuario a buscarse la vida; ahora se aceptan y se desmontan.
+    private static func testAndroidBundlesAreAccepted() throws {
         let fixture = try TemporaryFixture()
-        let bundle = try fixture.makeFile(named: "juego.xapk")
 
-        try expect(!model.accept(droppedURLs: [bundle]), "un .xapk no se instala tal cual")
-        try expect(model.lastError?.contains(".apk") == true,
-                   "el aviso debe decir que hay que buscar el .apk de dentro")
-        try expect(URL(fileURLWithPath: "/tmp/a.aab").looksLikeAndroidBundle, ".aab es un paquete")
-        try expect(!URL(fileURLWithPath: "/tmp/a.apk").looksLikeAndroidBundle, ".apk no lo es")
+        for nombre in ["juego.xapk", "juego.apks", "juego.aab", "juego.apkm"] {
+            let model = readyModel()
+            let paquete = try fixture.makeFile(named: nombre)
+            try expect(model.accept(droppedURLs: [paquete]), "\(nombre) debe aceptarse")
+            try expect(model.selectedApk == paquete, "\(nombre) queda elegido")
+            try expect(model.lastError == nil, "aceptarlo no es un error: \(model.lastError ?? "")")
+        }
+
+        let model = readyModel()
+        let ajeno = try fixture.makeFile(named: "cosa.qqq")
+        try expect(!model.accept(droppedURLs: [ajeno]), "lo que no es de nadie se sigue rechazando")
     }
 }

@@ -251,6 +251,61 @@ depende del ecosistema.
   convenciones de prebuilds, `prebuildify` —que mete los binarios dentro del propio paquete de npm,
   así que no hay nada que bajar— y `node-pre-gyp`, que usa otra plantilla de dirección.
 
+### Android: los formatos empaquetados — funcionando
+
+Hasta ahora Lever solo instalaba un `.apk` suelto y rechazaba el resto con un mensaje que mandaba
+al usuario a buscarse la vida. Ahora entran los cuatro formatos y el `.apk` sin firma.
+
+- **Reconoce por la extensión**, que aquí sí basta: `.apk`, `.xapk` y `.apkm` (que por dentro es un
+  `.xapk`), `.apks` y `.aab`. Un envoltorio es un ZIP con varios `.apk` dentro.
+- **Los datos de la app salen del `.apk` de base, no de la ficha.** El `manifest.json` de un
+  `.xapk` lo escribe quien empaquetó y no siempre dice la verdad; se saca la base a un archivo
+  temporal y se lee con el mismo lector de siempre. La ficha vale para dos cosas que no están en
+  ningún otro sitio —la lista de trozos y la de expansiones— y como respaldo si la base no se abre.
+- **Cuál es la base, por capas**: lo que declare la ficha; el que se llame `base.apk`; el
+  `…-master.apk` de `bundletool`; y si nada de eso, el único que no parece un trozo de
+  configuración. Esa última capa existe porque hay `.xapk` viejos donde la base se llama con el
+  nombre del paquete, `com.ejemplo.juego.apk`.
+- **Elegir los trozos es la parte que hacía Play y fuera de Play no hace nadie.** Del procesador va
+  uno solo, el primero de `ro.product.cpu.abilist` que el paquete traiga; de la densidad, la que
+  llega o pasa los puntos por pulgada del aparato —una pantalla de 420 usa xxhdpi (480) encogido, no
+  xhdpi (320) estirado—; de los idiomas, **todos**, que pesan poco y elegir uno deja el juego en
+  inglés el día que cambies el idioma del móvil. Los módulos aparte también, porque aquí no hay
+  quien los descargue después.
+- **Instalar los trozos es una sola sesión**, `adb install-multiple`. De uno en uno falla el
+  primero: un trozo suelto no tiene con qué formar una app.
+- **Los `.obb`** se sacan y se empujan de uno en uno a `/sdcard/Android/obb/<paquete>/`, que es la
+  única ruta donde Android los busca, con el nombre exacto que traen —lleva dentro el número de
+  versión con el que la app los pide—. `adb push` no crea la carpeta: hay que hacerla antes.
+- **`.apks` y `.aab` son de `bundletool`.** Un `.apks` guarda en su `toc.pb`, en protobuf, qué
+  variante le toca a cada aparato; esa tabla la escribe y la entiende su herramienta. Para un
+  `.aab`: `build-apks --connected-device` genera solo los trozos de ese aparato y `install-apks`
+  los instala. Se descarga el `bundletool-all.jar` (32 MB) a la biblioteca, con la misma regla que
+  los motores: lo que ya está no se vuelve a bajar.
+- **Firmar un `.apk` sin firma**: se reconoce por no tener ni certificado en `META-INF/` ni el
+  bloque de firma moderno delante del directorio central. Se firma **una copia**, nunca el archivo
+  del usuario, con `zipalign` primero y `apksigner` después. La clave y el certificado se hacen una
+  vez con el `openssl` que trae macOS —así firmar no depende de tener Java para nada más— y se
+  guardan; que sea siempre la misma importa, porque si cambiara, un juego firmado ayer no podría
+  actualizarse con el de hoy.
+- **`apksigner` se ejecuta como `java -jar`, no por su guion**: el guion se busca un Java por su
+  cuenta y aquí ya sabemos cuál queremos. Sale de las build-tools del SDK si el usuario las tiene,
+  y si no se bajan (76 MB).
+- Probado de punta a punta con `bash scripts/probar-android.sh`, que compila una app de Android de
+  verdad con `aapt2`, `d8` y `apksigner`, la empaqueta en los cinco casos con `bundletool` y la
+  instala con el instalador de Lever en el emulador: los cinco instalan y **la app arranca**, que
+  es lo que se comprueba —no que `adb` dijera «Success»—. Y desde la ventana de Lever: el panel
+  dice «11 trozos dentro · 200 KB de datos aparte», el botón instala cuatro trozos y empuja el
+  `.obb`, y con el `.apk` sin firma el panel avisa y el botón lo firma e instala.
+- **Lo que sigue sin comprobarse**: un `.xapk` comercial de verdad —los de APKPure son de juegos
+  ajenos de cientos de megas—; un `.apkm` de APKMirror, que se trata como un `.xapk` porque por
+  dentro lo es, pero del que no hay ninguno a mano; y un `.aab` con módulos de Play Asset Delivery,
+  que se instalan pero cuyos datos Play entregaría aparte.
+- **Fuera a propósito**: sacar el `.apk` de una app ya instalada (`adb shell pm path` + `adb pull`).
+  Es el «extra útil» del plan y no forma parte de instalar nada; pide su propio trozo de interfaz
+  —elegir entre las apps del aparato— y se dejó sin hacer en vez de dejar los mandos escritos y sin
+  llamar por nadie.
+
 ### Textos que decían «Godot» y los usaban los tres
 
 `portStageDownloading`, `errPortEngine` y `errPortRuntime` nombraban a Godot, y Ren'Py ya pasaba
@@ -274,22 +329,12 @@ firmar, clonar en APFS, lanzar guiones), `PortPaths` (nombre libre, `.icns`) y `
 
 ---
 
-## 3. Lo que viene, por orden
+## 3. Lo que viene
 
-### 3.1 Android — «lo mismo para los .apk»
+### Nada pendiente
 
-Lever hoy **rechaza** los formatos empaquetados y lo dice en su propio mensaje de error. Ese es
-el hueco más claro:
-
-- **`.xapk`**: es un ZIP con `base.apk`, varios `config.*.apk`, un `manifest.json` y a veces
-  `Android/obb/<paquete>/*.obb`. Instalar: descomprimir, `adb install-multiple base.apk config.*.apk`
-  y empujar los OBB a `/sdcard/Android/obb/<paquete>/`.
-- **`.apks`** (salida de bundletool): ZIP con `splits/` o `standalones/`. Igual que el anterior.
-- **`.aab`**: hace falta `bundletool` (un `.jar` de sus *releases*) y una clave de firma;
-  `bundletool build-apks --local-testing` genera un `.apks` instalable.
-- **`.apk` sin firmar**: Android lo rechaza. Se arregla generando un almacén de claves de
-  depuración y pasando `apksigner`.
-- Extra útil: sacar el `.apk` de una app ya instalada (`adb shell pm path` + `adb pull`).
+El apartado 3.1 —Android— era el último de la lista y está hecho. Lo que queda escrito como no
+comprobado está en cada motor, en su párrafo de «lo que sigue sin comprobarse».
 
 ---
 
@@ -346,6 +391,28 @@ el hueco más claro:
   causa al montaje, a la firma o al aislamiento es perder la sesión; lo que hay que mirar es la
   versión del motor.
 - `requestAnimationFrame` no corre si la ventana queda detrás. Para una sonda automática, temporizador.
+- **`compression_stream_init` deja el flujo a cero**: si los punteros de entrada y salida se ponen
+  en el constructor, `init` los borra, y con `dst_size` en cero la librería no descomprime nada
+  mientras «lo escrito» —`chunkSize - dst_size`— sale el búfer entero. El archivo salía con un mega
+  de basura sin que fallara nada. Los punteros van **después** de `init`.
+- `bundletool` repite cada trozo una vez por variante de Android y les pone `_2`, `_3` para que no
+  choquen los nombres. Ese sufijo no dice nada del trozo: sin quitarlo, `base-arm64_v8a_2.apk` no
+  coincide con ningún procesador y pasa por un módulo aparte. Y entre los `…-master.apk` hay que
+  leer **el que no lleva sufijo**: es el de la variante del Android más antiguo, así que es el que
+  dice el mínimo de verdad. Leerlo de la `_3` diría que la app pide Android 12 cuando se instala
+  desde el 7.
+- **`--local-testing` de `bundletool` no se usa.** Sirve para las apps que reparten datos por Play
+  Asset Delivery y necesita `run-as`, que solo funciona si la app es depurable. Con una app normal
+  la instalación sale bien pero escupe un error rojo —«package not debuggable»— que parece que ha
+  fallado todo.
+- El nombre del archivo de las build-tools cambió de guion a subrayado en la r35:
+  `build-tools_r34-macosx.zip` pero `build-tools_r35_macosx.zip`. La forma vieja da un 404.
+- `/usr/bin/java` **no** sirve para saber si hay Java: en macOS ese archivo está siempre y, sin
+  ninguna máquina virtual instalada, lo único que hace es abrir una ventana diciendo que no la hay.
+- El `bash` que trae macOS es el 3.2 y no entiende `;;&` en un `case`. Un guion que lo use falla con
+  «syntax error near unexpected token &» solo al llegar ahí, después de haber hecho todo el trabajo.
+- `adb install` deja una línea en blanco al final: `tail -1` de su salida devuelve vacío y un guion
+  que compruebe ahí el motivo del fallo no encuentra nada.
 - `process.stdout` desde la página no llega a la terminal en las versiones viejas de NW.js. Para
   saber hasta dónde llega el arranque, una baliza HTTP contra un servidor local: no depende de Node
   ni de que la página tenga permisos.

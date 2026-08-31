@@ -12,15 +12,40 @@ import Foundation
 /// Todo lo que devuelve sale del archivo. Lo que no se puede leer se queda en `nil`, nunca se
 /// rellena con un valor probable.
 public enum ApkInspector {
+    /// Si el `.apk` trae firma, y de qué clase.
+    ///
+    /// Hay dos sitios donde mirar porque Android ha tenido dos maneras de firmar. La vieja —la de
+    /// los `.jar` de Java— deja un certificado suelto en `META-INF/`. La moderna, de Android 7
+    /// en adelante, guarda la firma en un bloque propio metido justo antes del directorio del
+    /// ZIP, y ahí no hay ninguna entrada que lo delate: se reconoce por la marca del final del
+    /// bloque. Basta con que esté una de las dos: Android acepta la que entienda.
+    public static func signature(of url: URL) -> ApkSignature {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return .unknown }
+        defer { try? handle.close() }
+        guard let archive = try? ZipDirectory.read(from: handle) else { return .unknown }
+
+        let hasOldSignature = archive.entries.contains { entry in
+            guard entry.name.hasPrefix("META-INF/") else { return false }
+            let extensión = URL(fileURLWithPath: entry.name).pathExtension.uppercased()
+            return ["RSA", "DSA", "EC"].contains(extensión)
+        }
+        if hasOldSignature { return .signed }
+
+        return ZipDirectory.hasSigningBlock(from: handle, directoryOffset: archive.directoryOffset)
+            ? .signed
+            : .missing
+    }
+
     public static func inspect(_ url: URL) -> ApkFacts {
         guard let handle = try? FileHandle(forReadingFrom: url) else {
             return ApkFacts(readFailed: true)
         }
         defer { try? handle.close() }
 
-        guard let entries = try? ZipDirectory.read(from: handle), !entries.isEmpty else {
+        guard let archive = try? ZipDirectory.read(from: handle), !archive.entries.isEmpty else {
             return ApkFacts(readFailed: true)
         }
+        let entries = archive.entries
 
         let names = Set(entries.map(\.name))
         guard names.contains("AndroidManifest.xml") else {
@@ -36,12 +61,7 @@ public enum ApkInspector {
             let abi = String(parts[1])
             if !abis.contains(abi) { abis.append(abi) }
         }
-        abis.sort { lhs, rhs in
-            let order = AndroidAbi.known
-            let left = order.firstIndex(of: lhs) ?? order.count
-            let right = order.firstIndex(of: rhs) ?? order.count
-            return left == right ? lhs < rhs : left < right
-        }
+        abis.sort(by: AndroidAbi.isBefore)
 
         let manifest = entries
             .first { $0.name == "AndroidManifest.xml" }
@@ -88,7 +108,17 @@ enum ZipDirectory {
     /// Tamaño máximo del bloque final del zip: 22 bytes de cabecera + hasta 65 535 de comentario.
     private static let maximumTrailerLength = 22 + 0xFFFF
 
-    static func read(from handle: FileHandle) throws -> [Entry] {
+    /// Lo que hace falta saber de un ZIP: sus entradas y dónde empieza el directorio central.
+    /// Lo segundo no es un detalle interno: el bloque de firma de un `.apk` vive justo delante.
+    struct Archive {
+        let entries: [Entry]
+        let directoryOffset: UInt64
+    }
+
+    /// Marca que cierra el bloque de firma moderno de Android. Son dieciséis bytes exactos.
+    private static let signingBlockMagic = Array("APK Sig Block 42".utf8)
+
+    static func read(from handle: FileHandle) throws -> Archive {
         let fileLength = Int(try handle.seekToEnd())
         guard fileLength > 22 else { throw Failure.malformed }
 
@@ -118,7 +148,21 @@ enum ZipDirectory {
             throw Failure.malformed
         }
 
-        return parseCentralDirectory([UInt8](directory), expectedCount: entryCount)
+        return Archive(
+            entries: parseCentralDirectory([UInt8](directory), expectedCount: entryCount),
+            directoryOffset: directoryOffset
+        )
+    }
+
+    /// Mira si delante del directorio central hay un bloque de firma de Android.
+    ///
+    /// El bloque termina con su tamaño repetido y la marca; leyendo los veinticuatro bytes de
+    /// antes del directorio se sabe sin recorrer nada más.
+    static func hasSigningBlock(from handle: FileHandle, directoryOffset: UInt64) -> Bool {
+        guard directoryOffset >= 24 else { return false }
+        guard (try? handle.seek(toOffset: directoryOffset - 24)) != nil,
+              let tail = try? handle.read(upToCount: 24), tail.count == 24 else { return false }
+        return Array(tail.suffix(16)) == signingBlockMagic
     }
 
     /// Devuelve el contenido de una entrada, descomprimiéndola si hace falta.
@@ -192,13 +236,21 @@ enum ZipDirectory {
             guard nameStart + nameLength <= bytes.count else { break }
             let name = String(decoding: bytes[nameStart..<nameStart + nameLength], as: UTF8.self)
 
+            // Un `.xapk` de un juego grande pasa de los 4 GB, y ahí los tres campos de arriba se
+            // desbordan y los valores de verdad están en el extra ZIP64. Sin esto, la entrada se
+            // buscaría en el desplazamiento 0xFFFFFFFF y no se encontraría nunca.
+            let overflowed = ZipDirectory.zip64Values(
+                bytes, extraStart: nameStart + nameLength, extraLength: extraLength,
+                uncompressed: uncompressedSize, compressed: compressedSize, offset: localOffset
+            )
+
             entries.append(
                 Entry(
                     name: name,
                     method: method,
-                    compressedSize: compressedSize,
-                    uncompressedSize: uncompressedSize,
-                    localHeaderOffset: UInt64(localOffset)
+                    compressedSize: overflowed.compressed,
+                    uncompressedSize: overflowed.uncompressed,
+                    localHeaderOffset: overflowed.offset
                 )
             )
 
@@ -206,6 +258,144 @@ enum ZipDirectory {
         }
 
         return entries
+    }
+
+    /// Los valores reales de una entrada cuando los campos de 32 bits se han desbordado.
+    ///
+    /// El extra ZIP64 solo trae los campos que hicieron falta, y **en este orden**: tamaño sin
+    /// comprimir, tamaño comprimido, desplazamiento. Cada uno solo está si su campo de 32 bits
+    /// vale 0xFFFFFFFF, así que no se puede leer por posición fija.
+    static func zip64Values(
+        _ bytes: [UInt8], extraStart: Int, extraLength: Int,
+        uncompressed: Int, compressed: Int, offset: UInt32
+    ) -> (uncompressed: Int, compressed: Int, offset: UInt64) {
+        let sinDesbordar = (uncompressed, compressed, UInt64(offset))
+        let marca = uncompressed == 0xFFFF_FFFF || compressed == 0xFFFF_FFFF || offset == 0xFFFF_FFFF
+        guard marca, extraLength >= 4, extraStart + extraLength <= bytes.count else { return sinDesbordar }
+
+        var cursor = extraStart
+        let final = extraStart + extraLength
+        while cursor + 4 <= final {
+            let id = readUInt16(bytes, cursor)
+            let size = Int(readUInt16(bytes, cursor + 2))
+            guard cursor + 4 + size <= final else { return sinDesbordar }
+            guard id == 0x0001 else { cursor += 4 + size; continue }
+
+            var campo = cursor + 4
+            var resultado = sinDesbordar
+            if uncompressed == 0xFFFF_FFFF, campo + 8 <= final {
+                resultado.0 = Int(readUInt64(bytes, campo)); campo += 8
+            }
+            if compressed == 0xFFFF_FFFF, campo + 8 <= final {
+                resultado.1 = Int(readUInt64(bytes, campo)); campo += 8
+            }
+            if offset == 0xFFFF_FFFF, campo + 8 <= final {
+                resultado.2 = readUInt64(bytes, campo)
+            }
+            return resultado
+        }
+        return sinDesbordar
+    }
+
+    /// Saca una entrada del ZIP a un archivo, sin cargarla entera en memoria.
+    ///
+    /// Va aparte de `contents(of:from:)` porque el tamaño manda: el manifiesto de un `.apk` son
+    /// unos kilobytes y cabe de sobra, pero el `base.apk` de dentro de un `.xapk` puede pasar de
+    /// los cien megas y un `.obb` de los dos gigas. Se descomprime a trozos y se escribe según
+    /// sale, que es lo que permite que el traslado no dependa de cuánta memoria tenga el Mac.
+    static func extract(_ entry: Entry, from handle: FileHandle, to destination: URL) throws {
+        try handle.seek(toOffset: entry.localHeaderOffset)
+        guard let header = try handle.read(upToCount: 30), header.count == 30 else { throw Failure.malformed }
+
+        let headerBytes = [UInt8](header)
+        guard readUInt32(headerBytes, 0) == localHeaderSignature else { throw Failure.malformed }
+        let nameLength = Int(readUInt16(headerBytes, 26))
+        let extraLength = Int(readUInt16(headerBytes, 28))
+        try handle.seek(toOffset: entry.localHeaderOffset + 30 + UInt64(nameLength + extraLength))
+
+        FileManager.default.createFile(atPath: destination.path, contents: nil)
+        guard let output = try? FileHandle(forWritingTo: destination) else { throw Failure.malformed }
+        defer { try? output.close() }
+
+        switch entry.method {
+        case 0:
+            var restante = entry.compressedSize
+            while restante > 0 {
+                let trozo = try handle.read(upToCount: min(restante, chunkSize))
+                guard let trozo, !trozo.isEmpty else { throw Failure.malformed }
+                try output.write(contentsOf: trozo)
+                restante -= trozo.count
+            }
+        case 8:
+            try inflate(entry.compressedSize, from: handle, to: output)
+        default:
+            throw Failure.malformed
+        }
+    }
+
+    private static let chunkSize = 1 << 20
+
+    /// Descomprime a trozos con `compression_stream`, que es la versión de la librería del
+    /// sistema que no exige tener a la vez la entrada y la salida enteras.
+    private static func inflate(_ compressedSize: Int, from handle: FileHandle, to output: FileHandle) throws {
+        // Los dos búferes se reservan una vez y viven todo el bucle: `compression_stream` guarda
+        // los punteros entre llamadas, así que no pueden ser los de un `Data` prestado dentro de
+        // un `withUnsafeBytes`, que deja de valer al salir del cierre.
+        let entrada = UnsafeMutablePointer<UInt8>.allocate(capacity: chunkSize)
+        let salida = UnsafeMutablePointer<UInt8>.allocate(capacity: chunkSize)
+        defer { entrada.deallocate(); salida.deallocate() }
+
+        var stream = compression_stream(
+            dst_ptr: salida, dst_size: chunkSize,
+            src_ptr: UnsafePointer(entrada), src_size: 0, state: nil
+        )
+        guard compression_stream_init(&stream, COMPRESSION_STREAM_DECODE, COMPRESSION_ZLIB)
+            == COMPRESSION_STATUS_OK else { throw Failure.malformed }
+        defer { compression_stream_destroy(&stream) }
+
+        // Los punteros van **después** de `init`, no en el constructor: `init` deja el flujo a
+        // cero, y con `dst_size` en cero la librería no descomprime nada mientras la cuenta de
+        // «lo que se ha escrito» sale del búfer entero. El archivo salía lleno de basura.
+        stream.dst_ptr = salida
+        stream.dst_size = chunkSize
+        stream.src_ptr = UnsafePointer(entrada)
+        stream.src_size = 0
+
+        var restante = compressedSize
+
+        while true {
+            if stream.src_size == 0, restante > 0 {
+                guard let trozo = try handle.read(upToCount: min(restante, chunkSize)), !trozo.isEmpty else {
+                    throw Failure.malformed
+                }
+                _ = trozo.copyBytes(to: UnsafeMutableBufferPointer(start: entrada, count: trozo.count))
+                restante -= trozo.count
+                stream.src_ptr = UnsafePointer(entrada)
+                stream.src_size = trozo.count
+            }
+
+            // `FINALIZE` solo cuando ya no queda nada por leer: si se pasa antes, la librería da
+            // por terminado un flujo que sigue.
+            let banderas = restante == 0 ? Int32(COMPRESSION_STREAM_FINALIZE.rawValue) : 0
+            let estado = compression_stream_process(&stream, banderas)
+
+            let escritos = chunkSize - stream.dst_size
+            if escritos > 0 {
+                try output.write(contentsOf: Data(bytes: salida, count: escritos))
+                stream.dst_ptr = salida
+                stream.dst_size = chunkSize
+            }
+
+            switch estado {
+            case COMPRESSION_STATUS_END:
+                return
+            case COMPRESSION_STATUS_OK:
+                // Ni entra nada ni sale nada: el flujo está cortado y seguir sería dar vueltas.
+                if restante == 0, stream.src_size == 0, escritos == 0 { throw Failure.malformed }
+            default:
+                throw Failure.malformed
+            }
+        }
     }
 
     private static func inflate(_ data: Data, expecting size: Int) -> Data? {

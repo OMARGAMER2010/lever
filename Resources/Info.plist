@@ -51,6 +51,10 @@
 			<key>CFBundleTypeExtensions</key>
 			<array>
 				<string>apk</string>
+				<string>xapk</string>
+				<string>apks</string>
+				<string>aab</string>
+				<string>apkm</string>
 			</array>
 		</dict>
 		<dict>

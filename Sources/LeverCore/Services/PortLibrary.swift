@@ -155,6 +155,26 @@ public final class PortLibrary: @unchecked Sendable {
         return fileManager.fileExists(atPath: java.path)
     }
 
+    /// Las herramientas de Android que Lever se baja cuando el Mac no las tiene. Van juntas en
+    /// una carpeta propia porque no son de ningún juego: se bajan una vez y sirven para todos.
+    private var androidToolsURL: URL {
+        root.appendingPathComponent("android", isDirectory: true)
+    }
+
+    public func bundletoolURL(version: String) -> URL {
+        androidToolsURL.appendingPathComponent("bundletool-\(version).jar")
+    }
+
+    public func buildToolsURL(release: String) -> URL {
+        androidToolsURL.appendingPathComponent("build-tools-\(release)", isDirectory: true)
+    }
+
+    /// La clave con la que Lever firma los `.apk` que llegan sin firma. Una sola para todos: si
+    /// cambiara, un juego firmado ayer no podría actualizarse con el de hoy.
+    public var androidKeysURL: URL {
+        androidToolsURL.appendingPathComponent("claves", isDirectory: true)
+    }
+
     public func url(forLibraryNamed name: String) -> URL? {
         let candidate = folderURL.appendingPathComponent(name)
         return fileManager.fileExists(atPath: candidate.path) ? candidate : nil

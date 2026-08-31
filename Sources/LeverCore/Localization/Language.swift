@@ -104,6 +104,16 @@ public enum TextKey: String, CaseIterable, Sendable {
     case apkMinAndroid, apkMinApi, apkNoNativeCode
     case apkSplitTitle, apkSplitBody, apkUnreadableTitle, apkUnreadableBody
 
+    // Android: los formatos que envuelven varios .apk
+    case bundleKindXapk, bundleKindApks, bundleKindAab
+    case bundleParts, bundleExpansions, bundleModules, bundleUnreadableTitle, bundleUnreadableBody
+    case bundleToolsTitle, bundleToolsBody, apkUnsignedTitle, apkUnsignedBody
+    case toolJava, toolBundletool, toolApkSigner
+    case statusUnpackingBundle, statusSigningApk, statusBuildingApks
+    case statusInstallingParts, statusPushingExpansion, statusGettingAndroidTool
+    case logApkSigned, logPartsInstalled, logExpansionsPushed
+    case errAndroidToolMissing, errBundleUnreadable
+
     // Android: aparatos y emuladores
     case deviceSection, deviceScanning, deviceRefresh, deviceNoneTitle, deviceNoneBody
     case deviceUnauthorized, deviceOffline, deviceEmulator, devicePhone, deviceAndroidVersion
@@ -155,7 +165,7 @@ public enum TextKey: String, CaseIterable, Sendable {
     case errWineBlocked, errNoRosetta, errWinePrefixFailed, errUnblockFailed
     case errNotWineExecutable, errProgramExit, errExtractExit2, errExtractExit1, errExtractExitOther
     case errBusy, errHomebrewMissing, errInstallFailed
-    case errNotAnApk, errAndroidBundle, errNoAdb, errNoDevice, errPickApk, errDeviceUnauthorized
+    case errNotAnApk, errNoAdb, errNoDevice, errPickApk, errDeviceUnauthorized
     case errInstallNoAbis, errInstallOldSdk, errInstallSignature, errInstallDowngrade
     case errInstallNoSpace, errInstallNotSigned, errInstallBlocked, errInstallOther, errNoLauncher
     case statusFinished, statusStopped, statusExtracted, statusFailed, statusCannotStart

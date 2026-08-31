@@ -10,7 +10,7 @@ public enum SupportedFileKind: String, Codable, CaseIterable, Sendable {
     case exe
     /// Comprimidos. `.rar` es el caso principal, pero los extractores abren muchos más.
     case rar
-    /// Aplicaciones de Android. Solo `.apk`: un `.aab` o un `.xapk` no se instalan tal cual.
+    /// Aplicaciones de Android: el `.apk` de siempre y los envoltorios que llevan varios dentro.
     case apk
 
     public var extensions: [String] {
@@ -18,7 +18,9 @@ public enum SupportedFileKind: String, Codable, CaseIterable, Sendable {
         case .exe:
             return ["exe", "msi"]
         case .apk:
-            return ["apk"]
+            // Los cuatro últimos no se instalan tal cual: hay que abrirlos y decidir qué trozos
+            // le tocan al aparato. Se aceptan porque Lever ya sabe hacerlo.
+            return ["apk", "xapk", "apks", "aab", "apkm"]
         case .rar:
             return [
                 "rar", "zip", "7z", "tar", "gz", "tgz", "bz2", "tbz",
@@ -39,17 +41,8 @@ public enum SupportedFileKind: String, Codable, CaseIterable, Sendable {
         switch self {
         case .exe: return "programa de Windows (.exe o .msi)"
         case .rar: return "archivo comprimido (.rar, .zip, .7z…)"
-        case .apk: return "aplicación de Android (.apk)"
+        case .apk: return "aplicación de Android (.apk, .xapk, .apks, .aab)"
         }
-    }
-}
-
-public extension URL {
-    /// Formatos que envuelven varios `.apk` dentro. `adb install` no sabe abrirlos y hace falta
-    /// `bundletool` u otra herramienta: conviene decirlo con nombre propio en vez de soltar un
-    /// «no reconozco este archivo».
-    var looksLikeAndroidBundle: Bool {
-        ["aab", "apks", "xapk", "apkm"].contains(pathExtension.lowercased())
     }
 }
 

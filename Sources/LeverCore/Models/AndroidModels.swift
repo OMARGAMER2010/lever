@@ -14,6 +14,15 @@ public enum AndroidAbi {
 
     /// Los cuatro que Android define hoy, en el orden en que se enseñan.
     public static let known = [arm64, arm32, intel64, intel32]
+
+    /// Orden para enseñarlos: primero los conocidos, en el orden de arriba, y detrás cualquier
+    /// otro por orden alfabético. Se usa en las dos lecturas —la de un `.apk` y la de un
+    /// `.aab`— para que la misma app se enseñe igual venga como venga.
+    public static func isBefore(_ lhs: String, _ rhs: String) -> Bool {
+        let izquierda = known.firstIndex(of: lhs) ?? known.count
+        let derecha = known.firstIndex(of: rhs) ?? known.count
+        return izquierda == derecha ? lhs < rhs : izquierda < derecha
+    }
 }
 
 /// Lo que se ha leído del `.apk` abriéndolo. Solo hechos: nada deducido ni supuesto.

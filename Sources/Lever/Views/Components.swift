@@ -212,10 +212,14 @@ struct ToolStatus: View {
 /// llenaba de superficies una pantalla que ya tenía paneles.
 struct NoticeBanner: View {
     enum Kind {
+        /// Ni problema ni aviso: algo que hay que contar porque no se ve mirando el archivo,
+        /// como que un `.xapk` trae la app partida en trozos. En naranja parecería un fallo.
+        case info
         case warning, failure
 
         var tint: Color {
             switch self {
+            case .info: return Theme.hairline
             case .warning: return Theme.attention
             case .failure: return Theme.failure
             }
