@@ -359,10 +359,24 @@ son las consolas: una ROM no se ejecuta ni se instala, se **interpreta**.
 - **Controles en tres niveles**: para todo, para una consola o para un juego, y gana el más
   concreto. La disposición de fábrica es la de siempre —cursores, Z y X, Enter— a propósito: es la
   que asumen todas las guías, y tener otra es una pelea que no vale la pena.
-- **El diagrama del mando**: se pulsa el botón dibujado y luego la tecla o el botón de verdad. Solo
-  salen los botones que esa consola tiene: enseñar dieciséis para una Game Boy sería enseñar catorce
-  que no hacen nada. Cada casilla enseña **las dos** asignaciones, la del teclado y la del mando,
-  porque las dos valen a la vez: RetroArch escribe una línea para cada una.
+- **El diagrama del mando**: se pulsa el botón dibujado y luego la tecla o el botón de verdad. Cada
+  etiqueta enseña **las dos** asignaciones, la del teclado y la del mando, porque las dos valen a la
+  vez: RetroArch escribe una línea para cada una.
+
+  El dibujo tiene la **forma del mando conectado**, no la de un esquema. El problema de asignar
+  controles es espacial: nadie recuerda qué es «el botón B» de una consola que no ha tenido nunca,
+  pero todo el mundo reconoce el botón de abajo del rombo en el mando que tiene en la mano. Por eso:
+
+  - La silueta cambia con la familia. En un mando de Xbox la palanca izquierda está **donde un
+    PlayStation tiene la cruceta**; dibujarlas iguales sería mandar a buscar un botón donde no está.
+  - Los nombres son los que lleva serigrafiados: `○ ✕ △ □` en un DualSense y `B A Y X` en uno de
+    Xbox —ojo, van por **posición** del RetroPad, no por letra—, y «Create» y «Options» en vez de
+    «Select» y «Start», que en un DualSense no aparecen por ninguna parte.
+  - Los botones que el mando tiene y **esta consola no usa** salen apagados y no se pueden pulsar.
+    Sin ellos, una NES enseñaría dos botones sueltos flotando donde el usuario espera cuatro.
+  - Cada etiqueta va a la altura de su botón y en su lado, unida por una línea. Las posiciones están
+    en `Models/GamepadFaceplate.swift`, aparte de la vista, para poder comprobar sin abrir ninguna
+    ventana que no hay dos controles en el mismo sitio.
 - Probado de punta a punta con `nestest.nes`, la ROM de dominio público con la que se validan los
   emuladores de NES: desde la ventana de Lever, el panel dice «NES / Famicom · 8 bits · reconocido
   por su cabecera», el botón descarga el núcleo y **el juego arranca y dibuja**.

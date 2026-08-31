@@ -37,7 +37,9 @@ struct ControlMapperSheet: View {
             footer
         }
         .padding(Theme.Spacing.page)
-        .frame(width: 640, height: 620)
+        // Más ancha que una hoja normal a propósito: el dibujo necesita el mando en medio y una
+        // columna de etiquetas a cada lado, y apretarlas parte los nombres en dos líneas.
+        .frame(width: 820, height: 660)
         .onAppear { gamepads.start() }
         .onDisappear { stopListening(); gamepads.stop() }
     }
@@ -88,100 +90,23 @@ struct ControlMapperSheet: View {
 
     // MARK: - El dibujo
 
-    /// El mando, con cada botón en su sitio. Las posiciones son relativas para que el dibujo
-    /// aguante cualquier tamaño sin descolocarse.
+    /// El mando, con la forma del que está conectado. Todo lo que decide el dibujo —silueta,
+    /// posiciones y nombres— vive en `GamepadDiagram`; aquí solo se le dice a qué mando parecerse
+    /// y qué hacer cuando se pulsa una casilla.
     private var gamepadDiagram: some View {
-        GeometryReader { geometría in
-            let ancho = geometría.size.width
-            let alto = geometría.size.height
-
-            ZStack {
-                RoundedRectangle(cornerRadius: 60)
-                    .strokeBorder(Theme.hairline, lineWidth: 1.5)
-                    .frame(width: ancho * 0.74, height: alto * 0.62)
-                    .position(x: ancho / 2, y: alto * 0.58)
-
-                ForEach(visibleInputs, id: \.self) { control in
-                    let sitio = position(of: control)
-                    buttonChip(control)
-                        .position(x: ancho * sitio.x, y: alto * sitio.y)
-                }
+        GamepadDiagram(
+            family: gamepads.gamepads.first?.family,
+            inputs: model.availableInputs,
+            profile: model.controlProfile,
+            listening: listening,
+            strings: s,
+            onPick: { control in
+                listening == control ? stopListening() : startListening(control)
             }
-        }
-        .frame(height: 330)
+        )
+        .frame(height: 340)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(s[.controlsSection])
-    }
-
-    private var visibleInputs: [RetroPadInput] {
-        model.availableInputs
-    }
-
-    /// Dónde va cada control dentro del dibujo, en proporción del alto y del ancho. Es la
-    /// disposición de un mando de verdad: cruceta a la izquierda, rombo a la derecha, gatillos
-    /// arriba y las dos palancas abajo en medio.
-    private func position(of input: RetroPadInput) -> (x: CGFloat, y: CGFloat) {
-        switch input {
-        case .l2: return (0.20, 0.10)
-        case .l: return (0.20, 0.22)
-        case .r2: return (0.80, 0.10)
-        case .r: return (0.80, 0.22)
-        case .up: return (0.22, 0.42)
-        case .left: return (0.13, 0.55)
-        case .right: return (0.31, 0.55)
-        case .down: return (0.22, 0.68)
-        case .x: return (0.78, 0.42)
-        case .y: return (0.69, 0.55)
-        case .a: return (0.87, 0.55)
-        case .b: return (0.78, 0.68)
-        case .select: return (0.42, 0.42)
-        case .start: return (0.58, 0.42)
-        case .l3: return (0.40, 0.78)
-        case .r3: return (0.60, 0.78)
-        case .leftStickUp, .leftStickDown, .leftStickLeft, .leftStickRight: return (0.40, 0.62)
-        case .rightStickUp, .rightStickDown, .rightStickLeft, .rightStickRight: return (0.60, 0.62)
-        }
-    }
-
-    /// Un botón del dibujo: su nombre, lo que tiene asignado, y el estado de escucha.
-    ///
-    /// Enseña las dos asignaciones, la del teclado y la del mando, porque las dos valen a la vez:
-    /// RetroArch escribe una línea para cada una. Con una sola casilla, asignar el mando parecería
-    /// haber borrado la tecla.
-    private func buttonChip(_ input: RetroPadInput) -> some View {
-        let escuchando = listening == input
-        let tecla = model.controlProfile.binding(for: input)
-        let mando = model.controlProfile.gamepadBinding(for: input)
-
-        return Button {
-            escuchando ? stopListening() : startListening(input)
-        } label: {
-            VStack(spacing: 1) {
-                Text(input.symbol)
-                    .font(.system(size: 12, weight: .semibold))
-                Text(escuchando ? "…" : tecla.label(s))
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(tecla.isAssigned ? Color.secondary : Theme.attention)
-                if mando.isAssigned, !escuchando {
-                    Text(mando.label(s))
-                        .font(.system(size: 9, design: .monospaced))
-                        .foregroundStyle(Color.accentColor)
-                }
-            }
-            .frame(width: 66, height: 46)
-            .background(
-                escuchando ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.05),
-                in: RoundedRectangle(cornerRadius: Theme.Radius.inline)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: Theme.Radius.inline)
-                    .strokeBorder(escuchando ? Color.accentColor : .clear, lineWidth: 1.5)
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(escuchando ? s[.controlsListening] : s(.controlsPressPrompt, input.symbol))
-        .accessibilityLabel("\(input.symbol): \(tecla.label(s)), \(mando.label(s))")
     }
 
     // MARK: - Mandos conectados

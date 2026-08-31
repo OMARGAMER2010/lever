@@ -22,11 +22,43 @@ public struct ConnectedGamepad: Identifiable, Equatable, Sendable {
 
         /// Cómo llama este mando a los cuatro botones de la derecha, que es donde cada fabricante
         /// pone un nombre distinto para lo mismo.
+        ///
+        /// Ojo con el orden: los nombres van por **posición del RetroPad**, no por letra. La `a`
+        /// del RetroPad es el botón de la derecha del rombo, que en un mando de Xbox se llama `B`.
+        /// Escribir «A» donde el mando dice «B» es justo la confusión que el dibujo tiene que
+        /// quitar.
         public var faceLabels: (a: String, b: String, x: String, y: String) {
             switch self {
             case .dualSense, .dualShock: return ("○", "✕", "△", "□")
             case .xbox: return ("B", "A", "Y", "X")
             case .generic: return ("A", "B", "X", "Y")
+            }
+        }
+
+        /// Los cuatro de arriba. Sony los numera y Microsoft los llama por bumper y trigger.
+        public var shoulderLabels: (l: String, r: String, l2: String, r2: String) {
+            switch self {
+            case .xbox: return ("LB", "RB", "LT", "RT")
+            case .dualSense, .dualShock, .generic: return ("L1", "R1", "L2", "R2")
+            }
+        }
+
+        /// Los dos de en medio, que son los que más han cambiado de nombre con los años y los que
+        /// nadie encuentra: en un DualSense no pone «Select» por ninguna parte.
+        public var menuLabels: (start: String, select: String) {
+            switch self {
+            case .dualSense: return ("Options", "Create")
+            case .dualShock: return ("Options", "Share")
+            case .xbox: return ("Menu", "View")
+            case .generic: return ("Start", "Select")
+            }
+        }
+
+        /// Pulsar la palanca. Se dibuja en el centro del círculo porque es donde se pulsa.
+        public var stickLabels: (left: String, right: String) {
+            switch self {
+            case .xbox: return ("LS", "RS")
+            case .dualSense, .dualShock, .generic: return ("L3", "R3")
             }
         }
 

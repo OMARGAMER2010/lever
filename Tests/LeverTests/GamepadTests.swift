@@ -24,6 +24,9 @@ enum GamepadTests {
         try testRefusesAButtonRetroArchWouldNotRead()
         try testWhatThePadReportsEndsUpInTheConfigFile()
         try testTellsTheFamilyByWhoMadeIt()
+        try testEveryControlHasItsOwnPlaceOnTheDrawing()
+        try testAnXboxPadIsNotDrawnLikeAPlayStationOne()
+        try testEachPadIsNamedTheWayItIsPrinted()
     }
 
     // MARK: - Ayudas
@@ -240,5 +243,68 @@ enum GamepadTests {
         // Los nombres de los cuatro botones de la derecha son lo único que cambia entre familias.
         try expect(ConnectedGamepad.Family.dualSense.faceLabels.b == "✕", "en Sony, el de abajo es ✕")
         try expect(ConnectedGamepad.Family.xbox.faceLabels.b == "A", "y en Xbox, la A")
+    }
+
+    // MARK: - El dibujo
+
+    /// Dos controles en el mismo sitio serían un botón que tapa a otro: uno de los dos no se podría
+    /// pulsar nunca, y no habría nada en pantalla que lo dijera.
+    private static func testEveryControlHasItsOwnPlaceOnTheDrawing() throws {
+        for estilo in GamepadFaceplate.Style.allCases {
+            var ocupados: [String: RetroPadInput] = [:]
+            for control in RetroPadInput.allCases {
+                let sitio = GamepadFaceplate.spot(of: control, style: estilo)
+                try expect((0...1).contains(sitio.x) && (0...1).contains(sitio.y),
+                           "\(estilo.rawValue): \(control.rawValue) se sale del dibujo")
+                let clave = "\(sitio.x),\(sitio.y)"
+                try expect(ocupados[clave] == nil,
+                           "\(estilo.rawValue): \(control.rawValue) cae encima de "
+                           + "\(ocupados[clave]?.rawValue ?? "")")
+                ocupados[clave] = control
+            }
+        }
+    }
+
+    /// La diferencia que obliga a tener dos disposiciones: en un mando de Xbox la palanca izquierda
+    /// está **donde un PlayStation tiene la cruceta**. Dibujarlas iguales manda a buscar un botón
+    /// donde no está, que es justo lo que el dibujo tiene que evitar.
+    private static func testAnXboxPadIsNotDrawnLikeAPlayStationOne() throws {
+        let sonyCruceta = GamepadFaceplate.spot(of: .up, style: .sony)
+        let xboxCruceta = GamepadFaceplate.spot(of: .up, style: .xbox)
+        try expect(xboxCruceta.y > sonyCruceta.y, "en un Xbox la cruceta va más abajo")
+
+        let sonyPalanca = GamepadFaceplate.spot(of: .l3, style: .sony)
+        let xboxPalanca = GamepadFaceplate.spot(of: .l3, style: .xbox)
+        try expect(xboxPalanca.y < sonyPalanca.y && xboxPalanca.x < sonyPalanca.x,
+                   "y la palanca izquierda sube y se va a la izquierda, al hueco de la cruceta")
+        // El rombo no se mueve de lado en ninguno de los dos: es la referencia de todo el dibujo.
+        try expect(GamepadFaceplate.spot(of: .a, style: .sony).x > 0.5
+                   && GamepadFaceplate.spot(of: .a, style: .xbox).x > 0.5,
+                   "el rombo se queda a la derecha en los dos")
+
+        // Sin mando conectado se dibuja el de PlayStation: el RetroPad tiene su forma, así que es
+        // el que describe lo que se está configurando.
+        try expect(GamepadFaceplate.style(for: nil) == .sony, "sin mando, el del RetroPad")
+        try expect(GamepadFaceplate.style(for: .dualSense) == .sony, "un DualSense es de esa forma")
+        try expect(GamepadFaceplate.style(for: .xbox) == .xbox, "y solo el de Xbox es el otro")
+    }
+
+    /// Cada fabricante llama a lo mismo de otra manera, y el dibujo tiene que usar **su** nombre:
+    /// en un DualSense no pone «Select» por ninguna parte, así que buscarlo es perder el rato.
+    private static func testEachPadIsNamedTheWayItIsPrinted() throws {
+        try expect(ConnectedGamepad.Family.dualSense.menuLabels.select == "Create",
+                   "el DualSense lo llama Create")
+        try expect(ConnectedGamepad.Family.dualShock.menuLabels.select == "Share",
+                   "el DualShock 4, Share")
+        try expect(ConnectedGamepad.Family.xbox.menuLabels == ("Menu", "View"),
+                   "y el de Xbox, Menu y View")
+        try expect(ConnectedGamepad.Family.generic.menuLabels == ("Start", "Select"),
+                   "sin saber cuál es, los nombres de siempre")
+
+        try expect(ConnectedGamepad.Family.xbox.shoulderLabels.l2 == "LT",
+                   "en Xbox los gatillos son triggers")
+        try expect(ConnectedGamepad.Family.dualSense.shoulderLabels.l2 == "L2", "y en Sony, L2")
+        try expect(ConnectedGamepad.Family.xbox.stickLabels.left == "LS",
+                   "pulsar la palanca también cambia de nombre")
     }
 }
