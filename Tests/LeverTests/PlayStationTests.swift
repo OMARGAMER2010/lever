@@ -20,6 +20,7 @@ enum PlayStationTests {
         try testRecognisesAGameFolderAndWhatToLaunch()
         try testTheMachineListIsHonestAboutWhatItCannotDo()
         try testFindsTheFirmwareWhereTheEmulatorKeepsIt()
+        try testFirmwareCountsAsPresentWhenItWasUnpacked()
     }
 
     // MARK: - PARAM.SFO
@@ -301,6 +302,56 @@ enum PlayStationTests {
         let ps4 = StandaloneMachines.machine(id: "ps4")!
         try expect(StandaloneTools.hasFirmware(machine: ps4, emulator: ps4.emulators[0]),
                    "PS4 no pide firmware, así que nunca falta")
+    }
+
+    /// **Un emulador puede no guardar el firmware que le diste.** RPCS3 desempaqueta el
+    /// `PS3UPDAT.PUP` en `dev_flash` y tira el archivo original: buscar el `.PUP` diría que falta
+    /// el firmware justo después de haberlo instalado, que es el peor momento para equivocarse.
+    /// Comprobado contra una instalación de verdad: 188 MB y mil archivos, y ni rastro del `.PUP`.
+    private static func testFirmwareCountsAsPresentWhenItWasUnpacked() throws {
+        let fixture = try TemporaryFixture()
+        let gestor = SoporteFalso(raíz: fixture.directoryURL)
+        let ps3 = StandaloneMachines.machine(id: "ps3")!
+        let rpcs3 = ps3.emulators[0]
+
+        try expect(!StandaloneTools.hasFirmware(machine: ps3, emulator: rpcs3, fileManager: gestor),
+                   "sin nada instalado, falta")
+
+        // Una carpeta vacía no cuenta: el emulador la crea al arrancar, y darla por buena diría
+        // que hay firmware donde no lo hay.
+        let desempaquetado = fixture.directoryURL
+            .appendingPathComponent(rpcs3.dataFolder).appendingPathComponent("dev_flash")
+        try FileManager.default.createDirectory(at: desempaquetado, withIntermediateDirectories: true)
+        try expect(!StandaloneTools.hasFirmware(machine: ps3, emulator: rpcs3, fileManager: gestor),
+                   "una carpeta vacía no es un firmware instalado")
+
+        try Data("x".utf8).write(to: desempaquetado.appendingPathComponent("vsh.self"))
+        try expect(StandaloneTools.hasFirmware(machine: ps3, emulator: rpcs3, fileManager: gestor),
+                   "con contenido dentro, el firmware está puesto")
+
+        // Y la BIOS de una PS2 **sí** se queda como archivo, así que ese camino sigue valiendo.
+        let ps2 = StandaloneMachines.machine(id: "ps2")!
+        let bios = fixture.directoryURL
+            .appendingPathComponent(ps2.emulators[0].dataFolder).appendingPathComponent("bios")
+        try FileManager.default.createDirectory(at: bios, withIntermediateDirectories: true)
+        try expect(!StandaloneTools.hasFirmware(machine: ps2, emulator: ps2.emulators[0], fileManager: gestor),
+                   "una carpeta de BIOS vacía tampoco cuenta")
+        try Data("x".utf8).write(to: bios.appendingPathComponent("SCPH-39001.bin"))
+        try expect(StandaloneTools.hasFirmware(machine: ps2, emulator: ps2.emulators[0], fileManager: gestor),
+                   "y con la BIOS dentro, sí")
+    }
+
+    /// Un gestor de archivos que dice que «Application Support» está en otro sitio, para que la
+    /// prueba no dependa de lo que el usuario tenga instalado ni se lo ensucie.
+    private final class SoporteFalso: FileManager, @unchecked Sendable {
+        let raíz: URL
+        init(raíz: URL) { self.raíz = raíz; super.init() }
+        override func urls(
+            for directory: FileManager.SearchPathDirectory, in domainMask: FileManager.SearchPathDomainMask
+        ) -> [URL] {
+            directory == .applicationSupportDirectory
+                ? [raíz] : super.urls(for: directory, in: domainMask)
+        }
     }
 
     // MARK: - Fabricar los formatos

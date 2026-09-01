@@ -55,6 +55,18 @@ public enum StandaloneTools {
     ) -> Bool {
         guard let firmware = machine.firmware else { return true }
         let carpeta = emulator.dataURL(fileManager: fileManager)
+
+        // Primero, si el emulador desempaqueta el firmware en vez de guardarlo: entonces el
+        // archivo original no está y lo que hay es una carpeta con lo que traía dentro. Se mira que
+        // exista **y que tenga algo**, porque una carpeta vacía la crea el emulador al arrancar y
+        // daría por instalado un firmware que nunca se puso.
+        if let instalado = firmware.installedFolder {
+            let dentro = (try? fileManager.contentsOfDirectory(
+                atPath: carpeta.appendingPathComponent(instalado).path
+            )) ?? []
+            if !dentro.isEmpty { return true }
+        }
+
         let dentro = (try? fileManager.contentsOfDirectory(atPath: carpeta.path)) ?? []
         // Los nombres pueden llevar comodín —una BIOS de PS2 es `SCPH-` y luego lo que sea—, así
         // que se compara por el trozo fijo y no por el nombre entero.

@@ -75,10 +75,18 @@ public struct FirmwareNeed: Equatable, Sendable {
     /// Cómo se llaman los archivos, para poder decirlo con nombre y apellidos.
     public let files: [String]
     public let source: FirmwareSource
+    /// Carpeta que el emulador crea al **instalar** el firmware, cuando no lo deja tal cual.
+    ///
+    /// RPCS3 no guarda el `PS3UPDAT.PUP`: lo desempaqueta en `dev_flash` y el archivo original ya
+    /// no está en ninguna parte. Buscar el `.PUP` diría que falta el firmware justo después de
+    /// haberlo instalado, que es el peor momento para equivocarse. Una BIOS de PS2 sí se queda
+    /// como archivo, y por eso esto es opcional.
+    public let installedFolder: String?
 
-    public init(files: [String], source: FirmwareSource) {
+    public init(files: [String], source: FirmwareSource, installedFolder: String? = nil) {
         self.files = files
         self.source = source
+        self.installedFolder = installedFolder
     }
 }
 
@@ -203,8 +211,12 @@ public enum StandaloneMachines {
             extensions: ["pkg", "iso", "self", "bin"],
             // **Este sí se descarga.** Lo publica Sony para cualquiera, y el emulador lo pide por
             // su nombre. Tratarlo como la BIOS de la PS2 dejaría al usuario atascado sin motivo.
-            firmware: FirmwareNeed(files: ["PS3UPDAT.PUP"],
-                                   source: .vendor("https://www.playstation.com/support/hardware/ps3/system-software/")),
+            firmware: FirmwareNeed(
+                files: ["PS3UPDAT.PUP"],
+                source: .vendor("https://www.playstation.com/support/hardware/ps3/system-software/"),
+                // RPCS3 lo desempaqueta aquí y tira el `.PUP`.
+                installedFolder: "dev_flash"
+            ),
             contentIsFolder: true
         ),
         StandaloneMachine(
