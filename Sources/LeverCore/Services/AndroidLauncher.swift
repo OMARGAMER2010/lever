@@ -66,12 +66,76 @@ public enum AndroidLauncher {
         )
     }
 
+    /// Los puntos por pulgada de la pantalla, que es lo que decide qué trozo de recursos le toca
+    /// a un aparato.
+    ///
+    /// Va en una llamada aparte y no con los demás datos a propósito: solo hace falta al instalar
+    /// una app partida, y la lista de aparatos se refresca a menudo. `ro.sf.lcd_density` viene
+    /// vacío en los emuladores, así que se pregunta por `wm density`, que siempre contesta.
+    public static func densityCommand(adb: URL, serial: String) -> ProcessCommand {
+        ProcessCommand(
+            executableURL: adb,
+            arguments: ["-s", serial, "shell", "wm density"],
+            currentDirectoryURL: nil,
+            environment: environment()
+        )
+    }
+
+    /// Lee la respuesta de `wm density`: «Physical density: 420», y debajo «Override density: …»
+    /// si el usuario la ha cambiado. Manda la de encima, que es la que se está usando.
+    public static func density(fromOutput output: String) -> Int? {
+        let líneas = output.split(whereSeparator: \.isNewline).map(String.init)
+        let elegida = líneas.first { $0.contains("Override density") } ?? líneas.first { $0.contains("density") }
+        guard let elegida, let dos = elegida.split(separator: ":").last else { return nil }
+        return Int(dos.trimmingCharacters(in: .whitespaces))
+    }
+
     /// `-r` reinstala conservando los datos si la app ya estaba. Sin `-r`, reinstalar falla.
     public static func installCommand(adb: URL, serial: String, apk: URL) -> ProcessCommand {
         ProcessCommand(
             executableURL: adb,
             arguments: ["-s", serial, "install", "-r", apk.path],
             currentDirectoryURL: apk.deletingLastPathComponent(),
+            environment: environment()
+        )
+    }
+
+    /// Instala varios `.apk` como una sola app.
+    ///
+    /// No es `install` repetido: los trozos de una app partida solo valen juntos y Android los
+    /// recibe en una única sesión. Instalarlos de uno en uno falla en el primero, porque un
+    /// trozo suelto no tiene con qué formar una app.
+    public static func installMultipleCommand(adb: URL, serial: String, apks: [URL]) -> ProcessCommand {
+        ProcessCommand(
+            executableURL: adb,
+            arguments: ["-s", serial, "install-multiple", "-r"] + apks.map(\.path),
+            currentDirectoryURL: apks.first?.deletingLastPathComponent(),
+            environment: environment()
+        )
+    }
+
+    /// Deja hecha la carpeta donde van los `.obb` de un paquete. `adb push` no la crea.
+    public static func makeExpansionFolderCommand(adb: URL, serial: String, package: String) -> ProcessCommand {
+        ProcessCommand(
+            executableURL: adb,
+            arguments: ["-s", serial, "shell", "mkdir -p /sdcard/Android/obb/\(package)"],
+            currentDirectoryURL: nil,
+            environment: environment()
+        )
+    }
+
+    /// Empuja un archivo de expansión al aparato.
+    ///
+    /// La ruta de destino no es una elección: Android busca los `.obb` de una app solo en
+    /// `Android/obb/<paquete>/`, y el nombre del archivo lleva dentro el número de versión con el
+    /// que la app lo va a pedir. Cambiar cualquiera de las dos cosas deja al juego sin sus datos.
+    public static func pushExpansionCommand(
+        adb: URL, serial: String, file: URL, expansion: AndroidExpansion
+    ) -> ProcessCommand {
+        ProcessCommand(
+            executableURL: adb,
+            arguments: ["-s", serial, "push", file.path, expansion.devicePath],
+            currentDirectoryURL: nil,
             environment: environment()
         )
     }

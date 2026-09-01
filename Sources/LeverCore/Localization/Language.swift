@@ -85,9 +85,67 @@ public enum TextKey: String, CaseIterable, Sendable {
     // Hechos del programa
     case arch64, arch32, archArm, archUnknown, arch32Warning, arch32Title
 
+    // Juegos hechos con Godot
+    case portableTitle, portableBodyGodot, portableMakeApp, portablePorting, portableWhereItGoes
+    case portablePartsNeeded, portableBuildParts, recipeGozen, portablePartUnknown
+    case portableUnsupportedGodot, portableRuntimeCached, portableRuntimeDownload
+    case portableBodyRenpy, portableUnsupportedRenpy, portableRosettaNote
+    case portableBodyLove, portableUnsupportedLove
+    case portableBodyNwjs, portableUnsupportedNwjs, portableNwjsNewerEngine
+    case portableBodyJava, portableUnsupportedJava
+    case portableBodyElectron, portableUnsupportedElectron
+    case portStageReading, portStageDownloading, portStageUnpacking
+    case portStageBuilding, portStageAssembling, portStageSigning
+    case logPortableDetected, logPorted, logPortUnresolved
+    case errPortEngine, errPortNoSpace, errPortDownload, errPortRuntime, errPortAssembly
+    case statusPorting, statusPortDone
+
     // Android: hechos del .apk
     case apkMinAndroid, apkMinApi, apkNoNativeCode
     case apkSplitTitle, apkSplitBody, apkUnreadableTitle, apkUnreadableBody
+
+    // Emulación: máquinas, ROMs y controles
+    case tabEmulation, dropRomTitle, dropRomSubtitle, menuOpenRom
+    case archBits8, archBits16, archBits32, archBits64, archDualScreen, archHybrid
+    case romEvidenceHeader, romEvidenceExtension, romEvidenceNone
+    case romUnknownTitle, romUnknownBody, romNeedsBiosTitle, romNeedsBiosBody
+    case romTouchTitle, romTouchBody
+    case retroMissingTitle, retroMissingBody, retroCardTitle, retroCardBody
+    case retroCoreSection, retroCoreCached, retroCoreToDownload, retroArchNote
+    case controlsSection, controlsProfile, controlsEdit, controlsScopeGlobal
+    case controlsScopePlatform, controlsScopeGame, controlsSaveHere, controlsReset
+    case controlsPressPrompt, controlsUnassigned, controlsListening, controlsGamepads
+    case controlsNoGamepad, controlsKeyboardTab, controlsGamepadTab
+    case controlsButton, controlsAxis, controlsHat, controlsGamepadHint
+    case retroSessionSection, retroFullscreen, retroFullscreenNote
+    case retroResume, retroResumeNote
+    case playRom, playingRom, statusGettingCore, statusLaunchingRetro
+    case errNoRetroArch, errNoCore, errUnknownRom, errPickRom, emulationDisclaimer
+
+    // La consola híbrida: paquetes, contenidos y llaves
+    case switchKindApplication, switchKindPatch, switchKindAddOn
+    case switchEvidenceNca, switchEvidenceTicket, switchEvidenceXml, switchEvidenceContainer
+    case switchSection, switchTitles, switchNoTitles, switchVersion
+    case switchCompressedTitle, switchCompressedBody
+    case switchKeysSection, switchKeysMissingTitle, switchKeysMissingBody
+    case switchKeysFound, switchKeysChoose, switchKeysForget, switchKeysGenerations
+    case switchEmulatorSection, switchEmulatorMissingTitle, switchEmulatorMissingBody
+    case switchEmulatorFound, switchEmulatorChoose
+    case dropSwitchSubtitle, switchDisclaimer
+    case switchRebuildTitle, switchRebuildBody, switchCacheNote, switchKeysTooOld
+    case switchCartridgeNote
+    case statusRebuildingPackage, statusLaunchingEmulator, logPackageRebuilt
+    case errNoSwitchEmulator, errNoZstd, errRebuildFailed, errKeysUnusable
+
+    // Android: los formatos que envuelven varios .apk
+    case bundleKindXapk, bundleKindApks, bundleKindAab
+    case bundleParts, bundleExpansions, bundleModules, bundleUnreadableTitle, bundleUnreadableBody
+    case bundleToolsTitle, bundleToolsBody, apkUnsignedTitle, apkUnsignedBody
+    case toolJava, toolBundletool, toolApkSigner
+    case statusUnpackingBundle, statusSigningApk, statusBuildingApks
+    case statusInstallingParts, statusPushingExpansion, statusGettingAndroidTool
+    case logApkSigned, logPartsInstalled, logExpansionsPushed
+    case errAndroidToolMissing, errBundleUnreadable
 
     // Android: aparatos y emuladores
     case deviceSection, deviceScanning, deviceRefresh, deviceNoneTitle, deviceNoneBody
@@ -140,7 +198,7 @@ public enum TextKey: String, CaseIterable, Sendable {
     case errWineBlocked, errNoRosetta, errWinePrefixFailed, errUnblockFailed
     case errNotWineExecutable, errProgramExit, errExtractExit2, errExtractExit1, errExtractExitOther
     case errBusy, errHomebrewMissing, errInstallFailed
-    case errNotAnApk, errAndroidBundle, errNoAdb, errNoDevice, errPickApk, errDeviceUnauthorized
+    case errNotAnApk, errNoAdb, errNoDevice, errPickApk, errDeviceUnauthorized
     case errInstallNoAbis, errInstallOldSdk, errInstallSignature, errInstallDowngrade
     case errInstallNoSpace, errInstallNotSigned, errInstallBlocked, errInstallOther, errNoLauncher
     case statusFinished, statusStopped, statusExtracted, statusFailed, statusCannotStart

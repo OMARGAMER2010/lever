@@ -30,7 +30,10 @@ enum LocalizationTests {
             .archArm, .wineSettings, .arch64, .arch32,
             // Nombres propios y una marca: «Android» y «Android Studio» se escriben igual en
             // los dos idiomas, y traducirlos sería inventar.
-            .tabAndroid, .toolAndroid, .deviceAndroidVersion, .androidOptionStudio
+            .tabAndroid, .toolAndroid, .deviceAndroidVersion, .androidOptionStudio,
+            // Dos herramientas que se llaman igual en todas partes: «Java» es una marca y
+            // «bundletool» es el nombre del programa de Google, sin traducción oficial.
+            .toolJava, .toolBundletool
         ]
         let spanish = Strings.rawTable(for: .spanish)
         let english = Strings.rawTable(for: .english)

@@ -6,11 +6,16 @@ public final class AppModel: ObservableObject {
     private let locator: RuntimeLocator
     private let runner: ProcessRunner
     private let fileManager: FileManager
+    /// La biblioteca de motores y núcleos. Se inyecta para que las pruebas no toquen —ni ensucien—
+    /// lo que el usuario tenga descargado de verdad.
+    private let portLibrary: PortLibrary
+    private let controlLibrary: ControlLibrary
 
     private var customWineURL: URL?
     private var programSession: ProcessSession?
     private var extractionSession: ProcessSession?
     private var installSession: ProcessSession?
+    private var portSession: ProcessSession?
 
     // MARK: - Idioma
 
@@ -32,11 +37,21 @@ public final class AppModel: ObservableObject {
     @Published public var selectedProgram: URL? {
         didSet {
             programArchitecture = selectedProgram.map(ProgramInspector.architecture(of:)) ?? .unknown
+            portableGame = nil
+            inspectPortable()
         }
     }
     @Published public private(set) var programArchitecture: ProgramArchitecture = .unknown
     @Published public private(set) var isRunningProgram = false
     @Published public private(set) var isPreparingWindows = false
+
+    /// Lo que se sabe del `.exe` cuando resulta ser un juego hecho con Godot. Que no sea `nil`
+    /// cambia por completo lo que conviene ofrecer: no hay que emular nada, hay que rehacer la app.
+    @Published public private(set) var portableGame: PortableEngine?
+    @Published public private(set) var isPorting = false
+    @Published public private(set) var portStageMessage = ""
+    /// Compilar la parte que falta de un complemento nativo tarda y ocupa. Se pregunta antes.
+    @Published public var buildsMissingExtensions = true
     /// macOS bloquea Wine si viene marcado como descargado. Se detecta al arrancar.
     @Published public private(set) var wineIsBlocked = false
     @Published public private(set) var isUnblockingWine = false
@@ -74,8 +89,14 @@ public final class AppModel: ObservableObject {
             inspectApk()
         }
     }
-    @Published public private(set) var apkFacts = ApkFacts()
+    /// Lo leído del archivo elegido: un `.apk` suelto o un envoltorio con varios dentro.
+    @Published public private(set) var androidPackage = AndroidPackage(kind: .apk)
+    /// Lo que se sabe de la app. En un envoltorio sale de su `.apk` de base, no de la ficha que
+    /// lo acompaña: la ficha la escribe quien empaquetó y a veces no dice la verdad.
+    public var apkFacts: ApkFacts { androidPackage.facts }
     @Published public private(set) var isInspectingApk = false
+    /// Herramientas que habría que descargar para poder instalar el archivo elegido.
+    @Published public private(set) var androidToolNeeds: [AndroidToolNeed] = []
     @Published public private(set) var androidDevices: [AndroidDevice] = []
     @Published public var selectedDeviceSerial: String?
     @Published public private(set) var isScanningDevices = false
@@ -97,6 +118,40 @@ public final class AppModel: ObservableObject {
     @Published public private(set) var avdNames: [String] = []
     @Published public private(set) var startingAvd: String?
 
+    // MARK: - Juegos de consola
+
+    @Published public var selectedRom: URL? {
+        didSet {
+            guard selectedRom != oldValue else { return }
+            inspectRom()
+        }
+    }
+    @Published public private(set) var romFacts = RomFacts()
+    @Published public private(set) var isInspectingRom = false
+    @Published public private(set) var isPlayingRom = false
+    /// Lo leído de un paquete de la consola híbrida, que no la emula ningún núcleo de RetroArch
+    /// sino un programa aparte. Va en su propia variable y no en `romFacts` porque son dos caminos
+    /// distintos de arriba abajo: otro motor, otras llaves y otra forma de lanzar.
+    @Published public private(set) var switchFacts = SwitchFacts()
+    /// Las llaves del usuario, leídas de su archivo. **Se recargan, no se guardan**: viven en
+    /// memoria mientras la app está abierta y no se copian a ningún sitio de Lever.
+    @Published public private(set) var switchKeys: SwitchKeys?
+    @Published public private(set) var isRebuildingPackage = false
+    @Published public private(set) var rebuildProgress: Double = 0
+    /// El perfil de controles que se va a usar. Sale de la biblioteca al elegir el juego, y el
+    /// usuario lo cambia en el diagrama.
+    @Published public var controlProfile = ControlProfile.standard
+    /// A qué se le van a guardar los cambios: a todo, a esta consola o a este juego.
+    @Published public var controlScope = ControlScope.global
+    /// Si el juego se abre ocupando la pantalla entera.
+    @Published public var playFullscreen: Bool {
+        didSet { Preferences.playFullscreen = playFullscreen }
+    }
+    /// Si al cerrar se guarda el momento exacto y al volver se retoma ahí.
+    @Published public var resumeSessions: Bool {
+        didSet { Preferences.resumeSessions = resumeSessions }
+    }
+
     // MARK: - Abiertos hace poco
 
     @Published public private(set) var recentFiles: [RecentFile] = []
@@ -112,6 +167,7 @@ public final class AppModel: ObservableObject {
     public var isBusy: Bool {
         isRunningProgram || isExtracting || isInstallingTools || isPreparingWindows
             || isRunningApk || isScanningDevices || isUninstalling || isSettingUpEmulator
+            || isPorting
     }
 
     // MARK: - Lo que la app sabe del archivo elegido
@@ -217,6 +273,58 @@ public final class AppModel: ObservableObject {
             && !isRunningApk && !isUninstalling
     }
 
+    /// El RetroArch instalado, si lo hay.
+    public var retroArchURL: URL? { RetroTools.locate(fileManager: fileManager) }
+
+    /// **La arquitectura de RetroArch, no la del Mac.** Es la que decide qué núcleo hay que bajar:
+    /// el núcleo se carga dentro de su proceso, así que tiene que ser de la suya.
+    public var retroArchitecture: String? { retroArchURL.flatMap(RetroTools.architecture) }
+
+    /// Si el núcleo de este juego ya está descargado, para poder decirlo antes de pulsar.
+    public var romCoreIsReady: Bool {
+        guard let núcleo = romFacts.platform?.core, let arquitectura = retroArchitecture else { return false }
+        return portLibrary.hasRetroCore(núcleo, architecture: arquitectura)
+    }
+
+    public var canPlayRom: Bool {
+        guard let selectedRom, !isPlayingRom, !isRebuildingPackage else { return false }
+        guard fileManager.isReadableFile(atPath: selectedRom.path) else { return false }
+        // Dos caminos: una ROM la ejecuta RetroArch con su núcleo, y un paquete de la consola
+        // híbrida un programa aparte. Sin el de cada uno no hay nada que lanzar.
+        if switchFacts.isRecognised { return switchEmulator != nil }
+        return romFacts.isRecognised && retroArchURL != nil
+    }
+
+    /// El emulador de la consola híbrida que haya en el Mac, con el que el usuario señalara a mano
+    /// por delante.
+    public var switchEmulator: (emulator: SwitchEmulator, app: URL)? {
+        SwitchTools.locate(preferring: Preferences.switchEmulatorURL, fileManager: fileManager)
+    }
+
+    /// Dónde está el `prod.keys` que se está usando: el que el usuario eligiera, o el que ya tenga
+    /// puesto en la carpeta de su emulador.
+    public var switchKeysURL: URL? {
+        SwitchKeys.locate(preferring: Preferences.switchKeysURL, fileManager: fileManager)
+    }
+
+    /// Si falta `zstd`, que es lo único que hace falta para rehacer un paquete comprimido y que
+    /// macOS no trae.
+    public var canRebuildPackages: Bool { SwitchTools.zstdURL(fileManager: fileManager) != nil }
+
+    /// Lo que ocupan los paquetes ya rehechos, para poder decirlo antes de que alguien se pregunte
+    /// dónde se le fue el disco.
+    public var rebuiltPackagesSize: String? {
+        let bytes = portLibrary.switchPackagesSize()
+        guard bytes > 0 else { return nil }
+        return ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+    }
+
+    /// Los controles que de verdad existen en esta consola. Enseñar dieciséis botones para una
+    /// Game Boy sería enseñar catorce casillas que no hacen nada.
+    public var availableInputs: [RetroPadInput] {
+        RetroPadInput.available(on: romFacts.platform)
+    }
+
     public var canInstallTools: Bool {
         !isInstallingTools && runtimeStatus.homebrewURL != nil && !missingFormulae.isEmpty
     }
@@ -291,11 +399,15 @@ public final class AppModel: ObservableObject {
     public init(
         locator: RuntimeLocator = RuntimeLocator(),
         runner: ProcessRunner = ProcessRunner(),
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        portLibrary: PortLibrary = .shared,
+        controlLibrary: ControlLibrary = .shared
     ) {
         self.locator = locator
         self.runner = runner
         self.fileManager = fileManager
+        self.portLibrary = portLibrary
+        self.controlLibrary = controlLibrary
         self.language = Preferences.language
         self.strings = Strings.table(for: Preferences.language)
         self.customWineURL = Preferences.customWineURL
@@ -303,6 +415,11 @@ public final class AppModel: ObservableObject {
         self.extractIntoSubfolder = Preferences.extractIntoSubfolder
         self.revealWhenDone = Preferences.revealWhenDone
         self.rotationChoice = Preferences.rotationChoice
+        self.playFullscreen = Preferences.playFullscreen
+        self.resumeSessions = Preferences.resumeSessions
+        self.switchKeys = SwitchKeys.locate(
+            preferring: Preferences.switchKeysURL, fileManager: fileManager
+        ).flatMap(SwitchKeys.load)
         self.recentFiles = RecentFiles.load(fileManager: fileManager)
         self.runtimeStatus = locator.locate(customWineURL: Preferences.customWineURL)
         self.wineIsBlocked = Self.detectBlockedWine(in: runtimeStatus)
@@ -352,6 +469,7 @@ public final class AppModel: ObservableObject {
 
     public func clearProgram() {
         selectedProgram = nil
+        portableGame = nil
     }
 
     public func selectArchive() {
@@ -393,7 +511,8 @@ public final class AppModel: ObservableObject {
 
     public func clearApk() {
         selectedApk = nil
-        apkFacts = ApkFacts()
+        androidPackage = AndroidPackage(kind: .apk)
+        androidToolNeeds = []
         installedPackage = nil
     }
 
@@ -416,18 +535,19 @@ public final class AppModel: ObservableObject {
             } else if SupportedFileKind.apk.accepts(url) {
                 acceptApk(url)
                 handled = true
+            } else if SupportedFileKind.rom.accepts(url),
+                      RomInspector.inspect(url).isRecognised || SwitchInspector.inspect(url).isRecognised {
+                // Antes que los comprimidos porque un `.iso` y un `.bin` los reclaman los dos, y
+                // aquí decide lo que el archivo tiene dentro, no cómo se llama.
+                acceptRom(url)
+                handled = true
             } else if SupportedFileKind.rar.accepts(url) {
                 acceptArchive(url)
                 handled = true
             }
         }
         if !handled, let first = urls.first {
-            // Un `.aab` o un `.xapk` tienen arreglo, y decir cuál ahorra una búsqueda.
-            showError(
-                first.looksLikeAndroidBundle
-                    ? strings(.errAndroidBundle, first.lastPathComponent)
-                    : strings(.errUnknownFile, first.lastPathComponent)
-            )
+            showError(strings(.errUnknownFile, first.lastPathComponent))
         }
         return handled
     }
@@ -604,6 +724,147 @@ public final class AppModel: ObservableObject {
     public func stopProgram() {
         programSession?.cancel()
         add(strings[.logStopping], level: .warning)
+    }
+
+    // MARK: - Juegos que pueden correr nativos
+
+    /// Reconocer el motor implica leer índices con miles de entradas. Va fuera del hilo principal
+    /// para que la ventana no se quede tiesa al soltar un juego de trescientos megas.
+    private func inspectPortable() {
+        guard let program = selectedProgram, SupportedFileKind.exe.accepts(program) else { return }
+        Task { [weak self] in
+            let found = await Task.detached { PortableEngineDetector.detect(program: program) }.value
+            guard let self, self.selectedProgram == program, let found else { return }
+            self.portableGame = found
+            self.add(self.strings(.logPortableDetected, found.displayName), level: .info)
+        }
+    }
+
+    /// Hay un motor reconocido, es de una versión contemplada y no hay nada más en marcha.
+    public var canMakeNativeApp: Bool {
+        guard let portableGame, portableGame.isSupported else { return false }
+        return !isBusy
+    }
+
+    /// El motor de esta versión ya está guardado de otra vez: no hay descarga por delante.
+    public var portableRuntimeIsCached: Bool {
+        portableGame?.runtimeIsCached(in: PortLibrary.shared) ?? false
+    }
+
+    /// Partes nativas sin su versión de macOS, con lo que Lever puede hacer con cada una.
+    public var portableUnresolvedParts: [(name: String, recipe: NativePartRecipe?)] {
+        (portableGame?.unresolvedParts ?? []).map { ($0, NativePartRecipe.recipe(forAddon: $0)) }
+    }
+
+    /// Crea el `.app` nativo. El juego original no se toca en ningún momento.
+    public func makeNativeApp() {
+        guard let game = portableGame, !isPorting else { return }
+        guard game.isSupported else {
+            showError(strings(game.unsupportedKey, game.runtimeVersionText))
+            return
+        }
+
+        let needed = game.requiredBytes(
+            cached: game.runtimeIsCached(in: PortLibrary.shared),
+            buildingParts: buildsMissingExtensions
+        )
+        if let free = freeDiskBytes, free < needed {
+            showError(strings(.errPortNoSpace, ByteCountFormatter.string(fromByteCount: needed, countStyle: .file)))
+            return
+        }
+
+        clearError()
+        let session = ProcessSession()
+        portSession = session
+        isPorting = true
+        activityMessage = strings[.statusPorting]
+        showPort(stage: .reading)
+
+        let destination = desktopURL
+        let buildParts = buildsMissingExtensions
+
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let outcome = try await NativePorter.makeApp(
+                    for: game,
+                    into: destination,
+                    buildMissingParts: buildParts,
+                    runner: runner,
+                    session: session,
+                    scriptProvider: { Bundle.main.url(forResource: $0, withExtension: "sh") },
+                    onStage: { stage in Task { @MainActor [weak self] in self?.showPort(stage: stage) } },
+                    onLine: { line in Task { @MainActor [weak self] in self?.addOutput(line) } }
+                )
+                finishPort(outcome: outcome)
+            } catch PortFailure.cancelled {
+                isPorting = false
+                activityMessage = strings[.statusStopped]
+                add(strings[.statusStopped], level: .warning)
+            } catch let failure as PortFailure {
+                isPorting = false
+                activityMessage = strings[.statusFailed]
+                showError(describe(failure))
+            } catch {
+                isPorting = false
+                activityMessage = strings[.statusFailed]
+                showError(error.localizedDescription)
+            }
+            portSession = nil
+            portStageMessage = ""
+        }
+    }
+
+    public func stopPorting() {
+        portSession?.cancel()
+        add(strings[.logStopping], level: .warning)
+    }
+
+    private func finishPort(outcome: PortOutcome) {
+        isPorting = false
+        activityMessage = strings[.statusPortDone]
+        lastSuccessFolder = outcome.app
+        add(strings(.logPorted, outcome.app.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")),
+            level: .success)
+        // Decirlo aunque la app ya esté hecha: un juego que abre y peta en el primer vídeo sin
+        // explicación es peor que un aviso claro por adelantado.
+        if !outcome.unresolvedParts.isEmpty {
+            add(strings(.logPortUnresolved, outcome.unresolvedParts.joined(separator: ", ")), level: .warning)
+        }
+        if revealWhenDone { FileActions.reveal(outcome.app) }
+    }
+
+    private func showPort(stage: PortStage) {
+        let text: String
+        switch stage {
+        case .downloadingRuntime(let version): text = strings(stage.textKey, version)
+        case .buildingPart(let name): text = strings(stage.textKey, name)
+        default: text = strings[stage.textKey]
+        }
+        portStageMessage = text
+        activityMessage = text
+        add(text, level: .info)
+    }
+
+    private func describe(_ failure: PortFailure) -> String {
+        switch failure {
+        case .downloadFailed(let code): return strings(failure.textKey, String(code))
+        case .assemblyFailed(let reason): return strings(failure.textKey, reason)
+        case .notEnoughSpace(let bytes):
+            return strings(failure.textKey, ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file))
+        default: return strings[failure.textKey]
+        }
+    }
+
+    private var desktopURL: URL {
+        fileManager.urls(for: .desktopDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Desktop", isDirectory: true)
+    }
+
+    private var freeDiskBytes: Int64? {
+        guard let values = try? URL(fileURLWithPath: NSHomeDirectory())
+            .resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]) else { return nil }
+        return values.volumeAvailableCapacityForImportantUsage
     }
 
     private func finishProgram(message: String, level: LogLevel) {
@@ -785,16 +1046,19 @@ public final class AppModel: ObservableObject {
 
     private func inspectApk() {
         guard let apk = selectedApk else {
-            apkFacts = ApkFacts()
+            androidPackage = AndroidPackage(kind: .apk)
+            androidToolNeeds = []
             return
         }
         isInspectingApk = true
         Task { [weak self] in
             // Fuera del hilo principal: leer el directorio de un `.apk` de un giga con decenas
-            // de miles de entradas no debe congelar la ventana.
-            let facts = await Task.detached { ApkInspector.inspect(apk) }.value
+            // de miles de entradas no debe congelar la ventana, y de un envoltorio hay además
+            // que sacar su `.apk` de base para poder leerlo.
+            let leído = await Task.detached { AndroidBundleInspector.inspect(apk) }.value
             guard let self, selectedApk == apk else { return }
-            apkFacts = facts
+            androidPackage = leído
+            androidToolNeeds = AndroidTools.needs(for: leído, having: AndroidTools.locate())
             isInspectingApk = false
         }
     }
@@ -920,10 +1184,11 @@ public final class AppModel: ObservableObject {
                 activityMessage = strings[.statusStopped]
                 return
             }
-            guard await install(apk: apk, adb: adb, serial: serial, session: session) else { return }
+            guard let resultado = await install(apk: apk, adb: adb, serial: serial, session: session)
+            else { return }
 
-            installedPackage = apkFacts.packageName
-            await open(package: apkFacts.packageName, adb: adb, serial: serial)
+            installedPackage = resultado.packageName
+            await open(package: resultado.packageName, adb: adb, serial: serial)
             await rotate(adb: adb, serial: serial, to: effectiveOrientation)
         }
     }
@@ -989,42 +1254,99 @@ public final class AppModel: ObservableObject {
         return nil
     }
 
-    private func install(apk: URL, adb: URL, serial: String, session: ProcessSession) async -> Bool {
+    private func install(
+        apk: URL, adb: URL, serial: String, session: ProcessSession
+    ) async -> AndroidInstallOutcome? {
         activityMessage = strings(.statusInstallingApk, apk.lastPathComponent)
         add(strings(.logInstallingApk, apk.lastPathComponent, selectedDevice?.displayName ?? serial), level: .info)
 
-        do {
-            let result = try await runner.run(
-                AndroidLauncher.installCommand(adb: adb, serial: serial, apk: apk),
-                session: session
-            ) { line in
-                Task { @MainActor [weak self] in self?.addOutput(line) }
-            }
+        // Los ABI del aparato se preguntan aquí y no se cogen de la lista: cuando el emulador se
+        // acaba de arrancar, la lista todavía no los tiene, y sin ellos no se puede elegir qué
+        // trozo de una app partida le toca.
+        let device = await deviceForInstall(adb: adb, serial: serial)
+        let paquete = androidPackage
 
-            if result.wasCancelled {
-                activityMessage = strings[.statusStopped]
-                add(strings[.logStopped], level: .warning)
-                return false
-            }
-            // `adb install` no siempre devuelve un código distinto de cero al fallar: hay
-            // versiones que terminan en 0 y escriben «Failure [...]». Manda el texto.
-            if let failure = AndroidLauncher.installFailure(inOutput: result.output) {
-                activityMessage = strings[.statusFailed]
-                showError(explain(installFailure: failure))
-                return false
-            }
-            guard result.succeeded else {
-                activityMessage = strings[.statusFailed]
-                showError(strings(.errInstallOther, String(result.exitCode)))
-                return false
-            }
+        do {
+            let resultado = try await AndroidInstaller.install(
+                package: paquete, at: apk, adb: adb, device: device,
+                runner: runner, session: session,
+                onStage: { stage in
+                    Task { @MainActor [weak self] in self?.announce(stage) }
+                },
+                onLine: { line in
+                    Task { @MainActor [weak self] in self?.addOutput(line) }
+                }
+            )
 
             add(strings[.logApkInstalled], level: .success)
-            return true
+            if resultado.wasSigned { add(strings[.logApkSigned], level: .info) }
+            if resultado.installedParts > 1 {
+                add(strings(.logPartsInstalled, String(resultado.installedParts)), level: .info)
+            }
+            if resultado.pushedExpansions > 0 {
+                add(strings(.logExpansionsPushed, String(resultado.pushedExpansions)), level: .success)
+            }
+            return resultado
+        } catch let failure as AndroidInstallFailure {
+            if case .cancelled = failure {
+                activityMessage = strings[.statusStopped]
+                add(strings[.logStopped], level: .warning)
+                return nil
+            }
+            activityMessage = strings[.statusFailed]
+            showError(explain(failure))
+            return nil
         } catch {
             activityMessage = strings[.statusCannotStart]
             showError(error.localizedDescription)
-            return false
+            return nil
+        }
+    }
+
+    /// Pregunta al aparato por sus datos justo antes de instalar.
+    private func deviceForInstall(adb: URL, serial: String) async -> AndroidDevice {
+        if let known = androidDevices.first(where: { $0.serial == serial }), !known.abis.isEmpty {
+            return known
+        }
+        let result = try? await runner.run(AndroidLauncher.propertiesCommand(adb: adb, serial: serial))
+        let properties = AndroidLauncher.properties(fromOutput: result?.output ?? "")
+        return AndroidDevice(
+            serial: serial, availability: .ready, model: properties.model,
+            abis: properties.abis, sdk: properties.sdk, release: properties.release
+        )
+    }
+
+    /// Traduce el paso en el que va la instalación al texto que se enseña.
+    private func announce(_ stage: AndroidInstallStage) {
+        switch stage {
+        case .gettingTool(let need):
+            let texto = strings(.statusGettingAndroidTool, strings[need.tool.textKey], String(need.megabytes))
+            activityMessage = texto
+            add(texto, level: .info)
+        case .unpacking:
+            activityMessage = strings[.statusUnpackingBundle]
+        case .signing:
+            activityMessage = strings[.statusSigningApk]
+            add(strings[.statusSigningApk], level: .info)
+        case .buildingApks:
+            activityMessage = strings[.statusBuildingApks]
+            add(strings[.statusBuildingApks], level: .info)
+        case .installing(let parts):
+            activityMessage = parts > 1
+                ? strings(.statusInstallingParts, String(parts))
+                : strings(.statusInstallingApk, selectedApk?.lastPathComponent ?? "")
+        case .pushingExpansion(let name, let index, let total):
+            activityMessage = strings(.statusPushingExpansion, name, String(index), String(total))
+        }
+    }
+
+    private func explain(_ failure: AndroidInstallFailure) -> String {
+        switch failure {
+        case .cancelled: return strings[.statusStopped]
+        case .missingTool(let tool): return strings(.errAndroidToolMissing, strings[tool.textKey])
+        case .rejected(let motivo): return explain(installFailure: motivo)
+        case .failed(let code): return strings(.errInstallOther, String(code))
+        case .unreadable: return strings[.errBundleUnreadable]
         }
     }
 
@@ -1180,6 +1502,268 @@ public final class AppModel: ObservableObject {
         }
     }
 
+    // MARK: - Consolas
+
+    public func selectRom() {
+        guard let url = FileActions.chooseFile(kind: .rom, title: strings[.menuOpenRom]) else { return }
+        acceptRom(url)
+    }
+
+    public func acceptRom(_ url: URL) {
+        selectedRom = url
+        remember(url, kind: .rom)
+        clearError()
+        add(strings(.logApkChosen, url.lastPathComponent), level: .info)
+    }
+
+    public func clearRom() {
+        selectedRom = nil
+        romFacts = RomFacts()
+    }
+
+    private func inspectRom() {
+        guard let rom = selectedRom else {
+            romFacts = RomFacts()
+            switchFacts = SwitchFacts()
+            return
+        }
+        isInspectingRom = true
+        let llaves = switchKeys
+        Task { [weak self] in
+            // Fuera del hilo principal: una imagen de disco puede pesar gigas y hay que leerle la
+            // cabecera.
+            //
+            // Primero el paquete de la consola híbrida y después la ROM, y no al revés: reconocerlo
+            // cuesta dieciséis bytes, y así un `.nsp` renombrado a `.nes` se descubre igual. Lo
+            // contrario —fiarse de la extensión— es justo lo que este proyecto no hace.
+            let paquete = await Task.detached { SwitchInspector.inspect(rom, keys: llaves) }.value
+            guard let self, selectedRom == rom else { return }
+            if paquete.isRecognised {
+                switchFacts = paquete
+                romFacts = RomFacts(bytes: paquete.bytes)
+                isInspectingRom = false
+                return
+            }
+            switchFacts = SwitchFacts()
+
+            let leído = await Task.detached { RomInspector.inspect(rom) }.value
+            guard selectedRom == rom else { return }
+            romFacts = leído
+            // Los controles se cargan aquí porque dependen de qué consola sea: el perfil de la
+            // Nintendo 64 no vale para una Game Boy.
+            controlProfile = controlLibrary.resolved(platform: leído.platform, gameName: rom.lastPathComponent)
+            controlScope = controlLibrary.effectiveScope(
+                platform: leído.platform, gameName: rom.lastPathComponent
+            )
+            isInspectingRom = false
+        }
+    }
+
+    /// Guarda los controles en el nivel elegido y los deja listos para el próximo lanzamiento.
+    public func saveControls() {
+        do {
+            try controlLibrary.save(controlProfile, for: controlScope)
+            add(strings[.controlsSaveHere], level: .success)
+        } catch {
+            showError(error.localizedDescription)
+        }
+    }
+
+    public func resetControls() {
+        controlLibrary.remove(controlScope)
+        controlProfile = controlLibrary.resolved(
+            platform: romFacts.platform, gameName: selectedRom?.lastPathComponent
+        )
+    }
+
+    /// Consigue el núcleo si hace falta, escribe la configuración y lanza el juego.
+    ///
+    /// Un solo botón porque es una sola intención. Y la configuración se escribe **cada vez**: es
+    /// lo que hace que un cambio en los controles se note sin tener que reiniciar nada.
+    public func playRom() {
+        guard !isPlayingRom, !isRebuildingPackage else { return }
+        // Un paquete de la consola híbrida va por otro camino de arriba abajo: no hay núcleo que
+        // bajar, no hay configuración que escribir, y puede haber que rehacerlo antes.
+        if switchFacts.isRecognised {
+            playSwitchPackage()
+            return
+        }
+        guard let rom = selectedRom, let plataforma = romFacts.platform else {
+            showError(strings[.errPickRom])
+            return
+        }
+        guard let retroarch = retroArchURL, let arquitectura = retroArchitecture else {
+            showError(strings[.errNoRetroArch])
+            return
+        }
+
+        clearError()
+        isPlayingRom = true
+        let session = ProcessSession()
+        installSession = session
+
+        Task { [weak self] in
+            guard let self else { return }
+            defer { isPlayingRom = false; installSession = nil }
+
+            let núcleo: URL
+            do {
+                if !portLibrary.hasRetroCore(plataforma.core, architecture: arquitectura) {
+                    activityMessage = strings(.statusGettingCore, plataforma.name)
+                    add(activityMessage, level: .info)
+                }
+                núcleo = try await RetroTools.ensureCore(
+                    plataforma.core, architecture: arquitectura,
+                    runner: runner, session: session, library: portLibrary,
+                    onLine: { línea in Task { @MainActor [weak self] in self?.addOutput(línea) } }
+                )
+            } catch {
+                activityMessage = strings[.statusFailed]
+                showError(strings[.errNoCore])
+                return
+            }
+
+            do {
+                let configuración = try writeRetroConfig(for: plataforma)
+                activityMessage = strings[.statusLaunchingRetro]
+                add(strings(.logInstallingApk, rom.lastPathComponent, plataforma.name), level: .info)
+
+                try RetroTools.open(
+                    retroarch: retroarch, core: núcleo, rom: rom, config: configuración,
+                    log: portLibrary.retroDataURL.appendingPathComponent("retroarch.log")
+                )
+                // El juego es otro programa: se abre y sigue por su cuenta, como el emulador de
+                // Android. Lever no se queda esperando a que alguien termine de jugar.
+                activityMessage = strings[.statusApkRunning]
+            } catch {
+                activityMessage = strings[.statusFailed]
+                showError(error.localizedDescription)
+            }
+        }
+    }
+
+    /// Rehace el paquete si venía comprimido y lo abre con el emulador que haya.
+    ///
+    /// Dos pasos y no uno porque el primero puede tardar veinte minutos: ningún emulador abre un
+    /// `.nsz`, así que hay que descomprimirlo antes, y eso pesa lo que pesa el juego. Se hace una
+    /// vez y se guarda; la segunda vez se abre directo.
+    public func playSwitchPackage() {
+        guard let paquete = selectedRom, switchFacts.isRecognised else {
+            showError(strings[.errPickRom])
+            return
+        }
+        guard let emulador = switchEmulator else {
+            showError(strings[.errNoSwitchEmulator])
+            return
+        }
+
+        clearError()
+        isPlayingRom = true
+        let hechos = switchFacts
+        let session = ProcessSession()
+        installSession = session
+
+        Task { [weak self] in
+            guard let self else { return }
+            defer { isPlayingRom = false; isRebuildingPackage = false; installSession = nil }
+
+            var aJugar = paquete
+            if hechos.needsDecompression {
+                guard let zstd = SwitchTools.zstdURL(fileManager: fileManager) else {
+                    showError(strings[.errNoZstd])
+                    return
+                }
+                isRebuildingPackage = true
+                rebuildProgress = 0
+                activityMessage = strings[.statusRebuildingPackage]
+                add(activityMessage, level: .info)
+                do {
+                    aJugar = try await SwitchTools.rebuild(
+                        package: paquete, facts: hechos, into: portLibrary.switchPackagesURL,
+                        runner: runner, session: session, zstd: zstd,
+                        onProgress: { hecho in
+                            Task { @MainActor [weak self] in self?.rebuildProgress = hecho }
+                        }
+                    )
+                } catch {
+                    activityMessage = strings[.statusFailed]
+                    showError(strings[.errRebuildFailed])
+                    return
+                }
+                isRebuildingPackage = false
+                add(strings(.logPackageRebuilt, aJugar.lastPathComponent), level: .success)
+            }
+
+            activityMessage = strings[.statusLaunchingEmulator]
+            do {
+                try SwitchTools.open(emulator: emulador.app, game: aJugar)
+                // Como con RetroArch y como con el emulador de Android: el juego es otro programa
+                // y sigue por su cuenta. Lever no se queda esperando a que alguien termine.
+                activityMessage = strings[.statusApkRunning]
+            } catch {
+                activityMessage = strings[.statusFailed]
+                showError(error.localizedDescription)
+            }
+        }
+    }
+
+    // MARK: - Las llaves del usuario
+
+    /// Vuelve a leer el `prod.keys`. Se llama al arrancar y cada vez que el usuario cambia de
+    /// archivo; el contenido no se guarda en ninguna parte.
+    public func reloadSwitchKeys() {
+        switchKeys = switchKeysURL.flatMap(SwitchKeys.load)
+    }
+
+    public func chooseSwitchKeys() {
+        guard let url = FileActions.chooseAnyFile(
+            title: strings[.switchKeysChoose], startingAt: SwitchKeys.searchFolders().first
+        ) else { return }
+        guard let llaves = SwitchKeys.load(from: url), llaves.isUsable else {
+            showError(strings[.errKeysUnusable])
+            return
+        }
+        Preferences.switchKeysURL = url
+        switchKeys = llaves
+        // Cuántas, nunca cuáles: este renglón acaba en el registro que la gente copia y pega.
+        add(strings(.switchKeysFound, String(llaves.names.count)), level: .success)
+        inspectRom()
+    }
+
+    public func forgetSwitchKeys() {
+        Preferences.switchKeysURL = nil
+        reloadSwitchKeys()
+        inspectRom()
+    }
+
+    public func chooseSwitchEmulator() {
+        guard let url = FileActions.chooseApplication(title: strings[.switchEmulatorChoose]) else { return }
+        Preferences.switchEmulatorURL = url
+        objectWillChange.send()
+    }
+
+    /// Deja escrita la configuración con la que se lanza. Es un archivo de Lever, no el del
+    /// usuario: RetroArch usa solo el que se le pasa con `-c`.
+    private func writeRetroConfig(for platform: RetroPlatform) throws -> URL {
+        let datos = portLibrary.retroDataURL
+        let partidas = datos.appendingPathComponent("partidas", isDirectory: true)
+        let estados = datos.appendingPathComponent("estados", isDirectory: true)
+        let sistema = datos.appendingPathComponent("sistema", isDirectory: true)
+        let listas = datos.appendingPathComponent("listas", isDirectory: true)
+        for carpeta in [partidas, estados, sistema, listas] {
+            try fileManager.createDirectory(at: carpeta, withIntermediateDirectories: true)
+        }
+
+        let archivo = datos.appendingPathComponent("lever.cfg")
+        let texto = RetroConfig.makeConfig(
+            profile: controlProfile, platform: platform,
+            saves: partidas, states: estados, systemFiles: sistema, data: datos,
+            windowed: !playFullscreen, resumeSessions: resumeSessions
+        )
+        try texto.write(to: archivo, atomically: true, encoding: .utf8)
+        return archivo
+    }
+
     // MARK: - Instalar herramientas
 
     public func installTools() {
@@ -1268,6 +1852,7 @@ public final class AppModel: ObservableObject {
         case .exe: acceptProgram(file.url)
         case .rar: acceptArchive(file.url)
         case .apk: acceptApk(file.url)
+        case .rom: acceptRom(file.url)
         }
     }
 

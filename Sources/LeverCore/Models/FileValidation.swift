@@ -10,15 +10,25 @@ public enum SupportedFileKind: String, Codable, CaseIterable, Sendable {
     case exe
     /// Comprimidos. `.rar` es el caso principal, pero los extractores abren muchos más.
     case rar
-    /// Aplicaciones de Android. Solo `.apk`: un `.aab` o un `.xapk` no se instalan tal cual.
+    /// Aplicaciones de Android: el `.apk` de siempre y los envoltorios que llevan varios dentro.
     case apk
+    /// Juegos de consola: ROMs e imágenes de disco.
+    case rom
 
     public var extensions: [String] {
         switch self {
         case .exe:
             return ["exe", "msi"]
         case .apk:
-            return ["apk"]
+            // Los cuatro últimos no se instalan tal cual: hay que abrirlos y decidir qué trozos
+            // le tocan al aparato. Se aceptan porque Lever ya sabe hacerlo.
+            return ["apk", "xapk", "apks", "aab", "apkm"]
+        case .rom:
+            // La lista sale de las máquinas contempladas, para que añadir una consola no obligue
+            // a acordarse de tocar también esto. Los paquetes de la consola híbrida se suman
+            // aparte porque esa no la ejecuta un núcleo de RetroArch, sino un programa suyo.
+            let deNúcleo = RetroPlatforms.all.flatMap(\.extensions)
+            return Array(Set(deNúcleo + SwitchContainer.allCases.map(\.fileExtension))).sorted()
         case .rar:
             return [
                 "rar", "zip", "7z", "tar", "gz", "tgz", "bz2", "tbz",
@@ -39,17 +49,9 @@ public enum SupportedFileKind: String, Codable, CaseIterable, Sendable {
         switch self {
         case .exe: return "programa de Windows (.exe o .msi)"
         case .rar: return "archivo comprimido (.rar, .zip, .7z…)"
-        case .apk: return "aplicación de Android (.apk)"
+        case .apk: return "aplicación de Android (.apk, .xapk, .apks, .aab)"
+        case .rom: return "juego de consola (.nes, .sfc, .gba, .nds, .nsp…)"
         }
-    }
-}
-
-public extension URL {
-    /// Formatos que envuelven varios `.apk` dentro. `adb install` no sabe abrirlos y hace falta
-    /// `bundletool` u otra herramienta: conviene decirlo con nombre propio en vez de soltar un
-    /// «no reconozco este archivo».
-    var looksLikeAndroidBundle: Bool {
-        ["aab", "apks", "xapk", "apkm"].contains(pathExtension.lowercased())
     }
 }
 

@@ -40,6 +40,37 @@ public enum FileActions {
         return panel.runModal() == .OK ? panel.url : nil
     }
 
+    /// Elige un archivo sin filtrar por tipo.
+    ///
+    /// Hace falta para el `prod.keys`, que no tiene ningún tipo registrado en macOS: filtrando por
+    /// extensión el panel lo enseñaría en gris y el usuario no podría elegirlo.
+    @MainActor
+    public static func chooseAnyFile(title: String, startingAt directory: URL? = nil) -> URL? {
+        let panel = NSOpenPanel()
+        panel.title = title
+        panel.allowsMultipleSelection = false
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.showsHiddenFiles = true
+        if let directory { panel.directoryURL = directory }
+        return panel.runModal() == .OK ? panel.url : nil
+    }
+
+    /// Elige una aplicación. Un `.app` es una carpeta, y sin `treatsFilePackagesAsDirectories` a
+    /// `false` el panel deja entrar dentro en vez de dejar elegirla.
+    @MainActor
+    public static func chooseApplication(title: String) -> URL? {
+        let panel = NSOpenPanel()
+        panel.title = title
+        panel.allowsMultipleSelection = false
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.treatsFilePackagesAsDirectories = false
+        panel.allowedContentTypes = [.application]
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        return panel.runModal() == .OK ? panel.url : nil
+    }
+
     /// Muestra el archivo o la carpeta en el Finder.
     @MainActor
     public static func reveal(_ url: URL) {

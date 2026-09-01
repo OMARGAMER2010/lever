@@ -23,10 +23,114 @@ struct ProgramPane: View {
                 Panel { programContent }
             }
 
+            // Va antes que la tarjeta de Wine a propósito: si el juego puede correr nativo, esa
+            // es la opción buena y Wine pasa a ser el plan B, no al revés.
+            if model.portableGame != nil { portablePanel }
+
             wineState
             disclaimer
         }
         .sheet(isPresented: $showsWineHelp) { RuntimeHelpSheet.wine(model: model) }
+    }
+
+    // MARK: - Juego que puede correr nativo
+
+    /// Aparece solo cuando el `.exe` resulta ser el envoltorio de un motor que sí existe para Mac.
+    @ViewBuilder
+    private var portablePanel: some View {
+        if let game = model.portableGame {
+            Panel(padding: Theme.Spacing.normal) {
+                VStack(alignment: .leading, spacing: Theme.Spacing.normal) {
+                    Text(s(.portableTitle, game.displayName))
+                        .font(.system(size: 12, weight: .semibold))
+
+                    if !game.isSupported {
+                        Text(s(game.unsupportedKey, game.runtimeVersionText))
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        Text(s[game.bodyKey])
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Text(model.portableRuntimeIsCached
+                             ? s[.portableRuntimeCached]
+                             : s(.portableRuntimeDownload, game.runtimeVersionText, game.runtimeDownloadSize))
+                            .font(.system(size: 11))
+                            .foregroundStyle(.tertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        if let note = game.extraNoteKey {
+                            Text(s[note])
+                                .font(.system(size: 11))
+                                .foregroundStyle(.tertiary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+
+                        portableParts
+                        portableActions
+                    }
+                }
+            }
+        }
+    }
+
+    /// Lo que el desarrollador no compiló para Mac. Se enseña siempre que exista: decide si el
+    /// juego funcionará entero o solo a medias, y es mejor saberlo antes que descubrirlo jugando.
+    @ViewBuilder
+    private var portableParts: some View {
+        let pending = model.portableUnresolvedParts
+        if !pending.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(s(.portablePartsNeeded, pending.map(\.name).joined(separator: ", ")))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if pending.contains(where: { $0.recipe != nil }) {
+                    Toggle(s[.portableBuildParts], isOn: $model.buildsMissingExtensions)
+                        .font(.system(size: 11))
+                        .toggleStyle(.checkbox)
+                        .disabled(model.isPorting)
+                    ForEach(pending.compactMap(\.recipe), id: \.addonName) { recipe in
+                        Text("\(recipe.displayName): \(s[recipe.purposeKey]) · ~\(recipe.approximateMinutes) min")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                if pending.contains(where: { $0.recipe == nil }) {
+                    Text(s[.portablePartUnknown])
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    private var portableActions: some View {
+        HStack(spacing: Theme.Spacing.tight) {
+            if model.isPorting {
+                ProgressView().controlSize(.small)
+                Text(model.portStageMessage.isEmpty ? s[.portablePorting] : model.portStageMessage)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Spacer()
+                Button(s[.stop], action: model.stopPorting)
+            } else {
+                Button(s[.portableMakeApp], action: model.makeNativeApp)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!model.canMakeNativeApp)
+                Text(s[.portableWhereItGoes])
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
+                Spacer()
+            }
+        }
+        .controlSize(.small)
     }
 
     @ViewBuilder

@@ -43,6 +43,39 @@
 		</dict>
 		<dict>
 			<key>CFBundleTypeName</key>
+			<string>Juego de consola</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>nes</string>
+				<string>sfc</string>
+				<string>smc</string>
+				<string>gb</string>
+				<string>gbc</string>
+				<string>gba</string>
+				<string>n64</string>
+				<string>z64</string>
+				<string>v64</string>
+				<string>md</string>
+				<string>gen</string>
+				<string>smd</string>
+				<string>sms</string>
+				<string>gg</string>
+				<string>nds</string>
+				<string>3ds</string>
+				<string>gdi</string>
+				<string>cdi</string>
+				<string>chd</string>
+				<string>cue</string>
+				<string>pbp</string>
+				<string>cso</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
 			<string>Aplicación de Android</string>
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
@@ -51,6 +84,10 @@
 			<key>CFBundleTypeExtensions</key>
 			<array>
 				<string>apk</string>
+				<string>xapk</string>
+				<string>apks</string>
+				<string>aab</string>
+				<string>apkm</string>
 			</array>
 		</dict>
 		<dict>

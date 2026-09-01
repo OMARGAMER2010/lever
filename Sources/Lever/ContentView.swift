@@ -28,6 +28,7 @@ struct ContentView: View {
                     case .program: ProgramPane(model: model)
                     case .archive: ArchivePane(model: model)
                     case .android: AndroidPane(model: model)
+                    case .rom: EmulationPane(model: model)
                     }
                 }
                 .padding(.horizontal, Theme.Spacing.page)

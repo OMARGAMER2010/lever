@@ -29,6 +29,7 @@ struct AndroidPane: View {
                 Panel { apkContent }
             }
 
+            bundleNotice
             compatibilityNotice
             emulatorState
             bridgeState
@@ -93,6 +94,18 @@ struct AndroidPane: View {
                 AndroidRelease.name(forApi: minSdk).map { s(.apkMinAndroid, $0) }
                     ?? s(.apkMinApi, String(minSdk))
             )
+        }
+        if !model.androidPackage.parts.isEmpty {
+            facts.append(s(.bundleParts, String(model.androidPackage.distinctPartCount)))
+        }
+        // Los datos de expansión pesan más que la app en muchos juegos: se dice antes, porque
+        // son los que hacen que instalar tarde.
+        let expansiones = model.androidPackage.expansions.reduce(0) { $0 + $1.size }
+        if expansiones > 0 {
+            facts.append(s(
+                .bundleExpansions,
+                ByteCountFormatter.string(fromByteCount: Int64(expansiones), countStyle: .file)
+            ))
         }
         facts.append(
             model.apkFacts.isPortable
@@ -289,11 +302,64 @@ struct AndroidPane: View {
 
     // MARK: - Avisos
 
+    /// Lo que hay que contar de un archivo que no es un `.apk` suelto: qué formato es —porque
+    /// determina qué va a pasar—, qué hay que descargar para poder abrirlo, y si el `.apk` viene
+    /// sin firma. Son tres cosas que el usuario no puede saber mirando el archivo.
+    @ViewBuilder
+    private var bundleNotice: some View {
+        if model.selectedApk != nil {
+            let paquete = model.androidPackage
+
+            if paquete.readFailed, paquete.kind.isBundle {
+                NoticeBanner(
+                    kind: .failure,
+                    title: s[.bundleUnreadableTitle],
+                    message: s[.bundleUnreadableBody]
+                )
+            } else {
+                if let explicación = bundleKindText {
+                    NoticeBanner(kind: .info, title: paquete.kind.rawValue.uppercased(), message: explicación)
+                }
+                if paquete.needsSigning {
+                    NoticeBanner(kind: .warning, title: s[.apkUnsignedTitle], message: s[.apkUnsignedBody])
+                }
+                if !model.androidToolNeeds.isEmpty {
+                    NoticeBanner(
+                        kind: .info,
+                        title: s[.bundleToolsTitle],
+                        message: s(.bundleToolsBody, toolNeedsText)
+                    )
+                }
+            }
+        }
+    }
+
+    private var bundleKindText: String? {
+        let paquete = model.androidPackage
+        let base: String
+        switch paquete.kind {
+        case .apk: return nil
+        case .xapk: base = s[.bundleKindXapk]
+        case .apks: base = s[.bundleKindApks]
+        case .aab: base = s[.bundleKindAab]
+        }
+        guard !paquete.extraModules.isEmpty else { return base }
+        return base + " " + s(.bundleModules, paquete.extraModules.joined(separator: ", "))
+    }
+
+    /// «Java (45 MB) y bundletool (32 MB)». Se dice el tamaño porque en un disco justo es lo
+    /// único que el usuario necesita saber para decidir.
+    private var toolNeedsText: String {
+        model.androidToolNeeds
+            .map { "\(s[$0.tool.textKey]) (\($0.megabytes) MB)" }
+            .joined(separator: " · ")
+    }
+
     /// Lo que se sabe antes de intentarlo. Instalar no se bloquea: se avisa y se deja decidir,
     /// igual que con un `.exe` de 32 bits.
     @ViewBuilder
     private var compatibilityNotice: some View {
-        if model.selectedApk != nil, model.apkFacts.readFailed {
+        if model.selectedApk != nil, model.apkFacts.readFailed, !model.androidPackage.kind.isBundle {
             NoticeBanner(kind: .failure, title: s[.apkUnreadableTitle], message: s[.apkUnreadableBody])
         } else {
             switch model.apkCompatibility {
