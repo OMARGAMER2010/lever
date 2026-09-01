@@ -3,87 +3,26 @@ import Foundation
 import AppKit
 #endif
 
-/// Un emulador de la consola híbrida instalado en el Mac.
-///
-/// Se describe por el nombre de su `.app` y por dónde guarda sus llaves. No hay ninguna dirección
-/// de descarga, y eso es una decisión, no un olvido: los dos emuladores originales cerraron —uno en
-/// marzo de 2024 y el otro en octubre— y lo que sigue vivo son bifurcaciones que aparecen, cambian
-/// de nombre y desaparecen. Una dirección fija apuntaría a un enlace roto en unos meses. Lever
-/// busca el que haya, como hace con RetroArch y con Wine.
-public struct SwitchEmulator: Equatable, Sendable, Identifiable {
-    public let id: String
-    public let name: String
-    /// Nombres del `.app`, en orden de preferencia.
-    public let bundleNames: [String]
-    /// Carpeta de datos dentro de `Application Support`, que es donde espera el `prod.keys`.
-    public let dataFolder: String
-
-    public init(id: String, name: String, bundleNames: [String], dataFolder: String) {
-        self.id = id
-        self.name = name
-        self.bundleNames = bundleNames
-        self.dataFolder = dataFolder
-    }
-
-    /// Donde este emulador quiere las llaves.
-    public func keysFolder(fileManager: FileManager = .default) -> URL {
-        let soporte = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
-        return soporte.appendingPathComponent(dataFolder, isDirectory: true)
-    }
-}
-
 /// Conseguir lo que hace falta para jugar a un juego de la consola híbrida, y lanzarlo.
 ///
-/// La diferencia con `RetroTools` es de fondo, no de detalle: esta consola **no la emula un núcleo
-/// de libretro**. No existe. Hace falta un programa entero aparte, que el usuario instala por su
-/// cuenta. Lever hace lo mismo que con Wine: lo encuentra, comprueba que está lo que hace falta, y
-/// lanza. Lo que no hace es descargarlo ni traerlo dentro.
+/// Lo de encontrar el emulador y abrirlo es igual para todas las máquinas de programa aparte y vive
+/// en `StandaloneTools`. Lo que queda aquí es lo que **solo** pasa con esta consola: que sus
+/// paquetes vienen comprimidos con un formato propio y hay que rehacerlos antes de que ningún
+/// emulador los abra.
 public enum SwitchTools {
-    /// Los emuladores de esta consola que existen para Mac, de más probable a menos.
-    ///
-    /// Los dos últimos están muertos y se buscan igual: mucha gente los tiene instalados de antes y
-    /// siguen abriendo los juegos que abrían. No reconocerlos sería mandar a instalar algo que ya
-    /// está ahí.
-    public static let known: [SwitchEmulator] = [
-        SwitchEmulator(id: "ryujinx", name: "Ryujinx",
-                       bundleNames: ["Ryujinx.app", "Ryubing.app"], dataFolder: "Ryujinx"),
-        SwitchEmulator(id: "sudachi", name: "Sudachi",
-                       bundleNames: ["Sudachi.app", "sudachi.app"], dataFolder: "sudachi"),
-        SwitchEmulator(id: "citron", name: "Citron",
-                       bundleNames: ["Citron.app", "citron.app"], dataFolder: "citron"),
-        SwitchEmulator(id: "eden", name: "Eden",
-                       bundleNames: ["Eden.app", "eden.app"], dataFolder: "eden"),
-        SwitchEmulator(id: "yuzu", name: "yuzu",
-                       bundleNames: ["yuzu.app"], dataFolder: "yuzu")
-    ]
-
-    /// Donde acaban las aplicaciones en un Mac.
-    static var applicationFolders: [URL] {
-        ["/Applications", NSHomeDirectory() + "/Applications"].map { URL(fileURLWithPath: $0) }
+    /// La máquina, con sus emuladores y sus llaves, sacada del registro común.
+    public static var machine: StandaloneMachine {
+        StandaloneMachines.machine(id: "switch")
+            ?? StandaloneMachine(id: "switch", name: "Switch", family: "nintendo", maturity: .experimental)
     }
 
-    /// El emulador instalado, si lo hay, con el `.app` donde está.
+    public static var known: [StandaloneEmulator] { machine.emulators }
+
+    /// El emulador instalado, si lo hay.
     public static func locate(
         preferring custom: URL? = nil, fileManager: FileManager = .default
-    ) -> (emulator: SwitchEmulator, app: URL)? {
-        if let custom, fileManager.fileExists(atPath: custom.path) {
-            let nombre = custom.lastPathComponent
-            let cuál = known.first { $0.bundleNames.contains { $0.caseInsensitiveCompare(nombre) == .orderedSame } }
-            // Uno que el usuario haya señalado a mano vale aunque no esté en la lista: la lista es
-            // para encontrarlo solo, no para decidir qué puede usar.
-            return (cuál ?? SwitchEmulator(id: "custom", name: custom.deletingPathExtension().lastPathComponent,
-                                           bundleNames: [nombre], dataFolder: "Ryujinx"), custom)
-        }
-        for emulador in known {
-            for carpeta in applicationFolders {
-                for nombre in emulador.bundleNames {
-                    let app = carpeta.appendingPathComponent(nombre)
-                    if fileManager.fileExists(atPath: app.path) { return (emulador, app) }
-                }
-            }
-        }
-        return nil
+    ) -> (emulator: StandaloneEmulator, app: URL)? {
+        StandaloneTools.locate(machine: machine, preferring: custom, fileManager: fileManager)
     }
 
     // MARK: - Descomprimir
@@ -286,20 +225,10 @@ public enum SwitchTools {
 
     // MARK: - Lanzar
 
-    /// Abre el juego con el emulador que haya.
-    ///
-    /// Como app y no como proceso hijo, por lo mismo que RetroArch: un programa con ventana
-    /// arrancado con `Process` desde dentro de otra app se queda colgado antes de dibujar nada, sin
-    /// dar ningún error. Y así además sale en el Dock y recibe el foco, que es lo que la gente
-    /// espera de un juego.
+    /// Abre el paquete con el emulador que haya. El trabajo lo hace `StandaloneTools`: aquí no
+    /// pasa nada distinto de lo que pasa con una PS2 o una PS3.
     @MainActor
     public static func open(emulator app: URL, game: URL) throws {
-        #if canImport(AppKit)
-        let configuración = NSWorkspace.OpenConfiguration()
-        configuración.arguments = [game.path]
-        configuración.activates = true
-        configuración.createsNewApplicationInstance = true
-        NSWorkspace.shared.openApplication(at: app, configuration: configuración)
-        #endif
+        try StandaloneTools.open(app: app, game: game)
     }
 }

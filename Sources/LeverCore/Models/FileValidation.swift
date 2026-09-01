@@ -28,7 +28,7 @@ public enum SupportedFileKind: String, Codable, CaseIterable, Sendable {
             // a acordarse de tocar también esto. Los paquetes de la consola híbrida se suman
             // aparte porque esa no la ejecuta un núcleo de RetroArch, sino un programa suyo.
             let deNúcleo = RetroPlatforms.all.flatMap(\.extensions)
-            return Array(Set(deNúcleo + SwitchContainer.allCases.map(\.fileExtension))).sorted()
+            return Array(Set(deNúcleo + StandaloneMachines.allExtensions)).sorted()
         case .rar:
             return [
                 "rar", "zip", "7z", "tar", "gz", "tgz", "bz2", "tbz",

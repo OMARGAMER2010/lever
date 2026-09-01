@@ -123,7 +123,7 @@ public enum TextKey: String, CaseIterable, Sendable {
     case errNoRetroArch, errNoCore, errUnknownRom, errPickRom, emulationDisclaimer
 
     // La consola híbrida: paquetes, contenidos y llaves
-    case switchKindApplication, switchKindPatch, switchKindAddOn
+    case contentKindApplication, contentKindPatch, contentKindAddOn, contentKindOther
     case switchEvidenceNca, switchEvidenceTicket, switchEvidenceXml, switchEvidenceContainer
     case switchSection, switchTitles, switchNoTitles, switchVersion
     case switchCompressedTitle, switchCompressedBody
@@ -134,6 +134,18 @@ public enum TextKey: String, CaseIterable, Sendable {
     case dropSwitchSubtitle, switchDisclaimer
     case switchRebuildTitle, switchRebuildBody, switchCacheNote, switchKeysTooOld
     case switchCartridgeNote
+
+    // Máquinas que ejecuta un programa aparte: madurez y firmware
+    case maturitySolid, maturityExperimental, maturityNone
+    case firmwareFromConsole, firmwareFromVendor
+
+    // La familia PlayStation
+    case psEvidenceParamSfo, psEvidencePackage, psEvidenceBoot, psEvidenceLayout
+    case psSection, psTitleId, psContainerFolder, psContainerDisc, psContainerPackage
+    case psNoEmulatorTitle, psNoEmulatorBody, psFirmwareTitle, psFirmwareBody
+    case psFirmwareReady, psExperimentalTitle, psExperimentalBody
+    case psUseRetroArchTitle, psUseRetroArchBody, dropPlayStationSubtitle
+    case menuOpenFolder, errNoPsEmulator
     case statusRebuildingPackage, statusLaunchingEmulator, logPackageRebuilt
     case errNoSwitchEmulator, errNoZstd, errRebuildFailed, errKeysUnusable
 

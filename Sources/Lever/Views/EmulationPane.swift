@@ -18,11 +18,16 @@ struct EmulationPane: View {
             if model.selectedRom == nil {
                 DropZone(
                     title: s[.dropRomTitle],
-                    subtitle: s[.dropRomSubtitle] + " " + s[.dropSwitchSubtitle],
+                    subtitle: s[.dropRomSubtitle] + " " + s[.dropSwitchSubtitle]
+                        + " " + s[.dropPlayStationSubtitle],
                     systemImage: "gamecontroller",
                     accept: { model.accept(droppedURLs: $0) },
                     browse: model.selectRom
                 )
+                // Un juego de PS3 o de PS4 es una carpeta, y el panel de archivos no deja
+                // elegir carpetas. Sin este botón, esas dos máquinas solo entran arrastrando.
+                Button(s[.menuOpenFolder]) { model.selectGameFolder() }
+                    .controlSize(.small)
                 RecentsList(model: model, kind: .rom)
             } else {
                 Panel { romContent }
@@ -76,6 +81,10 @@ struct EmulationPane: View {
                     keysSection
                     Divider()
                     emulatorSection
+                } else if model.psMachine != nil {
+                    playStationSection
+                    Divider()
+                    playStationEmulatorSection
                 } else {
                     coreSection
                     Divider()
@@ -123,6 +132,95 @@ struct EmulationPane: View {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    // MARK: - La familia PlayStation
+
+    /// Lo que dice el propio juego de sí mismo. Todo esto va **sin cifrar** dentro del archivo, así
+    /// que sale sin pedirle nada al usuario: es la diferencia con la consola híbrida.
+    private var playStationSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(s[.psSection]).font(.system(size: 12, weight: .semibold))
+                Spacer()
+                Text(s[model.psFacts.evidence.textKey])
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+            }
+
+            if let título = model.psFacts.title {
+                Text(título)
+                    .font(.system(size: 12, weight: .medium))
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                if let identificador = model.psFacts.titleId {
+                    Text(identificador)
+                        .font(.system(size: 11, design: .monospaced))
+                        .textSelection(.enabled)
+                }
+                Text(s[model.psFacts.kind.textKey]).font(.system(size: 11)).foregroundStyle(.secondary)
+                if let versión = model.psFacts.version {
+                    Text(versión).font(.system(size: 11)).foregroundStyle(.tertiary)
+                }
+                Spacer()
+                if let máquina = model.psMachine {
+                    Text(s[máquina.maturity.textKey])
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
+            }
+
+            // Lo que se le va a dar al emulador, cuando no es lo que se soltó. De una carpeta de
+            // PS3 se lanza el ejecutable de dentro, y decirlo evita la pregunta de qué está
+            // abriendo exactamente.
+            if let objetivo = model.psFacts.launchTarget, objetivo != model.selectedRom {
+                Text(objetivo.lastPathComponent)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+            }
+        }
+    }
+
+    private var playStationEmulatorSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(s[.switchEmulatorSection]).font(.system(size: 12, weight: .semibold))
+                Spacer()
+                if model.psMachine?.isEmulated == true {
+                    Button(s[.switchEmulatorChoose]) { model.choosePlayStationEmulator() }
+                        .controlSize(.small)
+                }
+            }
+
+            if let encontrado = model.psEmulator {
+                Text(s(.switchEmulatorFound, encontrado.emulator.name))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                Text(encontrado.app.path)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.head)
+                if let firmware = model.psMachine?.firmware {
+                    Text(model.psFirmwareIsReady
+                         ? s[.psFirmwareReady]
+                         : s(.psFirmwareBody, firmware.files.joined(separator: ", "),
+                             s[firmware.source.textKey]))
+                        .font(.system(size: 11))
+                        .foregroundStyle(model.psFirmwareIsReady ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } else if model.psMachine?.isEmulated == true {
+                Text(s[.switchEmulatorMissingBody])
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -210,6 +308,13 @@ struct EmulationPane: View {
         if let envoltorio = model.switchFacts.container {
             hechos.append(".\(envoltorio.fileExtension)")
             hechos.append(s[model.switchFacts.evidence.textKey])
+            return hechos
+        }
+        if let máquina = model.psMachine {
+            hechos.append(máquina.name)
+            if let envoltorio = model.psFacts.container {
+                hechos.append(s[containerKey(envoltorio)])
+            }
             return hechos
         }
         if let máquina = model.romFacts.platform {
@@ -325,6 +430,8 @@ struct EmulationPane: View {
     private var romNotices: some View {
         if model.switchFacts.isRecognised {
             switchNotices
+        } else if model.psFacts.isRecognised {
+            playStationNotices
         } else if model.selectedRom != nil {
             if !model.romFacts.isRecognised, !model.isInspectingRom {
                 NoticeBanner(kind: .failure, title: s[.romUnknownTitle], message: s[.romUnknownBody])
@@ -389,11 +496,46 @@ struct EmulationPane: View {
         }
     }
 
+    private func containerKey(_ container: PlayStationContainer) -> TextKey {
+        switch container {
+        case .folder: return .psContainerFolder
+        case .discImage: return .psContainerDisc
+        case .package, .vitaPackage: return .psContainerPackage
+        }
+    }
+
+    /// Los avisos de la familia PlayStation, del más grave al menos: que de esta máquina no hay
+    /// emulador, que la que hay va experimental, y que falta el firmware.
+    @ViewBuilder
+    private var playStationNotices: some View {
+        if model.psFacts.hasNoEmulator {
+            NoticeBanner(kind: .failure, title: s[.psNoEmulatorTitle], message: s[.psNoEmulatorBody])
+        } else if model.psMachine == nil {
+            // PS1 y PSP se reconocen aquí pero se juegan desde el núcleo de siempre. Decirlo evita
+            // que alguien se ponga a buscar un emulador que no le hace falta.
+            NoticeBanner(kind: .info, title: s[.psUseRetroArchTitle], message: s[.psUseRetroArchBody])
+        } else {
+            if model.psMachine?.maturity == .experimental {
+                NoticeBanner(kind: .info, title: s[.psExperimentalTitle], message: s[.psExperimentalBody])
+            }
+            if model.psEmulator == nil {
+                NoticeBanner(kind: .warning, title: s[.switchEmulatorMissingTitle],
+                             message: s[.switchEmulatorMissingBody])
+            } else if let firmware = model.psMachine?.firmware, !model.psFirmwareIsReady {
+                NoticeBanner(
+                    kind: .warning, title: s[.psFirmwareTitle],
+                    message: s(.psFirmwareBody, firmware.files.joined(separator: ", "),
+                               s[firmware.source.textKey])
+                )
+            }
+        }
+    }
+
     @ViewBuilder
     private var retroArchState: some View {
         // Con un paquete de la consola híbrida delante, RetroArch no pinta nada: ese juego no lo
         // va a abrir él. Enseñar «instala RetroArch» sería mandar a instalar lo que no hace falta.
-        if model.switchFacts.isRecognised {
+        if model.switchFacts.isRecognised || model.psMachine != nil {
             EmptyView()
         } else if model.retroArchURL == nil {
             NoticeBanner(
@@ -425,7 +567,8 @@ struct EmulationPane: View {
     }
 
     private var disclaimer: some View {
-        Text(model.switchFacts.isRecognised ? s[.switchDisclaimer] : s[.emulationDisclaimer])
+        Text(model.switchFacts.isRecognised || model.psMachine != nil
+             ? s[.switchDisclaimer] : s[.emulationDisclaimer])
             .font(.system(size: 11))
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)

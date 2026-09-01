@@ -52,15 +52,31 @@ public enum Preferences {
         set { defaults.set(newValue?.path, forKey: Key.switchKeysPath) }
     }
 
-    /// El emulador de la consola híbrida que el usuario haya señalado a mano, cuando no está en
-    /// ninguno de los sitios de siempre.
+    /// El emulador que el usuario haya señalado a mano para una máquina, cuando no está en ninguno
+    /// de los sitios de siempre.
+    ///
+    /// Una ruta por máquina y no una sola: quien tiene PCSX2 y RPCS3 los tiene en sitios distintos,
+    /// y una sola casilla obligaría a volver a elegir cada vez que cambia de consola.
+    public static func standaloneEmulatorURL(for machineId: String) -> URL? {
+        guard let ruta = defaults.string(forKey: "emulator.\(machineId)"), !ruta.isEmpty else { return nil }
+        let url = URL(fileURLWithPath: ruta)
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
+    public static func setStandaloneEmulatorURL(_ url: URL?, for machineId: String) {
+        defaults.set(url?.path, forKey: "emulator.\(machineId)")
+    }
+
+    /// El de la consola híbrida, que ya se guardaba antes con su propia clave. Se sigue leyendo de
+    /// ahí para no perder lo que el usuario ya tuviera elegido.
     public static var switchEmulatorURL: URL? {
         get {
+            if let nuevo = standaloneEmulatorURL(for: "switch") { return nuevo }
             guard let ruta = defaults.string(forKey: Key.switchEmulatorPath), !ruta.isEmpty else { return nil }
             let url = URL(fileURLWithPath: ruta)
             return FileManager.default.fileExists(atPath: url.path) ? url : nil
         }
-        set { defaults.set(newValue?.path, forKey: Key.switchEmulatorPath) }
+        set { setStandaloneEmulatorURL(newValue, for: "switch") }
     }
 
     public static var rotationChoice: RotationChoice {
