@@ -15,6 +15,8 @@ public enum Preferences {
         static let rotationChoice = "rotationChoice"
         static let playFullscreen = "playFullscreen"
         static let resumeSessions = "resumeSessions"
+        static let switchKeysPath = "switchKeysPath"
+        static let switchEmulatorPath = "switchEmulatorPath"
     }
 
     /// Si los juegos de consola se abren ocupando la pantalla entera.
@@ -34,6 +36,31 @@ public enum Preferences {
     public static var resumeSessions: Bool {
         get { defaults.object(forKey: Key.resumeSessions) as? Bool ?? true }
         set { defaults.set(newValue, forKey: Key.resumeSessions) }
+    }
+
+    /// Dónde tiene el usuario su `prod.keys`.
+    ///
+    /// **Se guarda la ruta, nunca el contenido.** Las llaves se leen del archivo cada vez que hacen
+    /// falta y se olvidan; meterlas en los ajustes las dejaría en un `.plist` sin cifrar del que el
+    /// usuario no sabe nada y que se sincroniza y se respalda con todo lo demás.
+    public static var switchKeysURL: URL? {
+        get {
+            guard let ruta = defaults.string(forKey: Key.switchKeysPath), !ruta.isEmpty else { return nil }
+            let url = URL(fileURLWithPath: ruta)
+            return FileManager.default.isReadableFile(atPath: url.path) ? url : nil
+        }
+        set { defaults.set(newValue?.path, forKey: Key.switchKeysPath) }
+    }
+
+    /// El emulador de la consola híbrida que el usuario haya señalado a mano, cuando no está en
+    /// ninguno de los sitios de siempre.
+    public static var switchEmulatorURL: URL? {
+        get {
+            guard let ruta = defaults.string(forKey: Key.switchEmulatorPath), !ruta.isEmpty else { return nil }
+            let url = URL(fileURLWithPath: ruta)
+            return FileManager.default.fileExists(atPath: url.path) ? url : nil
+        }
+        set { defaults.set(newValue?.path, forKey: Key.switchEmulatorPath) }
     }
 
     public static var rotationChoice: RotationChoice {

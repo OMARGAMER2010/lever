@@ -25,8 +25,10 @@ public enum SupportedFileKind: String, Codable, CaseIterable, Sendable {
             return ["apk", "xapk", "apks", "aab", "apkm"]
         case .rom:
             // La lista sale de las máquinas contempladas, para que añadir una consola no obligue
-            // a acordarse de tocar también esto.
-            return Array(Set(RetroPlatforms.all.flatMap(\.extensions))).sorted()
+            // a acordarse de tocar también esto. Los paquetes de la consola híbrida se suman
+            // aparte porque esa no la ejecuta un núcleo de RetroArch, sino un programa suyo.
+            let deNúcleo = RetroPlatforms.all.flatMap(\.extensions)
+            return Array(Set(deNúcleo + SwitchContainer.allCases.map(\.fileExtension))).sorted()
         case .rar:
             return [
                 "rar", "zip", "7z", "tar", "gz", "tgz", "bz2", "tbz",
@@ -48,7 +50,7 @@ public enum SupportedFileKind: String, Codable, CaseIterable, Sendable {
         case .exe: return "programa de Windows (.exe o .msi)"
         case .rar: return "archivo comprimido (.rar, .zip, .7z…)"
         case .apk: return "aplicación de Android (.apk, .xapk, .apks, .aab)"
-        case .rom: return "juego de consola (.nes, .sfc, .gba, .nds…)"
+        case .rom: return "juego de consola (.nes, .sfc, .gba, .nds, .nsp…)"
         }
     }
 }

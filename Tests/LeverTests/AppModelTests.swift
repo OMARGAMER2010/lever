@@ -14,6 +14,36 @@ enum AppModelTests {
         try testProgramArchitectureIsReadOnSelection()
         try testApkNeedsADeviceBeforeInstalling()
         try testAndroidBundlesAreAccepted()
+        try testHybridPackagesGoToTheConsoleTab()
+    }
+
+    /// Un paquete de la consola híbrida entra por la pestaña de consolas, y la decisión se toma
+    /// **abriendo el archivo**, no mirando la extensión: por fuera un `.nsp` es un archivador, y
+    /// llamarse `.nsp` no basta.
+    ///
+    /// Se comprueba el encaminamiento y no los hechos leídos: leer el paquete se hace fuera del
+    /// hilo principal —puede pesar gigas— y aquí todavía no ha terminado. Lo que sí ha pasado ya es
+    /// la decisión de a qué pestaña va, que es lo que esta prueba mira.
+    private static func testHybridPackagesGoToTheConsoleTab() throws {
+        let model = emptyModel()
+        let fixture = try TemporaryFixture()
+
+        let paquete = fixture.directoryURL.appendingPathComponent("juego.nsp")
+        var datos = PartitionFileSystem.makeHeader(files: [("0123456789abcdef.nca", 16)])
+        datos.append(Data(repeating: 0xAA, count: 16))
+        try datos.write(to: paquete)
+
+        model.accept(droppedURLs: [paquete])
+        try expect(model.selectedRom == paquete, "un paquete de verdad va a la pestaña de consolas")
+
+        // Y uno que solo se llama así no se cuela: ni es una ROM ni es un paquete, así que no lo
+        // recoge nadie y se dice que no se sabe qué es.
+        let mentira = fixture.directoryURL.appendingPathComponent("mentira.nsp")
+        try Data(repeating: 0x41, count: 512).write(to: mentira)
+        model.clearRom()
+        model.accept(droppedURLs: [mentira])
+        try expect(model.selectedRom == nil, "llamarse .nsp no basta")
+        try expect(model.lastError != nil, "y se dice que no se sabe qué es ese archivo")
     }
 
     private static func emptyModel() -> AppModel {

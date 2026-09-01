@@ -197,6 +197,24 @@ public final class PortLibrary: @unchecked Sendable {
         root.appendingPathComponent("emulacion", isDirectory: true)
     }
 
+    /// Donde quedan los paquetes de la consola híbrida ya rehechos.
+    ///
+    /// Aparte de las partidas y de los núcleos porque son otra cosa: son copias del juego del
+    /// usuario, pesan lo que pesa el juego, y son lo primero que hay que borrar cuando alguien
+    /// quiera recuperar disco. Tenerlas en su propia carpeta hace que eso se pueda decir.
+    public var switchPackagesURL: URL {
+        root.appendingPathComponent("hibrida", isDirectory: true)
+            .appendingPathComponent("paquetes", isDirectory: true)
+    }
+
+    /// Cuánto ocupan, para poder enseñarlo antes de que alguien se pregunte dónde se fue el disco.
+    public func switchPackagesSize() -> Int64 {
+        guard let contenido = try? fileManager.contentsOfDirectory(
+            at: switchPackagesURL, includingPropertiesForKeys: [.fileSizeKey]
+        ) else { return 0 }
+        return contenido.reduce(0) { $0 + ($1.fileSizeInBytes ?? 0) }
+    }
+
     public func url(forLibraryNamed name: String) -> URL? {
         let candidate = folderURL.appendingPathComponent(name)
         return fileManager.fileExists(atPath: candidate.path) ? candidate : nil

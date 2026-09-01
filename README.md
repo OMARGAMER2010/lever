@@ -21,6 +21,8 @@ Sin cuentas, sin servidor, sin telemetría. Todo local.
 | **Juegos nativos** | Hay `.exe` que solo son un envoltorio: en Godot el juego vive en el `.pck` de al lado, en Ren'Py son guiones de Python y en LÖVE va pegado al final del propio `.exe`. Esos archivos sirven igual en Mac. La app los junta con el motor oficial de macOS y te deja un `.app` nativo, sin Wine y sin Rosetta. |
 | **Comprimidos** | Extrae `.rar`, `.zip`, `.7z`, `.tar`, `.iso`, `.cab` y compañía. Admite contraseñas y nunca borra el original. |
 | **Android** | Ejecuta un `.apk` en el propio Mac, dentro de un emulador que la app monta y arranca sola. También sirve un móvil enchufado por USB. Y los formatos que traen la app partida en trozos —`.xapk`, `.apks`, `.aab`— se desmontan, se eligen los trozos que le tocan a tu aparato y se instalan juntos, con sus datos de expansión. |
+| **Consolas** | Reconoce un juego de consola por su cabecera —no por la extensión— y lo ejecuta con el núcleo de libretro que le toca, que se descarga solo. Once máquinas, de la NES a la PSP. Los controles se mapean con un diagrama que tiene la forma del mando que tengas enchufado. |
+| **Consola híbrida** | Los paquetes `.nsp`, `.xci`, `.nsz` y `.xcz` se abren y se leen: qué juego traen, qué actualizaciones y qué contenido añadido, con su versión y su tamaño. Esa consola **no** la emula un núcleo de libretro, así que el emulador lo pones tú; la app lo encuentra y lanza. Los paquetes comprimidos se rehacen antes de jugar. |
 
 Arrastra un archivo a la ventana —o al icono de la app en el Dock— y la app se coloca sola en la
 pestaña que toca. También funciona con «Abrir con» desde el Finder.
@@ -95,6 +97,33 @@ lanzar y sigue donde estaba.
 
 Si prefieres no gastar ese espacio, con un móvil Android enchufado y la depuración por USB
 activada basta `adb`, que ocupa unos megas y lo pone el instalador.
+
+Para los **juegos de consola** hace falta RetroArch, que es quien carga los núcleos:
+
+```bash
+brew install --cask retroarch
+```
+
+Los núcleos los descarga la app sola, uno por máquina, y **de la arquitectura de RetroArch, no la
+del Mac**: un núcleo se carga dentro de su proceso, así que el RetroArch de Intel que instala
+Homebrew pide núcleos de Intel aunque el Mac sea de Apple. Lo que la app **no** puede darte son las
+BIOS que algunas máquinas exigen —PlayStation, Dreamcast—: salen de una consola de verdad. Se avisa
+antes de descargar nada.
+
+La **consola híbrida** es otra cosa y conviene decirlo claro:
+
+- **No hay núcleo de libretro para ella.** Hace falta un emulador entero aparte, que instalas tú.
+  La app no lo descarga y no fija ninguno: busca el que tengas —la línea de Ryujinx y sus
+  bifurcaciones, Sudachi, Citron, Eden— y también acepta el que le señales a mano. Los dos
+  emuladores originales cerraron en 2024, así que una dirección de descarga fija en el código
+  apuntaría a un enlace roto en unos meses.
+- **Las llaves del sistema las pones tú.** Un `prod.keys` sale de una consola; no se descarga y la
+  app no trae ninguna. Sin él se ve igual qué hay dentro del paquete —qué juego, qué
+  actualizaciones, qué añadidos— porque el índice va en claro; lo que no se ve es el nombre y el
+  icono, que están dentro de una pieza cifrada. La ruta del archivo se guarda en los ajustes;
+  **el contenido no**: se lee cuando hace falta y se olvida.
+- Para rehacer un `.nsz` o un `.xcz` hace falta `zstd` (`brew install zstd`). El paquete rehecho va
+  a una carpeta de la app, pesa lo que pesa el juego y se hace una vez.
 
 **Qué Wine usar en un Mac con chip Apple.** Los casks de WineHQ (`wine-stable`, `wine@devel`,
 `wine@staging`) están obsoletos por no pasar el control de Gatekeeper y Homebrew los desactiva el

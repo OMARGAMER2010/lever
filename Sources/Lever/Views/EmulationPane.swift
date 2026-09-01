@@ -18,7 +18,7 @@ struct EmulationPane: View {
             if model.selectedRom == nil {
                 DropZone(
                     title: s[.dropRomTitle],
-                    subtitle: s[.dropRomSubtitle],
+                    subtitle: s[.dropRomSubtitle] + " " + s[.dropSwitchSubtitle],
                     systemImage: "gamecontroller",
                     accept: { model.accept(droppedURLs: $0) },
                     browse: model.selectRom
@@ -66,11 +66,138 @@ struct EmulationPane: View {
                 }
 
                 Divider()
-                coreSection
-                Divider()
-                sessionSection
-                Divider()
-                controlsSection
+                // Dos caminos, y no es cosmético: una ROM la ejecuta RetroArch con un núcleo y
+                // controles que Lever mapea; un paquete de la consola híbrida lo ejecuta un
+                // programa aparte que trae los suyos. Enseñar el diagrama del mando aquí sería
+                // ofrecer un ajuste que no va a ninguna parte.
+                if model.switchFacts.isRecognised {
+                    packageSection
+                    Divider()
+                    keysSection
+                    Divider()
+                    emulatorSection
+                } else {
+                    coreSection
+                    Divider()
+                    sessionSection
+                    Divider()
+                    controlsSection
+                }
+            }
+        }
+    }
+
+    // MARK: - El paquete de la consola híbrida
+
+    /// Lo que trae dentro, que es lo que no se ve por fuera: un `.nsp` puede ser el juego solo o el
+    /// juego con tres actualizaciones y ocho añadidos, y el nombre del archivo no lo dice.
+    private var packageSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(s[.switchSection]).font(.system(size: 12, weight: .semibold))
+                Spacer()
+                Text(s[model.switchFacts.evidence.textKey])
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+            }
+
+            if model.switchFacts.titles.isEmpty {
+                Text(s[.switchNoTitles]).font(.system(size: 11)).foregroundStyle(.secondary)
+            } else {
+                ForEach(model.switchFacts.titles) { título in
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(título.formattedId)
+                            .font(.system(size: 11, design: .monospaced))
+                            .textSelection(.enabled)
+                        Text(s[título.kind.textKey])
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                        if let versión = título.displayVersion {
+                            Text(versión).font(.system(size: 11)).foregroundStyle(.tertiary)
+                        }
+                        Spacer()
+                        if let bytes = título.bytes {
+                            Text(ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file))
+                                .font(.system(size: 11))
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Las llaves
+
+    private var keysSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(s[.switchKeysSection]).font(.system(size: 12, weight: .semibold))
+                Spacer()
+                Button(s[.switchKeysChoose]) { model.chooseSwitchKeys() }
+                    .controlSize(.small)
+                if model.switchKeys != nil {
+                    Button(s[.switchKeysForget]) { model.forgetSwitchKeys() }
+                        .controlSize(.small)
+                }
+            }
+
+            if let llaves = model.switchKeys {
+                // Cuántas y de qué generación. **Nunca cuáles**: este panel se fotografía para
+                // pedir ayuda, y una llave ahí dentro acabaría publicada.
+                Text(s(.switchKeysFound, String(llaves.names.count))
+                     + " · " + s(.switchKeysGenerations, String(llaves.keyGenerations)))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                if let ruta = model.switchKeysURL {
+                    Text(ruta.path)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                }
+            } else {
+                Text(s[.switchKeysMissingBody])
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    // MARK: - El emulador
+
+    private var emulatorSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(s[.switchEmulatorSection]).font(.system(size: 12, weight: .semibold))
+                Spacer()
+                Button(s[.switchEmulatorChoose]) { model.chooseSwitchEmulator() }
+                    .controlSize(.small)
+            }
+
+            if let encontrado = model.switchEmulator {
+                Text(s(.switchEmulatorFound, encontrado.emulator.name))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                Text(encontrado.app.path)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.head)
+            } else {
+                Text(s[.switchEmulatorMissingBody])
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if model.isRebuildingPackage {
+                ProgressView(value: model.rebuildProgress)
+                    .progressViewStyle(.linear)
+                Text(s[.statusRebuildingPackage]).font(.system(size: 11)).foregroundStyle(.secondary)
+            } else if let ocupado = model.rebuiltPackagesSize {
+                Text(s(.switchCacheNote, ocupado)).font(.system(size: 11)).foregroundStyle(.tertiary)
             }
         }
     }
@@ -80,6 +207,11 @@ struct EmulationPane: View {
     private func romFacts(for rom: URL) -> [String] {
         var hechos: [String] = []
         if let tamaño = rom.formattedFileSize { hechos.append(tamaño) }
+        if let envoltorio = model.switchFacts.container {
+            hechos.append(".\(envoltorio.fileExtension)")
+            hechos.append(s[model.switchFacts.evidence.textKey])
+            return hechos
+        }
         if let máquina = model.romFacts.platform {
             hechos.append(máquina.name)
             hechos.append(s[máquina.architecture.textKey])
@@ -191,7 +323,9 @@ struct EmulationPane: View {
 
     @ViewBuilder
     private var romNotices: some View {
-        if model.selectedRom != nil {
+        if model.switchFacts.isRecognised {
+            switchNotices
+        } else if model.selectedRom != nil {
             if !model.romFacts.isRecognised, !model.isInspectingRom {
                 NoticeBanner(kind: .failure, title: s[.romUnknownTitle], message: s[.romUnknownBody])
             }
@@ -212,9 +346,56 @@ struct EmulationPane: View {
         }
     }
 
+    /// Los tres avisos que se dan **antes** de que el usuario espere veinte minutos para nada: que
+    /// faltan las llaves, que las suyas se quedan cortas, y que el paquete hay que rehacerlo.
+    @ViewBuilder
+    private var switchNotices: some View {
+        if model.switchKeys == nil {
+            NoticeBanner(
+                kind: .warning,
+                title: s[.switchKeysMissingTitle],
+                message: s[.switchKeysMissingBody]
+            )
+        } else if let necesaria = model.switchFacts.requiredKeyGeneration,
+                  let tengo = model.switchKeys?.keyGenerations,
+                  model.switchFacts.keysAreTooOld(available: tengo) {
+            NoticeBanner(
+                kind: .failure,
+                title: s[.switchKeysMissingTitle],
+                message: s(.switchKeysTooOld, String(necesaria + 1), String(tengo))
+            )
+        }
+
+        if model.switchEmulator == nil {
+            NoticeBanner(
+                kind: .warning,
+                title: s[.switchEmulatorMissingTitle],
+                message: s[.switchEmulatorMissingBody]
+            )
+        }
+
+        if model.switchFacts.needsDecompression {
+            NoticeBanner(
+                kind: model.canRebuildPackages ? .info : .warning,
+                title: s[.switchCompressedTitle],
+                message: model.canRebuildPackages
+                    ? s[.switchCompressedBody]
+                    // De un cartucho comprimido sale un `.nsp`, no un cartucho. Se dice, porque
+                    // quien esperaba recuperar su `.xci` tal cual se lo merece antes y no después.
+                        + (model.switchFacts.container?.isCartridge == true
+                           ? " " + s[.switchCartridgeNote] : "")
+                    : s[.errNoZstd]
+            )
+        }
+    }
+
     @ViewBuilder
     private var retroArchState: some View {
-        if model.retroArchURL == nil {
+        // Con un paquete de la consola híbrida delante, RetroArch no pinta nada: ese juego no lo
+        // va a abrir él. Enseñar «instala RetroArch» sería mandar a instalar lo que no hace falta.
+        if model.switchFacts.isRecognised {
+            EmptyView()
+        } else if model.retroArchURL == nil {
             NoticeBanner(
                 kind: .warning,
                 title: s[.retroMissingTitle],
@@ -244,7 +425,7 @@ struct EmulationPane: View {
     }
 
     private var disclaimer: some View {
-        Text(s[.emulationDisclaimer])
+        Text(model.switchFacts.isRecognised ? s[.switchDisclaimer] : s[.emulationDisclaimer])
             .font(.system(size: 11))
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)

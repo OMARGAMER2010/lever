@@ -122,6 +122,21 @@ public enum TextKey: String, CaseIterable, Sendable {
     case playRom, playingRom, statusGettingCore, statusLaunchingRetro
     case errNoRetroArch, errNoCore, errUnknownRom, errPickRom, emulationDisclaimer
 
+    // La consola híbrida: paquetes, contenidos y llaves
+    case switchKindApplication, switchKindPatch, switchKindAddOn
+    case switchEvidenceNca, switchEvidenceTicket, switchEvidenceXml, switchEvidenceContainer
+    case switchSection, switchTitles, switchNoTitles, switchVersion
+    case switchCompressedTitle, switchCompressedBody
+    case switchKeysSection, switchKeysMissingTitle, switchKeysMissingBody
+    case switchKeysFound, switchKeysChoose, switchKeysForget, switchKeysGenerations
+    case switchEmulatorSection, switchEmulatorMissingTitle, switchEmulatorMissingBody
+    case switchEmulatorFound, switchEmulatorChoose
+    case dropSwitchSubtitle, switchDisclaimer
+    case switchRebuildTitle, switchRebuildBody, switchCacheNote, switchKeysTooOld
+    case switchCartridgeNote
+    case statusRebuildingPackage, statusLaunchingEmulator, logPackageRebuilt
+    case errNoSwitchEmulator, errNoZstd, errRebuildFailed, errKeysUnusable
+
     // Android: los formatos que envuelven varios .apk
     case bundleKindXapk, bundleKindApks, bundleKindAab
     case bundleParts, bundleExpansions, bundleModules, bundleUnreadableTitle, bundleUnreadableBody

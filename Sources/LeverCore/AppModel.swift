@@ -129,6 +129,15 @@ public final class AppModel: ObservableObject {
     @Published public private(set) var romFacts = RomFacts()
     @Published public private(set) var isInspectingRom = false
     @Published public private(set) var isPlayingRom = false
+    /// Lo leído de un paquete de la consola híbrida, que no la emula ningún núcleo de RetroArch
+    /// sino un programa aparte. Va en su propia variable y no en `romFacts` porque son dos caminos
+    /// distintos de arriba abajo: otro motor, otras llaves y otra forma de lanzar.
+    @Published public private(set) var switchFacts = SwitchFacts()
+    /// Las llaves del usuario, leídas de su archivo. **Se recargan, no se guardan**: viven en
+    /// memoria mientras la app está abierta y no se copian a ningún sitio de Lever.
+    @Published public private(set) var switchKeys: SwitchKeys?
+    @Published public private(set) var isRebuildingPackage = false
+    @Published public private(set) var rebuildProgress: Double = 0
     /// El perfil de controles que se va a usar. Sale de la biblioteca al elegir el juego, y el
     /// usuario lo cambia en el diagrama.
     @Published public var controlProfile = ControlProfile.standard
@@ -278,8 +287,36 @@ public final class AppModel: ObservableObject {
     }
 
     public var canPlayRom: Bool {
-        guard let selectedRom, !isPlayingRom, romFacts.isRecognised else { return false }
-        return fileManager.isReadableFile(atPath: selectedRom.path) && retroArchURL != nil
+        guard let selectedRom, !isPlayingRom, !isRebuildingPackage else { return false }
+        guard fileManager.isReadableFile(atPath: selectedRom.path) else { return false }
+        // Dos caminos: una ROM la ejecuta RetroArch con su núcleo, y un paquete de la consola
+        // híbrida un programa aparte. Sin el de cada uno no hay nada que lanzar.
+        if switchFacts.isRecognised { return switchEmulator != nil }
+        return romFacts.isRecognised && retroArchURL != nil
+    }
+
+    /// El emulador de la consola híbrida que haya en el Mac, con el que el usuario señalara a mano
+    /// por delante.
+    public var switchEmulator: (emulator: SwitchEmulator, app: URL)? {
+        SwitchTools.locate(preferring: Preferences.switchEmulatorURL, fileManager: fileManager)
+    }
+
+    /// Dónde está el `prod.keys` que se está usando: el que el usuario eligiera, o el que ya tenga
+    /// puesto en la carpeta de su emulador.
+    public var switchKeysURL: URL? {
+        SwitchKeys.locate(preferring: Preferences.switchKeysURL, fileManager: fileManager)
+    }
+
+    /// Si falta `zstd`, que es lo único que hace falta para rehacer un paquete comprimido y que
+    /// macOS no trae.
+    public var canRebuildPackages: Bool { SwitchTools.zstdURL(fileManager: fileManager) != nil }
+
+    /// Lo que ocupan los paquetes ya rehechos, para poder decirlo antes de que alguien se pregunte
+    /// dónde se le fue el disco.
+    public var rebuiltPackagesSize: String? {
+        let bytes = portLibrary.switchPackagesSize()
+        guard bytes > 0 else { return nil }
+        return ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
     }
 
     /// Los controles que de verdad existen en esta consola. Enseñar dieciséis botones para una
@@ -380,6 +417,9 @@ public final class AppModel: ObservableObject {
         self.rotationChoice = Preferences.rotationChoice
         self.playFullscreen = Preferences.playFullscreen
         self.resumeSessions = Preferences.resumeSessions
+        self.switchKeys = SwitchKeys.locate(
+            preferring: Preferences.switchKeysURL, fileManager: fileManager
+        ).flatMap(SwitchKeys.load)
         self.recentFiles = RecentFiles.load(fileManager: fileManager)
         self.runtimeStatus = locator.locate(customWineURL: Preferences.customWineURL)
         self.wineIsBlocked = Self.detectBlockedWine(in: runtimeStatus)
@@ -495,7 +535,8 @@ public final class AppModel: ObservableObject {
             } else if SupportedFileKind.apk.accepts(url) {
                 acceptApk(url)
                 handled = true
-            } else if SupportedFileKind.rom.accepts(url), RomInspector.inspect(url).isRecognised {
+            } else if SupportedFileKind.rom.accepts(url),
+                      RomInspector.inspect(url).isRecognised || SwitchInspector.inspect(url).isRecognised {
                 // Antes que los comprimidos porque un `.iso` y un `.bin` los reclaman los dos, y
                 // aquí decide lo que el archivo tiene dentro, no cómo se llama.
                 acceptRom(url)
@@ -1483,14 +1524,30 @@ public final class AppModel: ObservableObject {
     private func inspectRom() {
         guard let rom = selectedRom else {
             romFacts = RomFacts()
+            switchFacts = SwitchFacts()
             return
         }
         isInspectingRom = true
+        let llaves = switchKeys
         Task { [weak self] in
             // Fuera del hilo principal: una imagen de disco puede pesar gigas y hay que leerle la
             // cabecera.
-            let leído = await Task.detached { RomInspector.inspect(rom) }.value
+            //
+            // Primero el paquete de la consola híbrida y después la ROM, y no al revés: reconocerlo
+            // cuesta dieciséis bytes, y así un `.nsp` renombrado a `.nes` se descubre igual. Lo
+            // contrario —fiarse de la extensión— es justo lo que este proyecto no hace.
+            let paquete = await Task.detached { SwitchInspector.inspect(rom, keys: llaves) }.value
             guard let self, selectedRom == rom else { return }
+            if paquete.isRecognised {
+                switchFacts = paquete
+                romFacts = RomFacts(bytes: paquete.bytes)
+                isInspectingRom = false
+                return
+            }
+            switchFacts = SwitchFacts()
+
+            let leído = await Task.detached { RomInspector.inspect(rom) }.value
+            guard selectedRom == rom else { return }
             romFacts = leído
             // Los controles se cargan aquí porque dependen de qué consola sea: el perfil de la
             // Nintendo 64 no vale para una Game Boy.
@@ -1524,7 +1581,13 @@ public final class AppModel: ObservableObject {
     /// Un solo botón porque es una sola intención. Y la configuración se escribe **cada vez**: es
     /// lo que hace que un cambio en los controles se note sin tener que reiniciar nada.
     public func playRom() {
-        guard !isPlayingRom else { return }
+        guard !isPlayingRom, !isRebuildingPackage else { return }
+        // Un paquete de la consola híbrida va por otro camino de arriba abajo: no hay núcleo que
+        // bajar, no hay configuración que escribir, y puede haber que rehacerlo antes.
+        if switchFacts.isRecognised {
+            playSwitchPackage()
+            return
+        }
         guard let rom = selectedRom, let plataforma = romFacts.platform else {
             showError(strings[.errPickRom])
             return
@@ -1577,6 +1640,106 @@ public final class AppModel: ObservableObject {
                 showError(error.localizedDescription)
             }
         }
+    }
+
+    /// Rehace el paquete si venía comprimido y lo abre con el emulador que haya.
+    ///
+    /// Dos pasos y no uno porque el primero puede tardar veinte minutos: ningún emulador abre un
+    /// `.nsz`, así que hay que descomprimirlo antes, y eso pesa lo que pesa el juego. Se hace una
+    /// vez y se guarda; la segunda vez se abre directo.
+    public func playSwitchPackage() {
+        guard let paquete = selectedRom, switchFacts.isRecognised else {
+            showError(strings[.errPickRom])
+            return
+        }
+        guard let emulador = switchEmulator else {
+            showError(strings[.errNoSwitchEmulator])
+            return
+        }
+
+        clearError()
+        isPlayingRom = true
+        let hechos = switchFacts
+        let session = ProcessSession()
+        installSession = session
+
+        Task { [weak self] in
+            guard let self else { return }
+            defer { isPlayingRom = false; isRebuildingPackage = false; installSession = nil }
+
+            var aJugar = paquete
+            if hechos.needsDecompression {
+                guard let zstd = SwitchTools.zstdURL(fileManager: fileManager) else {
+                    showError(strings[.errNoZstd])
+                    return
+                }
+                isRebuildingPackage = true
+                rebuildProgress = 0
+                activityMessage = strings[.statusRebuildingPackage]
+                add(activityMessage, level: .info)
+                do {
+                    aJugar = try await SwitchTools.rebuild(
+                        package: paquete, facts: hechos, into: portLibrary.switchPackagesURL,
+                        runner: runner, session: session, zstd: zstd,
+                        onProgress: { hecho in
+                            Task { @MainActor [weak self] in self?.rebuildProgress = hecho }
+                        }
+                    )
+                } catch {
+                    activityMessage = strings[.statusFailed]
+                    showError(strings[.errRebuildFailed])
+                    return
+                }
+                isRebuildingPackage = false
+                add(strings(.logPackageRebuilt, aJugar.lastPathComponent), level: .success)
+            }
+
+            activityMessage = strings[.statusLaunchingEmulator]
+            do {
+                try SwitchTools.open(emulator: emulador.app, game: aJugar)
+                // Como con RetroArch y como con el emulador de Android: el juego es otro programa
+                // y sigue por su cuenta. Lever no se queda esperando a que alguien termine.
+                activityMessage = strings[.statusApkRunning]
+            } catch {
+                activityMessage = strings[.statusFailed]
+                showError(error.localizedDescription)
+            }
+        }
+    }
+
+    // MARK: - Las llaves del usuario
+
+    /// Vuelve a leer el `prod.keys`. Se llama al arrancar y cada vez que el usuario cambia de
+    /// archivo; el contenido no se guarda en ninguna parte.
+    public func reloadSwitchKeys() {
+        switchKeys = switchKeysURL.flatMap(SwitchKeys.load)
+    }
+
+    public func chooseSwitchKeys() {
+        guard let url = FileActions.chooseAnyFile(
+            title: strings[.switchKeysChoose], startingAt: SwitchKeys.searchFolders().first
+        ) else { return }
+        guard let llaves = SwitchKeys.load(from: url), llaves.isUsable else {
+            showError(strings[.errKeysUnusable])
+            return
+        }
+        Preferences.switchKeysURL = url
+        switchKeys = llaves
+        // Cuántas, nunca cuáles: este renglón acaba en el registro que la gente copia y pega.
+        add(strings(.switchKeysFound, String(llaves.names.count)), level: .success)
+        inspectRom()
+    }
+
+    public func forgetSwitchKeys() {
+        Preferences.switchKeysURL = nil
+        reloadSwitchKeys()
+        inspectRom()
+    }
+
+    public func chooseSwitchEmulator() {
+        guard let url = FileActions.chooseApplication(title: strings[.switchEmulatorChoose]) else { return }
+        Preferences.switchEmulatorURL = url
+        objectWillChange.send()
     }
 
     /// Deja escrita la configuración con la que se lanza. Es un archivo de Lever, no el del
