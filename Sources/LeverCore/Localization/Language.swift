@@ -117,6 +117,8 @@ public enum TextKey: String, CaseIterable, Sendable {
     case controlsPressPrompt, controlsUnassigned, controlsListening, controlsGamepads
     case controlsNoGamepad, controlsKeyboardTab, controlsGamepadTab
     case controlsButton, controlsAxis, controlsHat, controlsGamepadHint
+    case retroSessionSection, retroFullscreen, retroFullscreenNote
+    case retroResume, retroResumeNote
     case playRom, playingRom, statusGettingCore, statusLaunchingRetro
     case errNoRetroArch, errNoCore, errUnknownRom, errPickRom, emulationDisclaimer
 

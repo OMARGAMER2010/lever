@@ -59,12 +59,17 @@ public enum RetroConfig {
         states: URL,
         systemFiles: URL,
         data: URL,
-        windowed: Bool = true
+        windowed: Bool = true,
+        resumeSessions: Bool = true
     ) -> String {
         var líneas: [String] = [
             "# Configuración escrita por Lever. No la edites a mano: se sobrescribe al lanzar.",
             línea("video_fullscreen", valor: windowed ? "false" : "true"),
-            línea("video_windowed_fullscreen", valor: "false"),
+            // **Pantalla completa sin cambiar el modo del monitor.** La otra forma —cambiar la
+            // resolución de verdad— deja el escritorio y las demás ventanas reordenadas al salir,
+            // y si el emulador se cierra mal el Mac se queda en la resolución del juego. Una
+            // ventana sin bordes del tamaño de la pantalla se ve igual y no toca nada.
+            línea("video_windowed_fullscreen", valor: windowed ? "false" : "true"),
             línea("savefile_directory", valor: saves.path),
             línea("savestate_directory", valor: states.path),
             // Donde el núcleo busca las BIOS que no se pueden descargar.
@@ -103,8 +108,35 @@ public enum RetroConfig {
             línea("pause_nonactive", valor: "false"),
             // A tamaño 1 la ventana sale del tamaño de una consola de los ochenta, que en una
             // pantalla de hoy es un sello.
-            línea("video_scale", valor: "3.000000")
+            línea("video_scale", valor: "3.000000"),
+            // **La partida no se pierde al cerrar.** RetroArch solo vuelca la memoria de la pila
+            // —la de los juegos que guardaban solos— al cerrar el contenido, así que un cierre a
+            // lo bruto o un apagón se lleva todo lo hecho. Volcándola cada diez segundos, lo que
+            // se pierde como mucho son diez segundos.
+            línea("autosave_interval", valor: "10")
         ]
+
+        // **Los atajos hay que escribirlos.** Una configuración pasada con `-c` que no los nombre
+        // deja a RetroArch **sin ninguno**: no hereda los suyos de fábrica. Comprobado con la
+        // tecla F —el atajo de pantalla completa de toda la vida— que no hacía nada hasta escribir
+        // esta línea. Es la causa de que no se pudiera poner un juego a pantalla completa.
+        //
+        // Solo estos tres, y los tres con la tecla que RetroArch les da: son teclas que ninguna
+        // disposición de juego usa, así que no le quitan nada al mando ni al teclado. Los demás
+        // atajos se quedan fuera a propósito, y eso también resuelve un problema: varios caen en
+        // letras que sí usa la disposición de fábrica —la `h` reinicia la partida, la `r` rebobina—
+        // y sin declararlos no hay forma de dispararlos sin querer.
+        líneas.append(línea("input_toggle_fullscreen", valor: "f"))
+        líneas.append(línea("input_menu_toggle", valor: "f1"))
+        // Salir por Escape no es una comodidad: es la forma de que el cierre sea **limpio**, y un
+        // cierre limpio es el que guarda la partida. Matar la ventana a lo bruto no guarda nada.
+        líneas.append(línea("input_exit_emulator", valor: "escape"))
+
+        // Y el momento exacto: al cerrar se guarda un estado automático y al abrir se retoma ahí.
+        // Es lo único que salva a las consolas **sin pila**, que son casi todas las de ocho bits:
+        // ahí no hay nada que volcar, y sin esto cada sesión empieza desde el principio.
+        líneas.append(línea("savestate_auto_save", valor: resumeSessions ? "true" : "false"))
+        líneas.append(línea("savestate_auto_load", valor: resumeSessions ? "true" : "false"))
 
         // Una consola de dos pantallas se maneja con el dedo, y en un Mac el dedo es el ratón.
         // Sin decírselo al núcleo, la pantalla táctil no responde a nada.

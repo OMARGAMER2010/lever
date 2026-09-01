@@ -19,6 +19,10 @@ enum EmulationTests {
         try testTheMostSpecificProfileWins()
         try testOnlyOffersTheButtonsTheConsoleHas()
         try testTranslatesMacKeysToRetroArchNames()
+        try testOpensFullScreenWhenAsked()
+        try testTheSessionSurvivesClosingTheGame()
+        try testWritesTheShortcutsBecauseRetroArchInheritsNone()
+        try testNoTwoControlsShareAKey()
     }
 
     // MARK: - Las máquinas
@@ -307,5 +311,88 @@ enum EmulationTests {
             try expect(facts.internalName == interno,
                        "\(esperada): el nombre de dentro es «\(interno)», salió «\(facts.internalName ?? "nada")»")
         }
+    }
+}
+
+extension EmulationTests {
+    private static func config(windowed: Bool, resume: Bool) -> [String: String] {
+        let texto = RetroConfig.makeConfig(
+            profile: .standard, platform: nil,
+            saves: URL(fileURLWithPath: "/tmp/p"), states: URL(fileURLWithPath: "/tmp/e"),
+            systemFiles: URL(fileURLWithPath: "/tmp/s"), data: URL(fileURLWithPath: "/tmp/d"),
+            windowed: windowed, resumeSessions: resume
+        )
+        var leído: [String: String] = [:]
+        for línea in texto.split(separator: "\n") {
+            let partes = línea.split(separator: "\"", maxSplits: 2)
+            guard partes.count >= 2 else { continue }
+            leído[partes[0].trimmingCharacters(in: .whitespaces)
+                .replacingOccurrences(of: " =", with: "")] = String(partes[1])
+        }
+        return leído
+    }
+
+    /// **Pantalla completa sin cambiar el modo del monitor.** Cambiar la resolución de verdad deja
+    /// el escritorio reordenado al salir, y si el emulador se cierra mal el Mac se queda con la
+    /// resolución del juego puesta. Las dos claves van juntas o no sirve de nada.
+    static func testOpensFullScreenWhenAsked() throws {
+        let entera = config(windowed: false, resume: true)
+        try expect(entera["video_fullscreen"] == "true", "a pantalla completa")
+        try expect(entera["video_windowed_fullscreen"] == "true",
+                   "y sin tocar la resolución del monitor")
+
+        let ventana = config(windowed: true, resume: true)
+        try expect(ventana["video_fullscreen"] == "false", "y en ventana cuando no se pide")
+        try expect(ventana["video_windowed_fullscreen"] == "false", "las dos vuelven atrás")
+    }
+
+    /// **Una configuración pasada con `-c` que no nombre los atajos deja a RetroArch sin ninguno**:
+    /// no hereda los suyos de fábrica. Es la causa de que la tecla F no pusiera el juego a pantalla
+    /// completa. Y explica por qué solo se declaran tres: los demás caen en letras que la
+    /// disposición de fábrica usa para jugar, y no declararlos es lo que impide dispararlos sin
+    /// querer.
+    static func testWritesTheShortcutsBecauseRetroArchInheritsNone() throws {
+        let escrito = config(windowed: true, resume: true)
+        try expect(escrito["input_toggle_fullscreen"] == "f", "la tecla de pantalla completa")
+        try expect(escrito["input_menu_toggle"] == "f1", "y el menú del propio emulador")
+        // Salir por Escape es lo que hace que el cierre sea limpio, y el cierre limpio es el que
+        // guarda la partida.
+        try expect(escrito["input_exit_emulator"] == "escape", "y una salida limpia")
+        // Los que caen en teclas de juego se quedan sin declarar **a propósito**: la `h` reinicia
+        // la partida y la `r` rebobina, y las dos se usan para jugar.
+        try expect(escrito["input_reset"] == nil, "reiniciar no se declara: su tecla es de juego")
+        try expect(escrito["input_rewind"] == nil, "rebobinar tampoco")
+    }
+
+    /// Dos controles en la misma tecla es uno de los dos que no responde, y nada lo dice.
+    static func testNoTwoControlsShareAKey() throws {
+        var vistas: [String: RetroPadInput] = [:]
+        for (control, enlace) in ControlProfile.standard.keyboard {
+            guard case .key(let tecla) = enlace else { continue }
+            try expect(vistas[tecla] == nil,
+                       "\(control.rawValue) y \(vistas[tecla]?.rawValue ?? "") comparten la «\(tecla)»")
+            vistas[tecla] = control
+        }
+        // Y ninguna puede ser la de pantalla completa, que Lever declara como atajo.
+        try expect(vistas["f"] == nil || vistas["f"] == .leftStickLeft,
+                   "la «f» es la de pantalla completa: solo la palanca la comparte, y se sabe")
+    }
+
+    /// Lo que hace que cerrar el juego no borre la partida. Son dos cosas distintas y las dos
+    /// hacen falta: el estado automático salva a las consolas **sin pila** —casi todas las de
+    /// ocho bits, donde no hay nada que volcar— y el volcado periódico salva a las que sí la
+    /// tenían de un cierre a lo bruto.
+    static func testTheSessionSurvivesClosingTheGame() throws {
+        let guardando = config(windowed: true, resume: true)
+        try expect(guardando["savestate_auto_save"] == "true", "al cerrar se guarda el momento")
+        try expect(guardando["savestate_auto_load"] == "true", "y al abrir se retoma ahí")
+
+        let sinRetomar = config(windowed: true, resume: false)
+        try expect(sinRetomar["savestate_auto_save"] == "false", "quien no lo quiera, lo apaga")
+        try expect(sinRetomar["savestate_auto_load"] == "false", "y tampoco se le retoma nada")
+        // El volcado de la pila **no** es opcional: apagarlo no da ninguna ventaja y pierde
+        // partidas que el propio juego creía guardadas.
+        try expect(sinRetomar["autosave_interval"] == "10",
+                   "la memoria de la pila se vuelca igual: \(sinRetomar["autosave_interval"] ?? "nada")")
     }
 }

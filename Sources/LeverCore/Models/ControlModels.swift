@@ -172,7 +172,9 @@ public struct ControlProfile: Equatable, Sendable, Codable, Identifiable {
         .up: .key("up"), .down: .key("down"), .left: .key("left"), .right: .key("right"),
         .a: .key("x"), .b: .key("z"), .x: .key("s"), .y: .key("a"),
         .l: .key("q"), .r: .key("w"), .l2: .key("e"), .r2: .key("r"),
-        .l3: .key("d"), .r3: .key("f"),
+        // La `v` y no la `f`: la `f` ya la usa la palanca izquierda, y dos controles en la misma
+        // tecla es uno de los dos que no responde. Además la `f` es la de pantalla completa.
+        .l3: .key("d"), .r3: .key("v"),
         .start: .key("enter"), .select: .key("rshift"),
         .leftStickUp: .key("t"), .leftStickDown: .key("g"),
         .leftStickLeft: .key("f"), .leftStickRight: .key("h"),

@@ -134,6 +134,14 @@ public final class AppModel: ObservableObject {
     @Published public var controlProfile = ControlProfile.standard
     /// A qué se le van a guardar los cambios: a todo, a esta consola o a este juego.
     @Published public var controlScope = ControlScope.global
+    /// Si el juego se abre ocupando la pantalla entera.
+    @Published public var playFullscreen: Bool {
+        didSet { Preferences.playFullscreen = playFullscreen }
+    }
+    /// Si al cerrar se guarda el momento exacto y al volver se retoma ahí.
+    @Published public var resumeSessions: Bool {
+        didSet { Preferences.resumeSessions = resumeSessions }
+    }
 
     // MARK: - Abiertos hace poco
 
@@ -370,6 +378,8 @@ public final class AppModel: ObservableObject {
         self.extractIntoSubfolder = Preferences.extractIntoSubfolder
         self.revealWhenDone = Preferences.revealWhenDone
         self.rotationChoice = Preferences.rotationChoice
+        self.playFullscreen = Preferences.playFullscreen
+        self.resumeSessions = Preferences.resumeSessions
         self.recentFiles = RecentFiles.load(fileManager: fileManager)
         self.runtimeStatus = locator.locate(customWineURL: Preferences.customWineURL)
         self.wineIsBlocked = Self.detectBlockedWine(in: runtimeStatus)
@@ -1584,7 +1594,8 @@ public final class AppModel: ObservableObject {
         let archivo = datos.appendingPathComponent("lever.cfg")
         let texto = RetroConfig.makeConfig(
             profile: controlProfile, platform: platform,
-            saves: partidas, states: estados, systemFiles: sistema, data: datos
+            saves: partidas, states: estados, systemFiles: sistema, data: datos,
+            windowed: !playFullscreen, resumeSessions: resumeSessions
         )
         try texto.write(to: archivo, atomically: true, encoding: .utf8)
         return archivo

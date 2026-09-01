@@ -380,6 +380,16 @@ son las consolas: una ROM no se ejecuta ni se instala, se **interpreta**.
 - Probado de punta a punta con `nestest.nes`, la ROM de dominio público con la que se validan los
   emuladores de NES: desde la ventana de Lever, el panel dice «NES / Famicom · 8 bits · reconocido
   por su cabecera», el botón descarga el núcleo y **el juego arranca y dibuja**.
+- **La partida**: dos casillas en el panel, y las dos comprobadas ejecutándolas.
+  - *Abrir a pantalla completa*: el juego arranca ocupando la pantalla entera —medido, la ventana
+    sale del tamaño del monitor— y dentro se cambia con la tecla F en los dos sentidos. Se hace con
+    una ventana sin bordes y no cambiando la resolución del monitor: la otra forma deja el
+    escritorio reordenado al salir y, si el emulador se cierra mal, el Mac se queda en la
+    resolución del juego.
+  - *Continuar donde lo dejaste*: al cerrar se guarda un estado automático y al abrir se retoma.
+    Comprobado moviendo el cursor del menú de `nestest` cinco líneas, saliendo y volviendo a
+    abrir: el cursor estaba donde se dejó. Aparte, la memoria de la pila se vuelca cada diez
+    segundos, que es lo que salva a los juegos que guardaban solos de un cierre a lo bruto.
 
 #### El mando físico
 
@@ -500,9 +510,20 @@ comprobado está en cada motor, en su párrafo de «lo que sigue sin comprobarse
 - **`menu_driver = ozone` deja la ventana en negro** si RetroArch no tiene su paquete de recursos
   gráficos, que la versión de Homebrew no trae. No hay error en ninguna parte. `rgui` va dibujado
   dentro del programa y siempre funciona.
-- **RetroArch reescribe el archivo de configuración al salir.** Sesenta líneas vuelven convertidas
-  en tres mil trescientas con todo lo suyo dentro, y el siguiente lanzamiento ya no es el que se
-  pidió. `config_save_on_exit = false`.
+- **RetroArch reescribe el archivo de configuración, y `config_save_on_exit = false` no lo evita.**
+  Las noventa líneas que escribe Lever vuelven convertidas en tres mil trescientas con todo lo suyo
+  dentro, y pasa **mientras corre**, no al salir. Lo que lo deja sin efecto es que Lever reescribe el
+  archivo entero antes de cada lanzamiento: el juego siempre arranca con lo que Lever pidió. Sirve
+  para leer los valores de fábrica de RetroArch —el archivo hinchado los trae todos— pero no para
+  fiarse de lo que hay ahí escrito.
+- **Una configuración pasada con `-c` que no nombre los atajos deja a RetroArch sin ninguno.** No
+  hereda los suyos de fábrica: los que la configuración no declare, no existen. El síntoma es que
+  la tecla F no pone el juego a pantalla completa, y no hay ningún error. Lever declara tres —`f`
+  para pantalla completa, `f1` para el menú y `escape` para salir— y deja fuera el resto a
+  propósito, porque varios caen en letras que la disposición de fábrica usa para jugar: la `h`
+  **reinicia la partida** y la `r` rebobina. No declararlos es lo que impide dispararlos sin querer.
+- **Salir con Escape pide confirmación**: `quit_press_twice` viene puesto y hay que pulsarla dos
+  veces. Importa porque el cierre limpio es el que guarda la partida; matar la ventana no guarda.
 - RetroArch **pausa el juego cuando su ventana no tiene el foco**, y un emulador lanzado desde otra
   app no lo tiene: se abre parado, con el icono de pausa y sin nada que lo explique.
 - **`strings` esconde los nombres de tres letras.** Por omisión solo saca cadenas de cuatro o más,

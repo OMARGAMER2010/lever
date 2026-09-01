@@ -244,6 +244,12 @@ public struct Strings: Sendable {
         .controlsHat: "cruceta %@",
         .controlsGamepadHint: "El mando se asigna con el mando: pulsa una casilla y luego el botón "
             + "que quieras. La tecla que tenga puesta se queda como está.",
+        .retroSessionSection: "La partida",
+        .retroFullscreen: "Abrir a pantalla completa",
+        .retroFullscreenNote: "Dentro del juego también se cambia con la tecla F.",
+        .retroResume: "Continuar donde lo dejaste",
+        .retroResumeNote: "Al cerrar se guarda el momento exacto y al volver a abrirlo se retoma "
+            + "ahí. Sin esto, las consolas que no tenían pila empiezan siempre desde el principio.",
         .playRom: "Jugar",
         .playingRom: "Jugando",
         .statusGettingCore: "Descargando el núcleo de %@…",
@@ -683,6 +689,12 @@ public struct Strings: Sendable {
         .controlsHat: "d-pad %@",
         .controlsGamepadHint: "The controller is mapped with the controller: click a slot and then "
             + "press the button you want. The key it already has stays put.",
+        .retroSessionSection: "The game session",
+        .retroFullscreen: "Open full screen",
+        .retroFullscreenNote: "Inside the game the F key toggles it too.",
+        .retroResume: "Pick up where you left off",
+        .retroResumeNote: "Closing the game saves the exact moment, and opening it again resumes "
+            + "there. Without this, consoles that had no battery always start from scratch.",
         .playRom: "Play",
         .playingRom: "Playing",
         .statusGettingCore: "Downloading the %@ core…",

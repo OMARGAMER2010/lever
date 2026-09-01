@@ -68,6 +68,8 @@ struct EmulationPane: View {
                 Divider()
                 coreSection
                 Divider()
+                sessionSection
+                Divider()
                 controlsSection
             }
         }
@@ -112,6 +114,32 @@ struct EmulationPane: View {
                     .foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+        }
+    }
+
+    // MARK: - La partida
+
+    /// Las dos decisiones que se toman una vez y se quedan: cómo se abre el juego y qué pasa al
+    /// cerrarlo. Van juntas porque las dos hablan de la sesión, no del archivo.
+    private var sessionSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(s[.retroSessionSection]).font(.system(size: 12, weight: .semibold))
+
+            Toggle(s[.retroFullscreen], isOn: $model.playFullscreen)
+                .toggleStyle(.checkbox)
+                .font(.system(size: 12))
+            Text(s[.retroFullscreenNote])
+                .font(.system(size: 11))
+                .foregroundStyle(.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Toggle(s[.retroResume], isOn: $model.resumeSessions)
+                .toggleStyle(.checkbox)
+                .font(.system(size: 12))
+            Text(s[.retroResumeNote])
+                .font(.system(size: 11))
+                .foregroundStyle(.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

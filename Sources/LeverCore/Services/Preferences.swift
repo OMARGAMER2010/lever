@@ -13,6 +13,27 @@ public enum Preferences {
         static let lastDestinationPath = "lastDestinationPath"
         static let language = "language"
         static let rotationChoice = "rotationChoice"
+        static let playFullscreen = "playFullscreen"
+        static let resumeSessions = "resumeSessions"
+    }
+
+    /// Si los juegos de consola se abren ocupando la pantalla entera.
+    ///
+    /// De fábrica no, porque una ventana deja ver Lever al lado mientras se prueba algo. Pero es
+    /// una decisión que se toma una vez y se queda: quien juega, juega a pantalla completa.
+    public static var playFullscreen: Bool {
+        get { defaults.object(forKey: Key.playFullscreen) as? Bool ?? false }
+        set { defaults.set(newValue, forKey: Key.playFullscreen) }
+    }
+
+    /// Si al cerrar el juego se guarda el momento exacto y al volver a abrirlo se retoma ahí.
+    ///
+    /// De fábrica **sí**. Un emulador que se cierra sin más pierde la partida entera de las
+    /// consolas que no tenían pila, que son casi todas las de ocho bits, y en las que la tenían
+    /// pierde todo lo hecho desde el último punto de guardado del propio juego.
+    public static var resumeSessions: Bool {
+        get { defaults.object(forKey: Key.resumeSessions) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: Key.resumeSessions) }
     }
 
     public static var rotationChoice: RotationChoice {
