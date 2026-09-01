@@ -15,6 +15,7 @@ enum AppModelTests {
         try testApkNeedsADeviceBeforeInstalling()
         try testAndroidBundlesAreAccepted()
         try testHybridPackagesGoToTheConsoleTab()
+        try testAGameFolderIsAcceptedLikeAFile()
     }
 
     /// Un paquete de la consola híbrida entra por la pestaña de consolas, y la decisión se toma
@@ -44,6 +45,30 @@ enum AppModelTests {
         model.accept(droppedURLs: [mentira])
         try expect(model.selectedRom == nil, "llamarse .nsp no basta")
         try expect(model.lastError != nil, "y se dice que no se sabe qué es ese archivo")
+    }
+
+    /// Un juego de PS3 o de PS4 volcado de su disco es una **carpeta**, y hasta ahora Lever solo
+    /// aceptaba archivos. Sin esto, esas dos máquinas no entran por ningún sitio.
+    private static func testAGameFolderIsAcceptedLikeAFile() throws {
+        let model = emptyModel()
+        let fixture = try TemporaryFixture()
+        let gestor = FileManager.default
+
+        let juego = fixture.directoryURL.appendingPathComponent("Un Juego", isDirectory: true)
+        try gestor.createDirectory(at: juego.appendingPathComponent("PS3_GAME/USRDIR"),
+                                   withIntermediateDirectories: true)
+
+        model.accept(droppedURLs: [juego])
+        try expect(model.selectedRom == juego, "una carpeta de juego va a la pestaña de consolas")
+
+        // Y una carpeta cualquiera no: se dice que no se sabe qué es, en vez de aceptarla y
+        // dejar al usuario delante de una pestaña que no hace nada.
+        let cualquiera = fixture.directoryURL.appendingPathComponent("Fotos", isDirectory: true)
+        try gestor.createDirectory(at: cualquiera, withIntermediateDirectories: true)
+        model.clearRom()
+        model.accept(droppedURLs: [cualquiera])
+        try expect(model.selectedRom == nil, "una carpeta que no es un juego no se acepta")
+        try expect(model.lastError != nil, "y se dice")
     }
 
     private static func emptyModel() -> AppModel {

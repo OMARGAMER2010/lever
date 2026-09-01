@@ -40,27 +40,13 @@ public enum SwitchContainer: String, Equatable, Sendable, CaseIterable {
     public var fileExtension: String { rawValue }
 }
 
-/// Qué es un contenido dentro del paquete: el juego, un parche o algo añadido.
+/// Qué es un contenido dentro del paquete, con el vocabulario común de `ContentKind`.
 ///
 /// No hace falta descifrar nada para saberlo: va escrito en el propio identificador del título.
 /// Nintendo reservó los últimos tres dígitos para esto y todas las herramientas del mundo lo leen
-/// igual, así que es un hecho, no una suposición.
-public enum SwitchContentKind: String, Equatable, Sendable, CaseIterable {
-    /// El juego base. Su identificador acaba en `000`.
-    case application
-    /// Una actualización. Acaba en `800`, y el resto del identificador es el del juego.
-    case patch
-    /// Contenido descargable. Va numerado a partir del juego más `0x1000`.
-    case addOn
-
-    public var textKey: TextKey {
-        switch self {
-        case .application: return .switchKindApplication
-        case .patch: return .switchKindPatch
-        case .addOn: return .switchKindAddOn
-        }
-    }
-}
+/// igual, así que es un hecho, no una suposición. La familia PlayStation llega a lo mismo por otro
+/// camino —un campo de dos letras— y por eso el vocabulario es compartido.
+public typealias SwitchContentKind = ContentKind
 
 /// Un contenido concreto de los que vienen dentro del archivo.
 ///
@@ -123,6 +109,9 @@ public struct SwitchTitle: Equatable, Sendable, Identifiable {
         // Los DLC empiezan un bloque de 0x1000 por encima del juego, así que hay que bajar ese
         // bloque además de redondear: sin restarlo, un DLC parecería ser de un juego que no existe.
         case .addOn: return (titleId & ~0xFFF) &- 0x1000
+        // `kind(of:)` nunca devuelve esto para un identificador de esta consola: sus tres dígitos
+        // finales siempre caen en uno de los tres casos. Está por el vocabulario compartido.
+        case .other: return titleId
         }
     }
 }

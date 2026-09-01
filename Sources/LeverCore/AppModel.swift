@@ -136,6 +136,10 @@ public final class AppModel: ObservableObject {
     /// Las llaves del usuario, leídas de su archivo. **Se recargan, no se guardan**: viven en
     /// memoria mientras la app está abierta y no se copian a ningún sitio de Lever.
     @Published public private(set) var switchKeys: SwitchKeys?
+    /// Lo leído de un juego de la familia PlayStation. Va aparte por lo mismo que el de la consola
+    /// híbrida: otro motor, otro reconocimiento y otra forma de lanzar. Y aquí además el juego
+    /// puede ser una **carpeta**, que es lo que rompe el gesto de arrastrar un archivo.
+    @Published public private(set) var psFacts = PlayStationFacts()
     @Published public private(set) var isRebuildingPackage = false
     @Published public private(set) var rebuildProgress: Double = 0
     /// El perfil de controles que se va a usar. Sale de la biblioteca al elegir el juego, y el
@@ -292,12 +296,36 @@ public final class AppModel: ObservableObject {
         // Dos caminos: una ROM la ejecuta RetroArch con su núcleo, y un paquete de la consola
         // híbrida un programa aparte. Sin el de cada uno no hay nada que lanzar.
         if switchFacts.isRecognised { return switchEmulator != nil }
+        // PS1 y PSP se reconocen aquí pero **no** se lanzan aquí: las lleva RetroArch con su
+        // núcleo. Por eso la condición es tener máquina en el registro de programas aparte, y no
+        // simplemente haber reconocido el archivo.
+        if psMachine != nil { return psEmulator != nil }
         return romFacts.isRecognised && retroArchURL != nil
+    }
+
+    /// La máquina de la familia PlayStation que ejecuta un programa aparte, si es una de ellas.
+    /// Es `nil` para PS1 y PSP aunque el juego se haya reconocido: esas van por RetroArch.
+    public var psMachine: StandaloneMachine? { psFacts.machine }
+
+    public var psEmulator: (emulator: StandaloneEmulator, app: URL)? {
+        guard let máquina = psMachine, máquina.isEmulated else { return nil }
+        return StandaloneTools.locate(
+            machine: máquina,
+            preferring: Preferences.standaloneEmulatorURL(for: máquina.id),
+            fileManager: fileManager
+        )
+    }
+
+    /// Si el firmware o la BIOS que esa máquina exige ya está donde el emulador la busca. Se
+    /// comprueba antes de lanzar: un emulador sin su BIOS abre una ventana negra y no dice nada.
+    public var psFirmwareIsReady: Bool {
+        guard let máquina = psMachine, let emulador = psEmulator?.emulator else { return false }
+        return StandaloneTools.hasFirmware(machine: máquina, emulator: emulador, fileManager: fileManager)
     }
 
     /// El emulador de la consola híbrida que haya en el Mac, con el que el usuario señalara a mano
     /// por delante.
-    public var switchEmulator: (emulator: SwitchEmulator, app: URL)? {
+    public var switchEmulator: (emulator: StandaloneEmulator, app: URL)? {
         SwitchTools.locate(preferring: Preferences.switchEmulatorURL, fileManager: fileManager)
     }
 
@@ -535,8 +563,15 @@ public final class AppModel: ObservableObject {
             } else if SupportedFileKind.apk.accepts(url) {
                 acceptApk(url)
                 handled = true
+            } else if url.hasDirectoryPath, PlayStationInspector.inspect(url).isRecognised {
+                // Un juego de PS3 o de PS4 es una carpeta. Va antes que todo lo demás porque
+                // ninguna de las otras ramas mira dentro de una carpeta.
+                acceptRom(url)
+                handled = true
             } else if SupportedFileKind.rom.accepts(url),
-                      RomInspector.inspect(url).isRecognised || SwitchInspector.inspect(url).isRecognised {
+                      RomInspector.inspect(url).isRecognised
+                        || SwitchInspector.inspect(url).isRecognised
+                        || PlayStationInspector.inspect(url).isRecognised {
                 // Antes que los comprimidos porque un `.iso` y un `.bin` los reclaman los dos, y
                 // aquí decide lo que el archivo tiene dentro, no cómo se llama.
                 acceptRom(url)
@@ -1525,6 +1560,7 @@ public final class AppModel: ObservableObject {
         guard let rom = selectedRom else {
             romFacts = RomFacts()
             switchFacts = SwitchFacts()
+            psFacts = PlayStationFacts()
             return
         }
         isInspectingRom = true
@@ -1546,9 +1582,31 @@ public final class AppModel: ObservableObject {
             }
             switchFacts = SwitchFacts()
 
+            // Después la familia PlayStation, que también sabe más que la extensión: un `.bin` de
+            // PS2 y uno de Mega Drive se llaman igual, y solo entrando en el disco se distinguen.
+            let playstation = await Task.detached { PlayStationInspector.inspect(rom) }.value
+            guard selectedRom == rom else { return }
+            psFacts = playstation
+            if playstation.machine != nil {
+                romFacts = RomFacts(bytes: playstation.bytes)
+                isInspectingRom = false
+                return
+            }
+
             let leído = await Task.detached { RomInspector.inspect(rom) }.value
             guard selectedRom == rom else { return }
-            romFacts = leído
+            // PS1 y PSP las ejecuta RetroArch, pero quien las ha reconocido de verdad es el
+            // inspector de PlayStation: trae el número de serie leído del arranque del disco, que
+            // es mucho más de lo que da mirar la extensión. Se junta lo uno con lo otro.
+            if let máquina = playstation.machineId,
+               let plataforma = RetroPlatforms.platform(id: máquina == "ps1" ? "psx" : máquina) {
+                romFacts = RomFacts(
+                    platform: plataforma, evidence: .header,
+                    internalName: playstation.title ?? playstation.titleId, bytes: playstation.bytes
+                )
+            } else {
+                romFacts = leído
+            }
             // Los controles se cargan aquí porque dependen de qué consola sea: el perfil de la
             // Nintendo 64 no vale para una Game Boy.
             controlProfile = controlLibrary.resolved(platform: leído.platform, gameName: rom.lastPathComponent)
@@ -1586,6 +1644,10 @@ public final class AppModel: ObservableObject {
         // bajar, no hay configuración que escribir, y puede haber que rehacerlo antes.
         if switchFacts.isRecognised {
             playSwitchPackage()
+            return
+        }
+        if psMachine != nil {
+            playPlayStationGame()
             return
         }
         guard let rom = selectedRom, let plataforma = romFacts.platform else {
@@ -1705,6 +1767,67 @@ public final class AppModel: ObservableObject {
                 showError(error.localizedDescription)
             }
         }
+    }
+
+    /// Abre un juego de PS2, PS3, PS4 o Vita con el emulador que haya.
+    ///
+    /// Más corto que el de la consola híbrida porque aquí no hay nada que rehacer: el juego ya está
+    /// en un formato que el emulador abre. Lo único que cambia es **qué** se le pasa, que no
+    /// siempre es lo que el usuario soltó: de una carpeta de PS3 se lanza el ejecutable de dentro.
+    public func playPlayStationGame() {
+        guard let máquina = psMachine else {
+            showError(strings[.errPickRom])
+            return
+        }
+        guard máquina.isEmulated else {
+            showError(strings[.psNoEmulatorBody])
+            return
+        }
+        guard let emulador = psEmulator else {
+            showError(strings[.errNoPsEmulator])
+            return
+        }
+        guard let objetivo = psFacts.launchTarget ?? selectedRom else {
+            showError(strings[.errPickRom])
+            return
+        }
+
+        clearError()
+        // Falta de firmware se avisa y **no** se bloquea: hay juegos que arrancan sin él, y decidir
+        // por el usuario que no lo intente sería decidir de más. Lo que no se puede es callarlo.
+        if let firmware = máquina.firmware, !psFirmwareIsReady {
+            add(strings(.psFirmwareBody, firmware.files.joined(separator: ", "),
+                        strings[firmware.source.textKey]), level: .warning)
+        }
+
+        activityMessage = strings[.statusLaunchingEmulator]
+        add(strings(.logPackageRebuilt, objetivo.lastPathComponent), level: .info)
+        do {
+            try StandaloneTools.open(app: emulador.app, game: objetivo)
+            // Como con RetroArch: el juego es otro programa y sigue por su cuenta.
+            activityMessage = strings[.statusApkRunning]
+        } catch {
+            activityMessage = strings[.statusFailed]
+            showError(error.localizedDescription)
+        }
+    }
+
+    public func choosePlayStationEmulator() {
+        guard let máquina = psMachine else { return }
+        guard let url = FileActions.chooseApplication(title: strings[.switchEmulatorChoose]) else { return }
+        Preferences.setStandaloneEmulatorURL(url, for: máquina.id)
+        objectWillChange.send()
+    }
+
+    /// Elegir un juego que es una **carpeta**. PS3 y PS4 volcados de su disco lo son, y sin esto no
+    /// entran por ningún sitio: el panel de archivos no deja elegir carpetas.
+    public func selectGameFolder() {
+        guard let url = FileActions.chooseDirectory(title: strings[.menuOpenFolder]) else { return }
+        guard PlayStationInspector.inspect(url).isRecognised else {
+            showError(strings(.errUnknownFile, url.lastPathComponent))
+            return
+        }
+        acceptRom(url)
     }
 
     // MARK: - Las llaves del usuario

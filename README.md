@@ -23,6 +23,7 @@ Sin cuentas, sin servidor, sin telemetría. Todo local.
 | **Android** | Ejecuta un `.apk` en el propio Mac, dentro de un emulador que la app monta y arranca sola. También sirve un móvil enchufado por USB. Y los formatos que traen la app partida en trozos —`.xapk`, `.apks`, `.aab`— se desmontan, se eligen los trozos que le tocan a tu aparato y se instalan juntos, con sus datos de expansión. |
 | **Consolas** | Reconoce un juego de consola por su cabecera —no por la extensión— y lo ejecuta con el núcleo de libretro que le toca, que se descarga solo. Once máquinas, de la NES a la PSP. Los controles se mapean con un diagrama que tiene la forma del mando que tengas enchufado. |
 | **Consola híbrida** | Los paquetes `.nsp`, `.xci`, `.nsz` y `.xcz` se abren y se leen: qué juego traen, qué actualizaciones y qué contenido añadido, con su versión y su tamaño. Esa consola **no** la emula un núcleo de libretro, así que el emulador lo pones tú; la app lo encuentra y lanza. Los paquetes comprimidos se rehacen antes de jugar. |
+| **Familia PlayStation** | PS2, PS3, PS4 y Vita, cada una con su emulador aparte. Lee el `PARAM.SFO` que llevan dentro —y que va **sin cifrar**— para decirte el título de verdad, la versión y si eso es el juego, un parche o un DLC. Entra en las imágenes de disco, en los `.pkg` y en los `.vpk`, y acepta la **carpeta** del juego, que es como vienen los de PS3 y PS4. |
 
 Arrastra un archivo a la ventana —o al icono de la app en el Dock— y la app se coloca sola en la
 pestaña que toca. También funciona con «Abrir con» desde el Finder.
@@ -124,6 +125,31 @@ La **consola híbrida** es otra cosa y conviene decirlo claro:
   **el contenido no**: se lee cuando hace falta y se olvida.
 - Para rehacer un `.nsz` o un `.xcz` hace falta `zstd` (`brew install zstd`). El paquete rehecho va
   a una carpeta de la app, pesa lo que pesa el juego y se hace una vez.
+
+Para la **familia PlayStation**, cada máquina tiene lo suyo y no todas están igual de maduras.
+Lever te lo dice en la propia ventana en vez de dejarte descubrirlo:
+
+| Máquina | Emulador | Estado | Qué más hace falta |
+|---|---|---|---|
+| PlayStation | núcleo `swanstation` | se juega | BIOS de una PS1 |
+| PSP | núcleo `ppsspp` | se juega | nada |
+| PlayStation 2 | PCSX2 | se juega | BIOS de una PS2 |
+| PlayStation 3 | RPCS3 | experimental | firmware `PS3UPDAT.PUP` |
+| PlayStation 4 | shadPS4 | experimental | nada |
+| PS Vita | Vita3K | experimental | nada |
+| PlayStation 5 | — | **no existe** | — |
+
+Las dos primeras ya funcionaban: las lleva RetroArch con su núcleo y no hace falta instalar nada
+más. Las cuatro siguientes necesitan su programa, que instalas tú.
+
+Y una distinción que importa más de lo que parece: **la BIOS de una PS2 sale de una PS2** y no hay
+descarga que valga, pero **el firmware de una PS3 lo publica Sony** en su web para cualquiera, y
+RPCS3 lo pide por su nombre. Tratarlos como si fueran lo mismo deja a la gente atascada sin motivo,
+así que Lever los distingue y te dice de cuál se trata.
+
+De la **PlayStation 5 no existe ningún emulador**. No es que Lever no lo traiga: no lo hay. Lo que
+circula anunciado como tal no es un emulador, y bajarlo es un mal negocio. Si sueltas un juego de
+PS5, Lever lo reconoce y te lo dice.
 
 **Qué Wine usar en un Mac con chip Apple.** Los casks de WineHQ (`wine-stable`, `wine@devel`,
 `wine@staging`) están obsoletos por no pasar el control de Gatekeeper y Homebrew los desactiva el
