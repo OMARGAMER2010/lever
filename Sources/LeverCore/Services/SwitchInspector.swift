@@ -21,7 +21,7 @@ public enum SwitchInspector {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return SwitchFacts(bytes: tamaño) }
         defer { try? handle.close() }
 
-        guard let (envoltorio, contenido) = readContentPartition(handle) else {
+        guard let (envoltorio, contenido, actualización) = readContentPartition(handle) else {
             return SwitchFacts(bytes: tamaño)
         }
 
@@ -42,7 +42,8 @@ public enum SwitchInspector {
             // cifrada. Se dice cuál falta en vez de dejar los huecos en blanco sin explicación.
             missingKeys: leído.evidence == .ncaHeader ? [] : SwitchKeyFile.required,
             requiredKeyGeneration: leído.keyGeneration,
-            controlContent: leído.control
+            controlContent: leído.control,
+            cartridgeUpdate: actualización
         )
     }
 
@@ -51,20 +52,55 @@ public enum SwitchInspector {
     /// En un paquete de la tienda es la única que hay. En un cartucho hay que entrar dos veces: la
     /// raíz solo lista particiones —`update`, `normal`, `secure`— y el juego está en `secure`.
     /// Quedarse en la raíz devuelve tres entradas que no son archivos y parece un paquete vacío.
-    static func readContentPartition(_ handle: FileHandle) -> (SwitchContainer, PartitionFileSystem.Partition)? {
+    static func readContentPartition(
+        _ handle: FileHandle
+    ) -> (SwitchContainer, PartitionFileSystem.Partition, CartridgeUpdate?)? {
         if let paquete = PartitionFileSystem.read(handle, at: 0, expecting: .pfs0) {
-            return (.nsp, paquete)
+            // Un paquete de la tienda no tiene particiones hermanas: preguntarle por el firmware
+            // no significa nada, y por eso va `nil` y no «no lo trae».
+            return (.nsp, paquete, nil)
         }
         guard let raíz = PartitionFileSystem.readCartridgeRoot(handle) else { return nil }
+        // De paso que se tiene la raíz delante, se mira `update`. Es la partición que lleva el
+        // firmware con el que salió el cartucho, y la primera que quitan al recortar un volcado.
+        let actualización = cartridgeUpdate(handle, root: raíz)
         // `secure` es donde va el juego. Si no estuviera, se prueba con `normal`: hay volcados
         // parciales que solo traen esa, y enseñar lo que haya es mejor que no reconocer el archivo.
         for nombre in ["secure", "normal"] {
             guard let partición = raíz.entry(named: nombre),
                   let dentro = PartitionFileSystem.read(handle, at: UInt64(partición.offset), expecting: .hfs0)
             else { continue }
-            return (.xci, dentro)
+            return (.xci, dentro, actualización)
         }
         return nil
+    }
+
+    /// Qué dice la raíz de un cartucho sobre su partición de actualización.
+    ///
+    /// **Hay que entrar y contar los archivos.** Ni que la partición esté declarada ni lo que mida
+    /// sirven para decidirlo, y las dos son la trampa natural: al recortar un `.xci` la entrada se
+    /// queda en la tabla y dentro queda una cabecera `HFS0` perfectamente válida con **cero
+    /// archivos**. En un volcado recortado de verdad eso son 512 bytes que parecen contenido y no
+    /// lo son, así que mirar el tamaño diría que trae firmware justo cuando no lo trae.
+    ///
+    /// El tamaño que se devuelve es la suma de las piezas y no el de la partición: la partición
+    /// lleva su cabecera y su relleno, y lo que le interesa a quien pregunta es cuánto firmware hay.
+    static func cartridgeUpdate(
+        _ handle: FileHandle, root: PartitionFileSystem.Partition
+    ) -> CartridgeUpdate? {
+        guard let entrada = root.entry(named: "update") else { return nil }
+        // Una partición declarada de cero bytes no guarda nada, y su desplazamiento es el mismo que
+        // el de la siguiente: leer ahí devolvería el contenido del vecino y el cartucho parecería
+        // traer un firmware que en realidad es el juego.
+        guard entrada.size > 0 else { return .trimmed }
+        guard let dentro = PartitionFileSystem.read(
+            handle, at: UInt64(entrada.offset), expecting: .hfs0
+        ) else { return .trimmed }
+
+        let bytes = dentro.entries.reduce(0) { $0 + $1.size }
+        // Y por si el desplazamiento se solapara de todos modos: lo que hay dentro de una partición
+        // no puede medir más que la partición. Si se sale, lo leído no era suyo.
+        return bytes > 0 && bytes <= entrada.size ? .included(bytes: bytes) : .trimmed
     }
 
     private static func compressed(_ container: SwitchContainer) -> SwitchContainer {

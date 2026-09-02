@@ -77,6 +77,12 @@ struct EmulationPane: View {
                 // ofrecer un ajuste que no va a ninguna parte.
                 if model.switchFacts.isRecognised {
                     packageSection
+                    // Solo con un cartucho delante: un paquete de la tienda no tiene partición de
+                    // actualización y la fila sobraría.
+                    if let actualización = model.switchFacts.cartridgeUpdate {
+                        Divider()
+                        cartridgeSection(actualización)
+                    }
                     Divider()
                     keysSection
                     Divider()
@@ -260,6 +266,43 @@ struct EmulationPane: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+        }
+    }
+
+    // MARK: - El cartucho
+
+    /// Si el cartucho trae dentro el firmware de la consola.
+    ///
+    /// Va junto a las llaves y al emulador y no entre los avisos, a propósito: no es un problema,
+    /// es un hecho del archivo. La mayoría de los volcados vienen recortados y gritarlo cada vez
+    /// sería ruido; enseñarlo donde ya se mira qué hay y qué falta es lo que evita descubrirlo a
+    /// mitad de camino, cuando el emulador pide un firmware que este archivo nunca tuvo.
+    private func cartridgeSection(_ update: CartridgeUpdate) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(s[.switchCartridgeSection]).font(.system(size: 12, weight: .semibold))
+                Spacer()
+                if !update.hasFirmware {
+                    Text(s[.switchCartridgeTrimmedTitle])
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+
+            Text(cartridgeText(update))
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func cartridgeText(_ update: CartridgeUpdate) -> String {
+        switch update {
+        case .included(let bytes):
+            return s(.switchCartridgeFirmwareIncluded,
+                     ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file))
+        case .trimmed:
+            return s[.switchCartridgeTrimmed]
         }
     }
 
