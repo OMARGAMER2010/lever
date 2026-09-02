@@ -104,6 +104,13 @@ struct ContentView: View {
         .onChange(of: model.selectedApk) { apk in
             if apk != nil { mode = .android }
         }
+        // La cuarta pestaña llevaba sin esto desde que existe, y se notaba justo por donde no hay
+        // `onDrop` que valga: abriendo un juego desde el Finder o desde el panel de archivos. El
+        // modelo lo aceptaba, pero la ventana se quedaba en la pestaña anterior enseñando otra
+        // cosa, que por fuera se parece demasiado a que el archivo no hubiera entrado.
+        .onChange(of: model.selectedRom) { rom in
+            if rom != nil { mode = .rom }
+        }
     }
 
 }

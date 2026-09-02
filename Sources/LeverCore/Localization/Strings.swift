@@ -481,7 +481,8 @@ public struct Strings: Sendable {
 
         .errNotAProgram: "«%@» no es un programa de Windows. Se admiten .exe y .msi.",
         .errNotAnArchive: "«%@» no es un archivo comprimido. Se admiten .rar, .zip, .7z y similares.",
-        .errUnknownFile: "No se reconoce «%@». Admite .exe, .msi y comprimidos como .rar o .zip.",
+        .errUnknownFile: "No se reconoce «%@». Admite programas de Windows (.exe, .msi), comprimidos (.rar, .zip, .7z…), aplicaciones de Android (.apk, .xapk, .apks, .aab) y juegos de consola, incluidos los paquetes de la consola híbrida (.xci, .xcz, .nsp, .nsz).",
+        .errBrokenSwitchPackage: "«%@» tiene la extensión de un paquete de la consola híbrida, pero por dentro no lo es. Lo más habitual es que la descarga se quedara a medias: compruébala antes de volver a intentarlo.",
         .errNoWine: "No hay Wine disponible. Instálalo o búscalo a mano.",
         .errNoExtractor: "No hay ningún extractor instalado. Pulsa «Instalar».",
         .errPickProgram: "Elige un programa .exe o .msi válido.",
@@ -992,7 +993,8 @@ public struct Strings: Sendable {
 
         .errNotAProgram: "“%@” is not a Windows program. Only .exe and .msi are accepted.",
         .errNotAnArchive: "“%@” is not an archive. Accepted formats include .rar, .zip and .7z.",
-        .errUnknownFile: "“%@” is not recognised. It accepts .exe, .msi and archives such as .rar or .zip.",
+        .errUnknownFile: "“%@” is not recognised. It accepts Windows programs (.exe, .msi), archives (.rar, .zip, .7z…), Android apps (.apk, .xapk, .apks, .aab) and console games, including hybrid console packages (.xci, .xcz, .nsp, .nsz).",
+        .errBrokenSwitchPackage: "“%@” has the extension of a hybrid console package, but inside it is not one. Most often the download stopped halfway: check it before trying again.",
         .errNoWine: "No Wine available. Install it or point at it manually.",
         .errNoExtractor: "No extractor is installed. Press “Install”.",
         .errPickProgram: "Choose a valid .exe or .msi program.",

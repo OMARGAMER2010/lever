@@ -553,36 +553,32 @@ public final class AppModel: ObservableObject {
     }
 
     /// Punto de entrada para arrastrar y soltar, y para «Abrir con» desde el Finder.
+    ///
+    /// Quién se queda con cada archivo lo decide `FileRouter`, que es la misma lista que consulta
+    /// la ventana para saber qué pestaña enseñar. Tenerla en un solo sitio es lo que evita que un
+    /// archivo entre por un lado y la ventana se quede mirando por otro.
     @discardableResult
     public func accept(droppedURLs urls: [URL]) -> Bool {
         var handled = false
         for url in urls {
-            if SupportedFileKind.exe.accepts(url) {
-                acceptProgram(url)
-                handled = true
-            } else if SupportedFileKind.apk.accepts(url) {
-                acceptApk(url)
-                handled = true
-            } else if url.hasDirectoryPath, PlayStationInspector.inspect(url).isRecognised {
-                // Un juego de PS3 o de PS4 es una carpeta. Va antes que todo lo demás porque
-                // ninguna de las otras ramas mira dentro de una carpeta.
-                acceptRom(url)
-                handled = true
-            } else if SupportedFileKind.rom.accepts(url),
-                      RomInspector.inspect(url).isRecognised
-                        || SwitchInspector.inspect(url).isRecognised
-                        || PlayStationInspector.inspect(url).isRecognised {
-                // Antes que los comprimidos porque un `.iso` y un `.bin` los reclaman los dos, y
-                // aquí decide lo que el archivo tiene dentro, no cómo se llama.
-                acceptRom(url)
-                handled = true
-            } else if SupportedFileKind.rar.accepts(url) {
-                acceptArchive(url)
-                handled = true
+            switch FileRouter.route(for: url) {
+            case .program: acceptProgram(url)
+            case .android: acceptApk(url)
+            case .rom: acceptRom(url)
+            case .archive: acceptArchive(url)
+            case nil: continue
             }
+            handled = true
         }
         if !handled, let first = urls.first {
-            showError(strings(.errUnknownFile, first.lastPathComponent))
+            // Un paquete de la consola híbrida que no se reconoce casi nunca es un archivo
+            // equivocado: es una descarga de varios gigas que se quedó a medias. Decirlo con ese
+            // nombre ahorra buscar el fallo donde no está.
+            showError(
+                FileRouter.looksLikeBrokenSwitchPackage(first)
+                    ? strings(.errBrokenSwitchPackage, first.lastPathComponent)
+                    : strings(.errUnknownFile, first.lastPathComponent)
+            )
         }
         return handled
     }
