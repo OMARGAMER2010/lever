@@ -84,16 +84,19 @@
 			<string>Viewer</string>
 			<key>LSHandlerRank</key>
 			<string>Alternate</string>
-			<key>LSItemContentTypes</key>
-			<array>
-				<string>com.local.lever.switch-cartridge</string>
-				<string>com.local.lever.switch-cartridge-compressed</string>
-				<string>com.local.lever.switch-package</string>
-				<string>com.local.lever.switch-package-compressed</string>
-			</array>
-			<!-- Repetidas como extensiones a propósito. `LSItemContentTypes` solo funciona una vez
-			     que LaunchServices ha leído las declaraciones de abajo, y hasta entonces —una copia
-			     recién construida, sin registrar— el Finder no ofrecería Lever para ningún .xci. -->
+			<!-- Se reclama por extensión y **no** por `LSItemContentTypes`, que sería lo natural
+			     teniendo tipos declarados abajo. El motivo es una regla de LaunchServices que se
+			     paga cara:
+
+			     1. Cuando hay `LSItemContentTypes`, las extensiones de aquí se ignoran. La app pasa
+			        a reclamar solo sus propios tipos.
+			     2. Y una declaración **exportada** gana siempre a una importada. Los emuladores de
+			        esta consola exportan los suyos —Ryujinx declara `com.ryujinx.xci`—, así que en
+			        cuanto hay uno instalado, un `.xci` deja de resolver al tipo de Lever.
+
+			     Juntas, las dos dejaban a Lever fuera hasta de la lista de candidatas: reclamaba un
+			     tipo al que ya no resolvía ningún archivo. Reclamando la extensión, Lever entra
+			     sea cual sea el tipo que gane, y quién abre por defecto lo decide el usuario. -->
 			<key>CFBundleTypeExtensions</key>
 			<array>
 				<string>xci</string>
