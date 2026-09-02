@@ -132,6 +132,8 @@ public enum TextKey: String, CaseIterable, Sendable {
     case switchEmulatorSection, switchEmulatorMissingTitle, switchEmulatorMissingBody
     case switchEmulatorFound, switchEmulatorChoose
     case dropSwitchSubtitle, switchDisclaimer
+    case switchCartridgeFirmwareIncluded, switchCartridgeTrimmed
+    case switchCartridgeSection, switchCartridgeTrimmedTitle
     case switchRebuildTitle, switchRebuildBody, switchCacheNote, switchKeysTooOld
     case switchCartridgeNote
 

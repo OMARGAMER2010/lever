@@ -37,6 +37,7 @@ enum XciIntegrationTests {
         try testARealCartridgeIsRecognisedWithoutKeys(archivo)
         try testReadingItDoesNotLoadItIntoMemory(archivo)
         try testItRoutesToTheConsolesTab(archivo)
+        try testItSaysWhetherTheCartridgeCarriesFirmware(archivo)
     }
 
     // MARK: - El camino de entrada
@@ -323,6 +324,30 @@ enum XciIntegrationTests {
         try expect(
             !FileRouter.looksLikeBrokenSwitchPackage(archivo),
             "y no es un paquete a medias: se ha reconocido entero"
+        )
+    }
+
+    /// Dice si el cartucho trae el firmware dentro.
+    ///
+    /// Un `.xci` lleva tres particiones y el firmware va en `update`. Lever solo leía `secure` —el
+    /// juego— así que no podía distinguir un volcado entero de uno recortado, y eso es justo lo que
+    /// decide si el emulador va a poder sacar el firmware del propio archivo o si hay que buscarlo
+    /// fuera. Con el volcado recortado delante, la respuesta tiene que ser que no lo trae.
+    private static func testItSaysWhetherTheCartridgeCarriesFirmware(_ archivo: URL) throws {
+        let hechos = SwitchInspector.inspect(archivo, keys: nil)
+        guard let actualización = hechos.cartridgeUpdate else {
+            throw TestFailure(description: "de un cartucho hay que poder decir si trae firmware")
+        }
+        switch actualización {
+        case .included(let bytes):
+            try expect(bytes > 0, "si dice que lo trae, tiene que medir algo")
+            print("[xci] el cartucho trae firmware dentro: \(bytes / (1024 * 1024)) MB")
+        case .trimmed:
+            print("[xci] volcado recortado: no trae firmware dentro")
+        }
+        try expect(
+            actualización.hasFirmware == (actualización != .trimmed),
+            "las dos formas de preguntarlo tienen que contestar lo mismo"
         )
     }
 

@@ -144,6 +144,43 @@ public enum SwitchEvidence: Equatable, Sendable {
     }
 }
 
+/// Si la copia de un cartucho trae dentro el firmware de la consola.
+///
+/// Un cartucho de verdad lleva tres particiones: `update`, `normal` y `secure`. En `secure` va el
+/// juego —que es lo único que Lever necesitaba hasta ahora— y en `update` va la versión del sistema
+/// con la que salió a la venta. Esa partición es firmware instalable: los emuladores saben sacarla
+/// de un `.xci` y registrarla.
+///
+/// **Pero casi ningún volcado que circula la conserva.** Recortar un `.xci` —vaciar la partición de
+/// actualización y quitar el hueco vacío del final— ahorra sitio y es lo que hace todo el mundo. El
+/// archivo sigue siendo válido y el juego sigue entero, así que no hay forma de notarlo mirando el
+/// juego.
+///
+/// Y tampoco basta con mirar si la partición sigue ahí: al recortar **no se borra**, se vacía. Lo
+/// que queda es una cabecera `HFS0` legítima de 512 bytes con cero archivos dentro, que por tamaño
+/// parece contenido. Solo contando lo que trae se distingue una cosa de la otra.
+///
+/// Merece la pena decirlo porque es la diferencia entre «tu emulador puede sacar el firmware de
+/// aquí mismo» y «vas a tener que conseguirlo por tu cuenta», y esas dos son tardes distintas.
+public enum CartridgeUpdate: Equatable, Sendable {
+    /// Trae la partición de actualización con contenido: de ahí se puede instalar el firmware.
+    case included(bytes: Int64)
+    /// Volcado recortado. La partición está declarada pero vacía: no hay firmware que sacar.
+    case trimmed
+
+    public var hasFirmware: Bool {
+        if case .included = self { return true }
+        return false
+    }
+
+    public var textKey: TextKey {
+        switch self {
+        case .included: return .switchCartridgeFirmwareIncluded
+        case .trimmed: return .switchCartridgeTrimmed
+        }
+    }
+}
+
 /// Una pieza de las que van dentro del paquete.
 public struct SwitchEntry: Equatable, Sendable {
     public let name: String
@@ -186,12 +223,15 @@ public struct SwitchFacts: Equatable, Sendable {
     public let requiredKeyGeneration: Int?
     /// La pieza que lleva el nombre y el icono del juego. La única de la que sale eso.
     public let controlContent: SwitchEntry?
+    /// Si el cartucho trae el firmware dentro. `nil` cuando no es un cartucho: un paquete de la
+    /// tienda no tiene partición de actualización y preguntarlo no significa nada.
+    public let cartridgeUpdate: CartridgeUpdate?
 
     public init(
         container: SwitchContainer? = nil, evidence: SwitchEvidence = .none,
         titles: [SwitchTitle] = [], entries: [SwitchEntry] = [], bytes: Int64 = 0,
         missingKeys: [String] = [], requiredKeyGeneration: Int? = nil,
-        controlContent: SwitchEntry? = nil
+        controlContent: SwitchEntry? = nil, cartridgeUpdate: CartridgeUpdate? = nil
     ) {
         self.container = container
         self.evidence = evidence
@@ -201,6 +241,7 @@ public struct SwitchFacts: Equatable, Sendable {
         self.missingKeys = missingKeys
         self.requiredKeyGeneration = requiredKeyGeneration
         self.controlContent = controlContent
+        self.cartridgeUpdate = cartridgeUpdate
     }
 
     public var isRecognised: Bool { container != nil }

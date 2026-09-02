@@ -12,6 +12,7 @@ enum SwitchTests {
         try testClassifiesTitleIdsTheWayTheConsoleDoes()
         try testReadsAPackageFromTheStore()
         try testReadsACartridgeThroughItsSecurePartition()
+        try testTellsATrimmedCartridgeFromOneCarryingFirmware()
         try testTellsACompressedPackageFromItsName()
         try testReadsTheTitleFromATicket()
         try testReadsATicketWhoseSignatureIsAnotherSize()
@@ -562,6 +563,64 @@ enum SwitchTests {
         try expect(SwitchContainer.xcz.decompressed == .xci, "y un .xcz, un .xci")
         try expect(SwitchContainer.xci.isCartridge, "un .xci viene de un cartucho")
         try expect(!SwitchContainer.nsp.isCartridge, "y un .nsp de la tienda")
+    }
+
+    /// Un cartucho entero y uno recortado se distinguen, y por el tamaño y no por la existencia.
+    ///
+    /// El matiz es el que hace útil la comprobación: al recortar un `.xci` la entrada `update`
+    /// **se queda** en la tabla de particiones y lo que desaparece es su contenido. Mirar solo si
+    /// la partición está declarada daría por bueno cualquier volcado recortado, que son casi todos
+    /// los que circulan.
+    private static func testTellsATrimmedCartridgeFromOneCarryingFirmware() throws {
+        let fixture = try TemporaryFixture()
+        let juego = partición(.hfs0, [
+            ("fedcba9876543210fedcba9876543210.nca", Data(repeating: 0xBB, count: 32))
+        ])
+
+        // Entero: la partición de actualización trae el firmware con el que salió el cartucho.
+        let firmware = partición(.hfs0, [
+            ("0123456789abcdef0123456789abcdef.nca", Data(repeating: 0xCC, count: 256)),
+            ("fedcba9876543210fedcba9876543210.nca", Data(repeating: 0xDD, count: 128))
+        ])
+        let entero = fixture.directoryURL.appendingPathComponent("entero.xci")
+        try cartucho([("update", firmware), ("normal", Data()), ("secure", juego)]).write(to: entero)
+
+        let hechosEntero = SwitchInspector.inspect(entero)
+        try expect(hechosEntero.container == .xci, "sigue siendo un cartucho")
+        // Lo que se cuenta son las piezas, no la partición: la partición lleva además su cabecera
+        // y su relleno, y quien pregunta quiere saber cuánto firmware hay, no cuánto ocupa la caja.
+        try expect(
+            hechosEntero.cartridgeUpdate == .included(bytes: 256 + 128),
+            "y trae el firmware dentro, midiendo lo que suman sus piezas"
+        )
+        try expect(
+            Int64(firmware.count) > 256 + 128,
+            "la partición mide más que sus piezas, que es lo que hace distinguibles las dos cuentas"
+        )
+        try expect(hechosEntero.cartridgeUpdate?.hasFirmware == true, "y lo dice también así")
+
+        // Recortado, en las dos formas que se dan de verdad. La segunda es la que importa y la que
+        // engaña: recortar no borra la partición, la **vacía**, y deja una cabecera HFS0 válida de
+        // cero archivos que por tamaño parece contenido. Un volcado real es justo así.
+        for (nombre, vacía) in [("recortado.xci", Data()), ("recortado-hfs0.xci", partición(.hfs0, []))] {
+            let recortado = fixture.directoryURL.appendingPathComponent(nombre)
+            try cartucho([("update", vacía), ("normal", Data()), ("secure", juego)]).write(to: recortado)
+
+            let hechos = SwitchInspector.inspect(recortado)
+            try expect(hechos.container == .xci, "\(nombre): un recortado sigue siendo un cartucho válido")
+            try expect(hechos.entries.count == 1, "\(nombre): y el juego sigue entero dentro de secure")
+            try expect(hechos.cartridgeUpdate == .trimmed,
+                       "\(nombre): sin piezas dentro no hay firmware que sacar")
+            try expect(hechos.cartridgeUpdate?.hasFirmware == false, "\(nombre): y no al revés")
+        }
+
+        // Y un paquete de la tienda no tiene de esto: preguntarlo no significa nada.
+        let tienda = fixture.directoryURL.appendingPathComponent("tienda.nsp")
+        try paquete([("0123456789abcdef0123456789abcdef.nca", Data(repeating: 0xAA, count: 16))])
+            .write(to: tienda)
+        try expect(SwitchInspector.inspect(tienda).container == .nsp, "esto es un paquete")
+        try expect(SwitchInspector.inspect(tienda).cartridgeUpdate == nil,
+                   "y un paquete no tiene partición de actualización que mirar")
     }
 
     // MARK: - Fabricar los formatos
