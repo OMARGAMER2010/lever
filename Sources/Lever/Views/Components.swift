@@ -307,12 +307,19 @@ enum WorkMode: String, CaseIterable, Identifiable {
     }
 
     /// A qué pestaña lleva un archivo soltado en cualquier parte de la ventana.
+    ///
+    /// La decisión no se toma aquí: la toma `FileRouter`, el mismo que usa el modelo para decidir
+    /// a quién entregarle el archivo. Antes había dos listas y esta se había quedado corta —solo
+    /// preguntaba por ROMs—, así que un `.xci` entraba en la pestaña de consolas y la ventana
+    /// enseñaba la de comprimidos.
+    ///
+    /// Lo que no cabe en ninguna parte cae en comprimidos, que es donde el usuario ve el error.
     static func forDroppedFile(_ url: URL) -> WorkMode {
-        if SupportedFileKind.exe.accepts(url) { return .program }
-        if SupportedFileKind.apk.accepts(url) { return .android }
-        // Un `.iso` o un `.bin` los reclama también la pestaña de comprimidos, así que aquí no
-        // decide la extensión: decide si el archivo tiene por dentro la cabecera de una consola.
-        if SupportedFileKind.rom.accepts(url), RomInspector.inspect(url).isRecognised { return .rom }
-        return .archive
+        switch FileRouter.route(for: url) {
+        case .program: return .program
+        case .android: return .android
+        case .rom: return .rom
+        case .archive, nil: return .archive
+        }
     }
 }

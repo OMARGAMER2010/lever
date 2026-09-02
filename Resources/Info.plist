@@ -75,6 +75,34 @@
 			</array>
 		</dict>
 		<dict>
+			<!-- Los paquetes de la consola híbrida van aparte de «Juego de consola» porque no los
+			     ejecuta un núcleo de RetroArch, sino un emulador que instala el usuario. Es la
+			     misma división que hace el código entre RetroPlatform y StandaloneMachine. -->
+			<key>CFBundleTypeName</key>
+			<string>Juego de consola híbrida</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.local.lever.switch-cartridge</string>
+				<string>com.local.lever.switch-cartridge-compressed</string>
+				<string>com.local.lever.switch-package</string>
+				<string>com.local.lever.switch-package-compressed</string>
+			</array>
+			<!-- Repetidas como extensiones a propósito. `LSItemContentTypes` solo funciona una vez
+			     que LaunchServices ha leído las declaraciones de abajo, y hasta entonces —una copia
+			     recién construida, sin registrar— el Finder no ofrecería Lever para ningún .xci. -->
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>xci</string>
+				<string>xcz</string>
+				<string>nsp</string>
+				<string>nsz</string>
+			</array>
+		</dict>
+		<dict>
 			<key>CFBundleTypeName</key>
 			<string>Aplicación de Android</string>
 			<key>CFBundleTypeRole</key>
@@ -112,6 +140,87 @@
 				<string>arj</string>
 				<string>lzh</string>
 			</array>
+		</dict>
+	</array>
+	<!-- Importados y no exportados: estos formatos no son de Lever. No existe un tipo oficial para
+	     ninguno de ellos, así que lo declara quien los abre, que es lo que significa «imported».
+
+	     Conforman con `public.data` y no con `public.archive`, que sería la tentación por el
+	     nombre. Un `.xci` es la copia byte a byte de un cartucho —contenido cifrado, con su hueco
+	     vacío al final— y no algo que se pueda extraer: declararlo como archivo comprimido haría
+	     que macOS se lo ofreciera a los extractores del sistema, y eso acaba en un error largo.
+
+	     Las extensiones se comparan sin distinguir mayúsculas, así que un `.XCI` de un volcado
+	     viejo entra por el mismo sitio. -->
+	<key>UTImportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.local.lever.switch-cartridge</string>
+			<key>UTTypeDescription</key>
+			<string>Copia de cartucho de consola híbrida</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>xci</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.local.lever.switch-cartridge-compressed</string>
+			<key>UTTypeDescription</key>
+			<string>Copia de cartucho de consola híbrida (comprimida)</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>xcz</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.local.lever.switch-package</string>
+			<key>UTTypeDescription</key>
+			<string>Paquete de consola híbrida</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>nsp</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.local.lever.switch-package-compressed</string>
+			<key>UTTypeDescription</key>
+			<string>Paquete de consola híbrida (comprimido)</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>nsz</string>
+				</array>
+			</dict>
 		</dict>
 	</array>
 </dict>

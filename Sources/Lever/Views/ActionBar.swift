@@ -117,19 +117,49 @@ struct ActionBar: View {
         }
     }
 
+    /// El renglón de estado de la pestaña de consolas.
+    ///
+    /// Las dos familias que ejecuta un programa aparte se preguntan **antes** que la de RetroArch,
+    /// y no es un detalle de orden: un cartucho de la consola híbrida no tiene `platform` —eso solo
+    /// lo tienen las máquinas que lleva un núcleo— así que caía al final y salía «no sé de qué
+    /// consola es» justo debajo de un panel que acababa de decir de qué consola era. Y con
+    /// RetroArch sin instalar decía que faltaba RetroArch, que para un `.xci` no hace ninguna falta.
+    ///
+    /// De ahí que cada familia diga cuál es **su** programa: es lo único que el usuario puede hacer
+    /// para desbloquearse, y nombrar el equivocado manda a instalar lo que no era.
     @ViewBuilder
     private var romStatus: some View {
         if model.isPlayingRom {
             busy(s[.playingRom])
-        } else if model.retroArchURL == nil {
-            hint(s[.retroMissingTitle])
         } else if model.selectedRom == nil {
-            hint(s[.dropRomTitle])
+            // Sin juego elegido sí toca hablar de RetroArch: es lo que hace falta para la mayoría
+            // de lo que se puede soltar aquí, y todavía no se sabe qué va a ser.
+            hint(model.retroArchURL == nil ? s[.retroMissingTitle] : s[.dropRomTitle])
+        } else if model.switchFacts.isRecognised {
+            hint(
+                model.switchEmulator == nil
+                    ? s[.switchEmulatorMissingTitle]
+                    : "\(SwitchTools.machine.name) · \(s[model.switchFacts.evidence.textKey])"
+            )
+        } else if let máquina = model.psMachine {
+            hint(machineHint(máquina))
         } else if let máquina = model.romFacts.platform {
-            hint("\(máquina.name) · \(s[model.romFacts.evidence.textKey])")
+            hint(
+                model.retroArchURL == nil
+                    ? s[.retroMissingTitle]
+                    : "\(máquina.name) · \(s[model.romFacts.evidence.textKey])"
+            )
         } else {
             hint(s[.romUnknownTitle])
         }
+    }
+
+    /// El estado de una máquina que ejecuta un programa aparte, de lo que más bloquea a lo que
+    /// menos: que no exista emulador, que no esté instalado, y si no, qué máquina es.
+    private func machineHint(_ machine: StandaloneMachine) -> String {
+        guard machine.isEmulated else { return s[.psNoEmulatorTitle] }
+        guard model.psEmulator != nil else { return s[.errNoPsEmulator] }
+        return "\(machine.name) · \(s[model.psFacts.evidence.textKey])"
     }
 
     private func busy(_ text: String) -> some View {

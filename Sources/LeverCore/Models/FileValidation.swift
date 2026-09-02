@@ -50,7 +50,7 @@ public enum SupportedFileKind: String, Codable, CaseIterable, Sendable {
         case .exe: return "programa de Windows (.exe o .msi)"
         case .rar: return "archivo comprimido (.rar, .zip, .7z…)"
         case .apk: return "aplicación de Android (.apk, .xapk, .apks, .aab)"
-        case .rom: return "juego de consola (.nes, .sfc, .gba, .nds, .nsp…)"
+        case .rom: return "juego de consola (.nes, .sfc, .gba, .nds, .xci, .nsp…)"
         }
     }
 }

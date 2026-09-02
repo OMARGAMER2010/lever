@@ -27,6 +27,7 @@ struct LeverTests {
             try RecentFilesTests.run()
             try await ExtractionIntegrationTests.run()
             try await SwitchIntegrationTests.run()
+            try XciIntegrationTests.run()
             print("PASS LocalizationTests")
             print("PASS ProgramInspectorTests")
             print("PASS GodotTests")
@@ -49,6 +50,7 @@ struct LeverTests {
             print("PASS RecentFilesTests")
             print("PASS ExtractionIntegrationTests")
             print("PASS SwitchIntegrationTests")
+            print("PASS XciIntegrationTests")
         } catch {
             fputs("FAIL LeverTests: \(error)\n", stderr)
             exit(1)

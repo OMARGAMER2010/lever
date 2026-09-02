@@ -148,6 +148,7 @@ public enum TextKey: String, CaseIterable, Sendable {
     case menuOpenFolder, errNoPsEmulator
     case statusRebuildingPackage, statusLaunchingEmulator, logPackageRebuilt
     case errNoSwitchEmulator, errNoZstd, errRebuildFailed, errKeysUnusable
+    case errBrokenSwitchPackage
 
     // Android: los formatos que envuelven varios .apk
     case bundleKindXapk, bundleKindApks, bundleKindAab
