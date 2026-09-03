@@ -1,6 +1,23 @@
 import SwiftUI
 import LeverCore
 
+/// Las medidas del dibujo.
+///
+/// Fuera de `GamepadDiagram` porque desde que el dibujo es genérico —el pie de cada etiqueta lo
+/// pone quien llama— ya no puede tener constantes propias: una estructura genérica no admite
+/// almacenamiento estático. Y estando fuera se leen mejor juntas.
+enum GamepadDiagramMetrics {
+    /// Ancho de una columna de etiquetas y hueco que se le deja al mando. El mando se lleva lo que
+    /// sobra, hasta un tope: más grande que esto no cabe con las etiquetas al lado.
+    static let labelWidth: CGFloat = 132
+    static let labelGap: CGFloat = 18
+    static let maxPadWidth: CGFloat = 420
+    static let padAspect: CGFloat = 0.76
+    /// Lo que ocupa una etiqueta de alto. Es lo que decide cuánto hay que separarlas cuando dos
+    /// botones caen a la misma altura.
+    static let labelPitch: CGFloat = 40
+}
+
 /// El dibujo del mando: la silueta del que está conectado, con cada botón en su sitio y una línea
 /// que lo une a lo que tiene asignado.
 ///
@@ -13,34 +30,39 @@ import LeverCore
 /// Y por eso la silueta cambia con el mando conectado: en uno de Xbox la palanca izquierda está
 /// **donde un PlayStation tiene la cruceta**, y dibujarlas iguales sería mandar a buscar un botón
 /// donde no está.
-struct GamepadDiagram: View {
+///
+/// **Qué pone y qué no pone el dibujo.** El dibujo sabe de sitios: dónde cae cada control, por qué
+/// lado sale su etiqueta y cómo se reparten para no pisarse. Lo que dice cada etiqueta viene de
+/// fuera, y por eso sirve para dos consolas que no comparten vocabulario: la de RetroArch enseña la
+/// tecla asignada, y la híbrida enseña el botón del mando y la tecla que hacen ese botón suyo.
+struct GamepadDiagram<Caption: View>: View {
     let family: ConnectedGamepad.Family?
     /// Los que la consola emulada tiene de verdad. Enseñar dieciséis para una Game Boy sería
     /// enseñar catorce casillas que no hacen nada.
     let inputs: [RetroPadInput]
-    let profile: ControlProfile
     let listening: RetroPadInput?
     let strings: Strings
+    /// Lo que va escrito dentro del botón. Sin nada, el nombre que ese botón lleva serigrafiado en
+    /// el mando conectado.
+    var glyph: ((RetroPadInput) -> String)?
+    /// El nombre de la etiqueta. Sin nada, el mismo criterio.
+    var title: ((RetroPadInput) -> String)?
+    /// Cómo se lee en voz alta. No se puede sacar del pie porque el pie es un dibujo.
+    let describe: (RetroPadInput) -> String
     let onPick: (RetroPadInput) -> Void
+    /// El pie de la etiqueta: lo que ese control tiene asignado, con la forma que le dé quien llama.
+    @ViewBuilder let caption: (RetroPadInput) -> Caption
 
     private var style: GamepadFaceplate.Style { GamepadFaceplate.style(for: family) }
 
-    /// Ancho de una columna de etiquetas y hueco que se le deja al mando. El mando se lleva lo que
-    /// sobra, hasta un tope: más grande que esto no cabe con las etiquetas al lado.
-    private static let labelWidth: CGFloat = 132
-    private static let labelGap: CGFloat = 18
-    private static let maxPadWidth: CGFloat = 420
-    private static let padAspect: CGFloat = 0.76
-    /// Lo que ocupa una etiqueta de alto. Es lo que decide cuánto hay que separarlas cuando dos
-    /// botones caen a la misma altura.
-    private static let labelPitch: CGFloat = 40
+    private typealias Medidas = GamepadDiagramMetrics
 
     var body: some View {
         GeometryReader { geometría in
             let marco = geometría.size
-            let anchoMando = min(marco.width - 2 * (Self.labelWidth + Self.labelGap),
-                                 Self.maxPadWidth)
-            let tamaño = CGSize(width: anchoMando, height: anchoMando * Self.padAspect)
+            let anchoMando = min(marco.width - 2 * (Medidas.labelWidth + Medidas.labelGap),
+                                 Medidas.maxPadWidth)
+            let tamaño = CGSize(width: anchoMando, height: anchoMando * Medidas.padAspect)
             let origen = CGPoint(x: (marco.width - tamaño.width) / 2,
                                  y: (marco.height - tamaño.height) / 2)
             let colocados = layout(in: marco, padOrigin: origen, padSize: tamaño)
@@ -134,13 +156,13 @@ struct GamepadDiagram: View {
 
             for (fila, (input, punto)) in delLado.enumerated() {
                 let bordeInterior = izquierda
-                    ? Self.labelWidth
-                    : frame.width - Self.labelWidth
+                    ? Medidas.labelWidth
+                    : frame.width - Medidas.labelWidth
                 resultado.append(Placed(
                     input: input,
                     spot: enElDibujo(punto),
                     labelCenter: CGPoint(
-                        x: izquierda ? Self.labelWidth / 2 : frame.width - Self.labelWidth / 2,
+                        x: izquierda ? Medidas.labelWidth / 2 : frame.width - Medidas.labelWidth / 2,
                         y: alturas[fila]
                     ),
                     labelAnchor: CGPoint(x: bordeInterior, y: alturas[fila]),
@@ -155,7 +177,7 @@ struct GamepadDiagram: View {
     /// Separa las que se pisan sin perder el orden: una pasada hacia abajo empujando y otra hacia
     /// arriba para que la última no se salga por el pie del dibujo.
     private func separate(_ alturas: inout [CGFloat], within height: CGFloat) {
-        let paso = Self.labelPitch
+        let paso = Medidas.labelPitch
         for índice in alturas.indices.dropFirst() {
             alturas[índice] = max(alturas[índice], alturas[índice - 1] + paso)
         }
@@ -212,8 +234,6 @@ struct GamepadDiagram: View {
     /// igual que el botón del dibujo, que es el doble de sitio para acertar.
     private func label(_ colocado: Placed) -> some View {
         let escuchando = listening == colocado.input
-        let tecla = profile.binding(for: colocado.input)
-        let mando = profile.gamepadBinding(for: colocado.input)
 
         return Button { onPick(colocado.input) } label: {
             VStack(alignment: colocado.inline ? .center
@@ -225,19 +245,13 @@ struct GamepadDiagram: View {
                         .font(.system(size: 10))
                         .foregroundStyle(Color.accentColor)
                 } else {
-                    HStack(spacing: 5) {
-                        Text(tecla.label(strings))
-                            .foregroundStyle(tecla.isAssigned ? Color.secondary : Theme.attention)
-                        if mando.isAssigned {
-                            Text(mando.label(strings)).foregroundStyle(Color.accentColor)
-                        }
-                    }
-                    .font(.system(size: 10, design: .monospaced))
+                    caption(colocado.input)
+                        .font(.system(size: 10, design: .monospaced))
                 }
             }
             .lineLimit(1)
             .fixedSize(horizontal: colocado.inline, vertical: false)
-            .frame(width: colocado.inline ? nil : Self.labelWidth - 12,
+            .frame(width: colocado.inline ? nil : Medidas.labelWidth - 12,
                    alignment: colocado.inline ? .center : (colocado.onLeft ? .trailing : .leading))
             .padding(.vertical, 3)
             .padding(.horizontal, 6)
@@ -249,7 +263,7 @@ struct GamepadDiagram: View {
         }
         .buttonStyle(.plain)
         .position(colocado.labelCenter)
-        .accessibilityLabel("\(name(colocado.input)): \(tecla.label(strings)), \(mando.label(strings))")
+        .accessibilityLabel("\(name(colocado.input)): \(describe(colocado.input))")
     }
 
     /// El cuerpo del mando y lo que no se asigna: el panel táctil y el hueco de las dos palancas.
@@ -314,7 +328,7 @@ struct GamepadDiagram: View {
 
     /// Lo que va escrito **dentro** del botón: corto, porque el sitio es el de una moneda.
     private func padGlyph(_ input: RetroPadInput) -> String {
-        shortGlyph(input, family ?? .generic)
+        glyph?(input) ?? shortGlyph(input, family ?? .generic)
     }
 
     private func shortGlyph(_ input: RetroPadInput, _ family: ConnectedGamepad.Family) -> String {
@@ -340,6 +354,7 @@ struct GamepadDiagram: View {
     /// Cómo se llama de verdad ese botón en este mando. Es lo que va en la etiqueta y lo que quita
     /// la adivinanza: en un DualSense no pone «Select» por ninguna parte.
     private func name(_ input: RetroPadInput) -> String {
+        if let title { return title(input) }
         let family = family ?? .generic
         switch input {
         case .start: return family.menuLabels.start

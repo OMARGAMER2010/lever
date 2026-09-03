@@ -97,11 +97,28 @@ struct ControlMapperSheet: View {
         GamepadDiagram(
             family: gamepads.gamepads.first?.family,
             inputs: model.availableInputs,
-            profile: model.controlProfile,
             listening: listening,
             strings: s,
+            describe: { control in
+                let tecla = model.controlProfile.binding(for: control)
+                let mando = model.controlProfile.gamepadBinding(for: control)
+                return "\(tecla.label(s)), \(mando.label(s))"
+            },
             onPick: { control in
                 listening == control ? stopListening() : startListening(control)
+            },
+            caption: { control in
+                let tecla = model.controlProfile.binding(for: control)
+                let mando = model.controlProfile.gamepadBinding(for: control)
+                HStack(spacing: 5) {
+                    Text(tecla.label(s))
+                        .foregroundStyle(tecla.isAssigned ? Color.secondary : Theme.attention)
+                    // El mando solo sale si se ha tocado: sin asignar lo pone RetroArch por su
+                    // cuenta, y anunciar «sin asignar» sería decir que no funciona.
+                    if mando.isAssigned {
+                        Text(mando.label(s)).foregroundStyle(Color.accentColor)
+                    }
+                }
             }
         )
         .frame(height: 340)

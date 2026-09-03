@@ -10,6 +10,7 @@ public final class AppModel: ObservableObject {
     /// lo que el usuario tenga descargado de verdad.
     private let portLibrary: PortLibrary
     private let controlLibrary: ControlLibrary
+    private let switchControls: SwitchControlLibrary
 
     private var customWineURL: URL?
     private var programSession: ProcessSession?
@@ -147,6 +148,13 @@ public final class AppModel: ObservableObject {
     @Published public var controlProfile = ControlProfile.standard
     /// A qué se le van a guardar los cambios: a todo, a esta consola o a este juego.
     @Published public var controlScope = ControlScope.global
+    /// Lo mismo para la consola híbrida, que tiene vocabulario propio y va a otro archivo. Sale de
+    /// la biblioteca al elegir el juego, y sin perfil guardado es la traducción de fábrica: un
+    /// juego que nadie ha configurado se juega igual.
+    @Published public var switchControlProfile = SwitchControlProfile.standard
+    /// A qué se le guarda: a todos los juegos o solo a este. Dos niveles y no tres, porque aquí
+    /// solo hay una máquina.
+    @Published public var switchControlScope = SwitchControlScope.global
     /// Si el juego se abre ocupando la pantalla entera.
     @Published public var playFullscreen: Bool {
         didSet { Preferences.playFullscreen = playFullscreen }
@@ -379,6 +387,117 @@ public final class AppModel: ObservableObject {
         return GamepadWatcher.connectedNow().first
     }
 
+    // MARK: - Los controles de la consola híbrida
+
+    /// La identidad del juego para guardarle controles propios.
+    ///
+    /// Los dieciséis dígitos del identificador y no el nombre del archivo: el nombre lo pone quien
+    /// comparte la copia, y dos copias del mismo juego se llaman distinto. El nombre solo entra
+    /// como respaldo, cuando sin llaves no se ha podido leer el identificador — que es peor
+    /// identidad, pero es mejor que ninguna.
+    public var switchGameId: String? {
+        guard switchFacts.isRecognised else { return nil }
+        return switchFacts.application?.formattedId ?? selectedRom?.lastPathComponent
+    }
+
+    /// Si tiene sentido enseñar la hoja de controles: hay emulador de esta consola instalado.
+    public var canEditSwitchControls: Bool { switchEmulator != nil }
+
+    /// Con qué identificador ve el emulador al mando que hay puesto, y de dónde salió ese dato.
+    ///
+    /// Dos sitios, en este orden: el que el propio emulador ya apuntó en su configuración, que es
+    /// correcto por definición; y si no hay ninguno, preguntándoselo a la biblioteca SDL que el
+    /// emulador lleva dentro. Si los dos fallan devuelve `nil`, y quien llama **no debe inventarse
+    /// uno**: el archivo lo aceptaría y el emulador no lo reconocería nunca.
+    public func switchPadIdentity() -> (pad: (id: String, name: String), source: String)? {
+        guard let emulador = switchEmulator else { return nil }
+        let conectado = GamepadWatcher.connectedNow().first
+        let configuración = EmulatorSettings.configURL(for: emulador.emulator, fileManager: fileManager)
+
+        if let guardado = EmulatorControls.knownPad(named: conectado?.name, atConfig: configuración) {
+            return (guardado, emulador.emulator.name)
+        }
+        // Solo con un mando delante: sin él, SDL enumeraría cero y no habría nada que apuntar.
+        guard let conectado else { return nil }
+
+        // Una sola pasada: cada llamada arranca y suelta el subsistema de SDL, y hacerlo dos veces
+        // por una lista que no cambia entre medias es pagarlo dos veces.
+        let vistos = SDLGamepads.enumerate(inside: emulador.app)
+        // Con uno solo no hay a quién confundirlo. Con varios hay que acertar por el nombre, y aun
+        // así no siempre coincide: IOKit da el nombre del producto y SDL el suyo. Si no se puede
+        // decidir, no se decide — escribir el identificador de otro mando es peor que no escribir.
+        if vistos.count == 1, let único = vistos.first { return ((único.id, único.name), "SDL") }
+        guard let visto = vistos.first(where: { $0.name == conectado.name }) else { return nil }
+        return ((visto.id, visto.name), "SDL")
+    }
+
+    /// Carga el perfil que le toca a este juego. Se llama al reconocerlo, igual que con las ROMs.
+    private func loadSwitchControls() {
+        let juego = switchGameId
+        switchControlProfile = switchControls.resolved(gameId: juego)
+        switchControlScope = switchControls.effectiveScope(gameId: juego)
+    }
+
+    /// Guarda el perfil en el nivel elegido **y lo escribe en la configuración del emulador**.
+    ///
+    /// Las dos cosas juntas y no solo la primera: guardar sin aplicar dejaría al usuario mirando
+    /// unos controles que dicen una cosa y un emulador que hace otra, que es exactamente el fallo
+    /// que esta pantalla existe para quitar.
+    @discardableResult
+    public func saveSwitchControls() -> ControlWriteOutcome {
+        guard let emulador = switchEmulator else { return .unreadableConfig }
+        do {
+            try switchControls.save(switchControlProfile, for: switchControlScope)
+        } catch {
+            showError(error.localizedDescription)
+            return .writeFailed
+        }
+        let resultado = EmulatorControls.apply(
+            switchControlProfile, pad: switchPadIdentity()?.pad,
+            for: emulador.emulator, fileManager: fileManager
+        )
+        add(strings[resultado.textKey], level: resultado.isSuccess ? .success : .warning)
+        if !resultado.isSuccess { showError(strings[resultado.textKey]) } else { clearError() }
+        objectWillChange.send()
+        return resultado
+    }
+
+    /// Tira el perfil del nivel elegido y vuelve a lo que mande por debajo. Sin nada por debajo,
+    /// a la traducción de fábrica.
+    public func resetSwitchControls() {
+        switchControls.remove(switchControlScope)
+        switchControlProfile = switchControls.resolved(gameId: switchGameId)
+    }
+
+    /// Deja los controles de **este** juego escritos antes de lanzarlo.
+    ///
+    /// Es lo que hace que «por juego» exista. El emulador no guarda controles por juego —su carpeta
+    /// `games/<identificador>/` solo tiene caché—, así que la única forma de que dos juegos tengan
+    /// esquemas distintos es escribir el que toca justo antes de abrir cada uno.
+    ///
+    /// No avisa de sus fallos como lo hace `saveSwitchControls`: aquí el usuario ha pulsado
+    /// «Jugar», y pararle el lanzamiento porque no se supo el identificador del mando sería cambiar
+    /// un problema pequeño por uno grande. Se apunta en la actividad y se sigue.
+    private func applySwitchControlsBeforeLaunch() {
+        guard let emulador = switchEmulator else { return }
+        let perfil = switchControls.resolved(gameId: switchGameId)
+        let resultado = EmulatorControls.apply(
+            perfil, pad: switchPadIdentity()?.pad,
+            for: emulador.emulator, fileManager: fileManager
+        )
+        switch resultado {
+        case .applied:
+            add(strings(.switchControlsAppliedToGame, strings[switchControlScope.textKey]),
+                level: .info)
+        // Que el emulador esté abierto no es un fallo aquí: significa que ya está en marcha con la
+        // configuración que leyó al arrancar, y reescribírsela ahora no cambiaría nada.
+        case .emulatorIsRunning:
+            break
+        default:
+            add(strings[resultado.textKey], level: .warning)
+        }
+    }
+
     /// Si falta `zstd`, que es lo único que hace falta para rehacer un paquete comprimido y que
     /// macOS no trae.
     public var canRebuildPackages: Bool { SwitchTools.zstdURL(fileManager: fileManager) != nil }
@@ -473,13 +592,15 @@ public final class AppModel: ObservableObject {
         runner: ProcessRunner = ProcessRunner(),
         fileManager: FileManager = .default,
         portLibrary: PortLibrary = .shared,
-        controlLibrary: ControlLibrary = .shared
+        controlLibrary: ControlLibrary = .shared,
+        switchControls: SwitchControlLibrary = .shared
     ) {
         self.locator = locator
         self.runner = runner
         self.fileManager = fileManager
         self.portLibrary = portLibrary
         self.controlLibrary = controlLibrary
+        self.switchControls = switchControls
         self.language = Preferences.language
         self.strings = Strings.table(for: Preferences.language)
         self.customWineURL = Preferences.customWineURL
@@ -1617,6 +1738,9 @@ public final class AppModel: ObservableObject {
             if paquete.isRecognised {
                 switchFacts = paquete
                 romFacts = RomFacts(bytes: paquete.bytes)
+                // Igual que con las ROMs: los controles se cargan al saber de qué juego son, para
+                // que la hoja se abra ya enseñando los suyos y no los del anterior.
+                loadSwitchControls()
                 isInspectingRom = false
                 return
             }
@@ -1795,6 +1919,12 @@ public final class AppModel: ObservableObject {
                 isRebuildingPackage = false
                 add(strings(.logPackageRebuilt, aJugar.lastPathComponent), level: .success)
             }
+
+            // Los controles de este juego, escritos justo antes de abrirlo. Va aquí y no al
+            // guardarlos porque el emulador solo tiene una configuración de entrada para todo: el
+            // perfil del juego que se lanza tiene que ser el que esté puesto en el momento de
+            // lanzarlo.
+            applySwitchControlsBeforeLaunch()
 
             activityMessage = strings[.statusLaunchingEmulator]
             do {

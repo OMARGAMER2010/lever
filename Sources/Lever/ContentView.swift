@@ -5,6 +5,7 @@ struct ContentView: View {
     @ObservedObject var model: AppModel
     @State private var mode: WorkMode = .archive
     @State private var showsActivity = false
+    @State private var showsSwitchControls = false
 
     private var s: Strings { model.strings }
 
@@ -68,6 +69,14 @@ struct ContentView: View {
                 Menu {
                     Button(s[.menuRefresh], action: model.refreshTools)
                     Divider()
+                    // Los controles de la consola híbrida viven aquí y no dentro de la pestaña de
+                    // consolas a propósito: son un ajuste del **mando**, no del archivo que haya
+                    // elegido, y hace falta poder prepararlo antes de tener un juego delante. Sale
+                    // solo si hay emulador instalado, porque sin él no habría dónde escribirlos.
+                    if model.canEditSwitchControls {
+                        Button(s[.menuSwitchControls]) { showsSwitchControls = true }
+                    }
+                    Divider()
                     Button(s[.menuInstallMissing], action: model.installTools)
                         .disabled(!model.canInstallTools)
                     Button(s[.menuScanDevices], action: model.refreshDevices)
@@ -92,6 +101,7 @@ struct ContentView: View {
                 LanguagePicker(language: $model.language, label: s[.languageMenu])
             }
         }
+        .sheet(isPresented: $showsSwitchControls) { SwitchControlSheet(model: model) }
         .onAppear {
             if model.log.isEmpty { model.refreshTools() }
         }
