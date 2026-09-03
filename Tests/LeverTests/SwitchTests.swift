@@ -13,6 +13,7 @@ enum SwitchTests {
         try testReadsAPackageFromTheStore()
         try testReadsACartridgeThroughItsSecurePartition()
         try testTellsATrimmedCartridgeFromOneCarryingFirmware()
+        try testReadsWhatTheEmulatorIsSetUpToPlayWith()
         try testTellsACompressedPackageFromItsName()
         try testReadsTheTitleFromATicket()
         try testReadsATicketWhoseSignatureIsAnotherSize()
@@ -563,6 +564,48 @@ enum SwitchTests {
         try expect(SwitchContainer.xcz.decompressed == .xci, "y un .xcz, un .xci")
         try expect(SwitchContainer.xci.isCartridge, "un .xci viene de un cartucho")
         try expect(!SwitchContainer.nsp.isCartridge, "y un .nsp de la tienda")
+    }
+
+    /// Se lee con qué se juega, y se distingue «no tiene nada» de «no lo sé».
+    ///
+    /// La distinción no es un tecnicismo: sin ningún control configurado el juego arranca y no
+    /// responde a nada —el peor fallo, porque no da ningún error—, mientras que no saber leer la
+    /// configuración de un emulador cualquiera no dice nada del usuario. Enseñar lo segundo como si
+    /// fuera lo primero sería alarmar por un archivo que ni siquiera se entiende.
+    private static func testReadsWhatTheEmulatorIsSetUpToPlayWith() throws {
+        let dos = Data("""
+        {"input_config":[
+          {"backend":"WindowKeyboard","name":"Keyboard","player_index":"Handheld"},
+          {"backend":"GamepadSDL2","name":"DualSense Wireless Controller","player_index":"Player1"}
+        ]}
+        """.utf8)
+        guard let leído = EmulatorInputReader.parse(dos) else {
+            throw TestFailure(description: "un Config.json con input_config tiene que leerse")
+        }
+        try expect(leído.devices.count == 2, "los dos aparatos")
+        try expect(leído.hasKeyboard && leído.hasGamepad, "un teclado y un mando")
+        try expect(!leído.isEmpty, "y por tanto no está sin configurar")
+        try expect(leído.devices.first { $0.kind == .gamepad }?.slot == "Player1",
+                   "el mando lleva el jugador al que está asignado")
+
+        // Sin ningún perfil: configurado a cero. Es un hecho, no un desconocimiento.
+        guard let vacío = EmulatorInputReader.parse(Data(#"{"input_config":[]}"#.utf8)) else {
+            throw TestFailure(description: "una lista vacía sigue siendo una respuesta")
+        }
+        try expect(vacío.isEmpty, "sin perfiles no hay con qué jugar")
+
+        // Y un archivo que no es de esto: no se sabe, y eso se dice con `nil`.
+        try expect(EmulatorInputReader.parse(Data(#"{"otra_cosa":1}"#.utf8)) == nil,
+                   "sin input_config no se sabe: nil, no «vacío»")
+        try expect(EmulatorInputReader.parse(Data("no soy json".utf8)) == nil,
+                   "y un archivo ilegible tampoco se inventa")
+
+        // Un motor que no se conoce cuenta como mando en vez de desaparecer: la familia habla con
+        // cualquier mando por SDL, y perder uno de la lista sin avisar sería peor que clasificarlo
+        // de más.
+        let raro = Data(#"{"input_config":[{"backend":"GamepadNuevo","name":"X","player_index":"Player2"}]}"#.utf8)
+        try expect(EmulatorInputReader.parse(raro)?.hasGamepad == true,
+                   "un motor nuevo no puede desaparecer de la lista")
     }
 
     /// Un cartucho entero y uno recortado se distinguen, y por el tamaño y no por la existencia.

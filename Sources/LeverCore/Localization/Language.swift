@@ -134,6 +134,8 @@ public enum TextKey: String, CaseIterable, Sendable {
     case dropSwitchSubtitle, switchDisclaimer
     case switchCartridgeFirmwareIncluded, switchCartridgeTrimmed
     case switchCartridgeSection, switchCartridgeTrimmedTitle
+    case inputSection, inputKindKeyboard, inputKindGamepad
+    case inputNone, inputUnknown, inputPadNotConfigured, inputSlotNote
     case switchRebuildTitle, switchRebuildBody, switchCacheNote, switchKeysTooOld
     case switchCartridgeNote
 

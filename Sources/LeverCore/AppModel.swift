@@ -335,6 +335,23 @@ public final class AppModel: ObservableObject {
         SwitchKeys.locate(preferring: Preferences.switchKeysURL, fileManager: fileManager)
     }
 
+    /// Con qué se juega, según lo que el emulador tenga configurado. `nil` cuando no hay emulador
+    /// o cuando de ese no se sabe leer: no es lo mismo que «no tiene nada».
+    public var switchInput: EmulatorInput? {
+        guard let emulador = switchEmulator?.emulator else { return nil }
+        return EmulatorInputReader.read(emulator: emulador, fileManager: fileManager)
+    }
+
+    /// Un mando conectado al Mac que el emulador **no** tiene configurado.
+    ///
+    /// Es el aviso que faltaba: el mando está enchufado, el usuario da por hecho que va a
+    /// funcionar, y el juego no responde porque quien tiene que conocerlo es el emulador, no Lever.
+    /// Solo se mira si ya se sabe qué tiene configurado; si no se sabe, no se inventa.
+    public var gamepadMissingFromEmulator: ConnectedGamepad? {
+        guard let entrada = switchInput, !entrada.hasGamepad else { return nil }
+        return GamepadWatcher.connectedNow().first
+    }
+
     /// Si falta `zstd`, que es lo único que hace falta para rehacer un paquete comprimido y que
     /// macOS no trae.
     public var canRebuildPackages: Bool { SwitchTools.zstdURL(fileManager: fileManager) != nil }
