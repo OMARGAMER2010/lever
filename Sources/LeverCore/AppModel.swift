@@ -342,6 +342,33 @@ public final class AppModel: ObservableObject {
         return EmulatorInputReader.read(emulator: emulador, fileManager: fileManager)
     }
 
+    /// En qué modo de pantalla está el emulador. `nil` si no se sabe leer el suyo.
+    public var switchDisplayMode: EmulatorDisplayMode? {
+        guard let emulador = switchEmulator?.emulator else { return nil }
+        return EmulatorSettings.displayMode(of: emulador, fileManager: fileManager)
+    }
+
+    /// Si el emulador está abierto. Importa porque reescribe su configuración al cerrarse, y un
+    /// cambio hecho mientras tanto se deshace solo sin que nadie lo entienda.
+    public var switchEmulatorIsRunning: Bool {
+        guard let emulador = switchEmulator?.emulator else { return false }
+        return EmulatorSettings.isRunning(emulador)
+    }
+
+    /// Cambia entre dibujar a 1080p y a 720p. Es el ajuste de rendimiento que más se nota y el
+    /// único que cuesta nitidez, así que lo pulsa el usuario.
+    public func toggleSwitchDisplayMode() {
+        guard let emulador = switchEmulator?.emulator, let actual = switchDisplayMode else { return }
+        let nuevo = actual.other
+        guard EmulatorSettings.setDisplayMode(nuevo, for: emulador, fileManager: fileManager) else {
+            showError(strings[.displayModeFailed])
+            return
+        }
+        clearError()
+        add(strings(.displayModeSwitchTo, strings[nuevo.textKey]), level: .success)
+        objectWillChange.send()
+    }
+
     /// Un mando conectado al Mac que el emulador **no** tiene configurado.
     ///
     /// Es el aviso que faltaba: el mando está enchufado, el usuario da por hecho que va a

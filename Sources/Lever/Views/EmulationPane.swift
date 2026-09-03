@@ -93,6 +93,10 @@ struct EmulationPane: View {
                         Divider()
                         inputSection(entrada)
                     }
+                    if let modo = model.switchDisplayMode {
+                        Divider()
+                        displayModeSection(modo)
+                    }
                 } else if model.psMachine != nil {
                     playStationSection
                     Divider()
@@ -270,6 +274,45 @@ struct EmulationPane: View {
                 Text(s[.switchKeysMissingBody])
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    // MARK: - Modo de pantalla
+
+    /// El único ajuste de rendimiento que Lever ofrece tocar, y el único que cuesta calidad.
+    ///
+    /// Está aquí y no escondido porque es, con diferencia, el que más se nota: 720p contra 1080p es
+    /// la mitad de píxeles por fotograma. Y está como botón y no como algo automático porque la
+    /// moneda de cambio es la nitidez, y eso lo decide quien mira la pantalla.
+    @ViewBuilder
+    private func displayModeSection(_ mode: EmulatorDisplayMode) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(s[.displayModeSection]).font(.system(size: 12, weight: .semibold))
+                Spacer()
+                Button(s(.displayModeSwitchTo, s[mode.other.textKey])) {
+                    model.toggleSwitchDisplayMode()
+                }
+                .controlSize(.small)
+            }
+
+            Text(s[mode.textKey])
+                .font(.system(size: 11, weight: .medium))
+
+            Text(s[.displayModeNote])
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            // Cambiarlo con el emulador abierto no sirve de nada: al cerrarse reescribe su
+            // configuración y se lleva el cambio por delante. Decirlo antes evita el «pero si lo
+            // acabo de cambiar».
+            if model.switchEmulatorIsRunning {
+                Text(s[.displayModeRunning])
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color(nsColor: .systemOrange))
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
