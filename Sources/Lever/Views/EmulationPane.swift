@@ -87,6 +87,12 @@ struct EmulationPane: View {
                     keysSection
                     Divider()
                     emulatorSection
+                    // Solo si se sabe leer la configuración de ese emulador. `nil` es «no lo sé»,
+                    // y no se enseña nada antes que enseñar una suposición.
+                    if let entrada = model.switchInput {
+                        Divider()
+                        inputSection(entrada)
+                    }
                 } else if model.psMachine != nil {
                     playStationSection
                     Divider()
@@ -265,6 +271,50 @@ struct EmulationPane: View {
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    // MARK: - Con qué se juega
+
+    /// Lo que el emulador tiene configurado para recibir entrada.
+    ///
+    /// Lever **no** escribe esto. El mapeo que sí escribe es el de RetroArch, donde monta la
+    /// partida entera; un emulador de programa aparte trae su propia configuración y su propio
+    /// formato, y escribirle dentro sería romperse en cada versión suya. Pero callarlo deja el peor
+    /// fallo posible sin explicación: un juego que arranca, no responde a nada, y no da ningún
+    /// error. Leerlo y decirlo cuesta nada.
+    @ViewBuilder
+    private func inputSection(_ input: EmulatorInput) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(s[.inputSection]).font(.system(size: 12, weight: .semibold))
+
+            if input.isEmpty {
+                Text(s[.inputNone])
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                ForEach(input.devices) { aparato in
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(s[aparato.kind.textKey])
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                        Text(aparato.name).font(.system(size: 11))
+                        Spacer()
+                        Text(aparato.slot)
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                // La regla que rompe a todo el mundo: dos aparatos en la misma ranura y uno deja de
+                // responder, sin aviso ninguno.
+                if Set(input.devices.map(\.slot)).count < input.devices.count {
+                    Text(s[.inputSlotNote])
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
     }
@@ -521,6 +571,14 @@ struct EmulationPane: View {
                 kind: .warning,
                 title: s[.switchEmulatorMissingTitle],
                 message: s[.switchEmulatorMissingBody]
+            )
+        } else if let mando = model.gamepadMissingFromEmulator {
+            // El mando está puesto y el emulador no sabe de él. Sin este aviso, el juego arranca y
+            // no responde al mando, que es indistinguible de que el mando esté roto.
+            NoticeBanner(
+                kind: .warning,
+                title: s[.inputSection],
+                message: s(.inputPadNotConfigured, mando.name)
             )
         }
 

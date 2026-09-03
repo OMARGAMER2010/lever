@@ -138,20 +138,41 @@ public final class GamepadWatcher: ObservableObject {
 
     // MARK: - Mirar
 
+    /// Los mismos aparatos que busca RetroArch. Pedir menos dejaría fuera mandos que él sí usaría;
+    /// pedir más metería teclados y ratones en la lista.
+    static let matchingCriteria: [[String: Any]] = [
+        [kIOHIDDeviceUsagePageKey: Int(RetroPadNumbering.pageGenericDesktop), kIOHIDDeviceUsageKey: 0x04],
+        [kIOHIDDeviceUsagePageKey: Int(RetroPadNumbering.pageGenericDesktop), kIOHIDDeviceUsageKey: 0x05],
+        [kIOHIDDeviceUsagePageKey: 0x05, kIOHIDDeviceUsageKey: 0x00]
+    ]
+
+    /// Qué mandos hay conectados ahora mismo, sin quedarse escuchando.
+    ///
+    /// Es para preguntarlo de pasada —«¿hay un mando puesto que el emulador no conoce?»— desde
+    /// sitios que no son la hoja de mapeo. Abrir un `IOHIDManager` permanente para eso obligaría a
+    /// cerrarlo bien en todos los caminos, y no hace falta: se abre, se mira y se cierra.
+    ///
+    /// Sin `seize`, por lo mismo que el watcher: abrir en exclusiva le quitaría el mando al
+    /// emulador, que es justo quien tiene que quedárselo.
+    public static func connectedNow() -> [ConnectedGamepad] {
+        let hid = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
+        IOHIDManagerSetDeviceMatchingMultiple(hid, matchingCriteria as CFArray)
+        guard IOHIDManagerOpen(hid, IOOptionBits(kIOHIDOptionsTypeNone)) == kIOReturnSuccess else {
+            return []
+        }
+        defer { IOHIDManagerClose(hid, IOOptionBits(kIOHIDOptionsTypeNone)) }
+
+        let aparatos = (IOHIDManagerCopyDevices(hid) as? Set<IOHIDDevice>) ?? []
+        return aparatos.compactMap { read($0)?.gamepad }.sorted { $0.name < $1.name }
+    }
+
     /// Empieza a mirar. Los mandos que se enchufen o se emparejen después entran solos: IOKit
     /// avisa, y sin eso habría que decirle al usuario que cierre y vuelva a abrir la hoja.
     public func start() {
         guard manager == nil else { return }
 
         let hid = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
-        // Los mismos aparatos que busca RetroArch. Pedir menos dejaría fuera mandos que él sí
-        // usaría; pedir más metería teclados y ratones en la lista.
-        let criterios: [[String: Any]] = [
-            [kIOHIDDeviceUsagePageKey: Int(RetroPadNumbering.pageGenericDesktop), kIOHIDDeviceUsageKey: 0x04],
-            [kIOHIDDeviceUsagePageKey: Int(RetroPadNumbering.pageGenericDesktop), kIOHIDDeviceUsageKey: 0x05],
-            [kIOHIDDeviceUsagePageKey: 0x05, kIOHIDDeviceUsageKey: 0x00]
-        ]
-        IOHIDManagerSetDeviceMatchingMultiple(hid, criterios as CFArray)
+        IOHIDManagerSetDeviceMatchingMultiple(hid, Self.matchingCriteria as CFArray)
 
         let contexto = Unmanaged.passUnretained(self).toOpaque()
         let recuento: IOHIDDeviceCallback = { context, _, _, _ in
