@@ -14,6 +14,7 @@ enum SwitchTests {
         try testReadsACartridgeThroughItsSecurePartition()
         try testTellsATrimmedCartridgeFromOneCarryingFirmware()
         try testReadsWhatTheEmulatorIsSetUpToPlayWith()
+        try testChangingTheDisplayModeKeepsEverythingElse()
         try testTellsACompressedPackageFromItsName()
         try testReadsTheTitleFromATicket()
         try testReadsATicketWhoseSignatureIsAnotherSize()
@@ -606,6 +607,48 @@ enum SwitchTests {
         let raro = Data(#"{"input_config":[{"backend":"GamepadNuevo","name":"X","player_index":"Player2"}]}"#.utf8)
         try expect(EmulatorInputReader.parse(raro)?.hasGamepad == true,
                    "un motor nuevo no puede desaparecer de la lista")
+    }
+
+    /// Cambiar el modo de pantalla toca **una** clave y no se lleva nada más por delante.
+    ///
+    /// Es lo que hay que fijar de una escritura en la configuración de otro programa: si al cambiar
+    /// un booleano se perdiera el resto —las llaves, el mando, el modo de memoria—, el usuario se
+    /// quedaría con el emulador reseteado y sin ninguna pista de por qué.
+    private static func testChangingTheDisplayModeKeepsEverythingElse() throws {
+        let fixture = try TemporaryFixture()
+        let archivo = fixture.directoryURL.appendingPathComponent("Config.json")
+        let original: [String: Any] = [
+            "version": 70,
+            "docked_mode": true,
+            "memory_manager_mode": "HostMappedUnsafe",
+            "input_config": [["backend": "GamepadSDL2", "name": "DualSense", "player_index": "Player1"]],
+            "anidado": ["a": 1, "b": [1, 2, 3]]
+        ]
+        try JSONSerialization.data(withJSONObject: original).write(to: archivo)
+
+        try expect(EmulatorSettings.displayMode(atConfig: archivo) == .docked, "empieza en dock")
+        try expect(EmulatorSettings.setDisplayMode(.handheld, atConfig: archivo), "y se deja cambiar")
+        try expect(EmulatorSettings.displayMode(atConfig: archivo) == .handheld, "ahora es portátil")
+
+        // Y lo que no se tocaba sigue igual, incluido lo anidado.
+        let leído = try JSONSerialization.jsonObject(with: Data(contentsOf: archivo)) as? [String: Any]
+        try expect(leído?["version"] as? Int == 70, "la versión no se toca")
+        try expect(leído?["memory_manager_mode"] as? String == "HostMappedUnsafe", "ni el modo de memoria")
+        try expect((leído?["input_config"] as? [[String: Any]])?.count == 1, "ni los controles")
+        try expect(((leído?["anidado"] as? [String: Any])?["b"] as? [Int]) == [1, 2, 3],
+                   "ni lo que estuviera anidado")
+
+        // Ida y vuelta, que es lo que hará el botón.
+        try expect(EmulatorSettings.setDisplayMode(.docked, atConfig: archivo), "y se vuelve")
+        try expect(EmulatorSettings.displayMode(atConfig: archivo) == .docked, "otra vez en dock")
+
+        // Un archivo que no existe no se inventa ni se crea a medias.
+        let fantasma = fixture.directoryURL.appendingPathComponent("NoExiste.json")
+        try expect(EmulatorSettings.displayMode(atConfig: fantasma) == nil, "sin archivo no se sabe")
+        try expect(!EmulatorSettings.setDisplayMode(.handheld, atConfig: fantasma),
+                   "y no se escribe una configuración que no existía")
+        try expect(!FileManager.default.fileExists(atPath: fantasma.path),
+                   "ni se deja un archivo suelto detrás")
     }
 
     /// Un cartucho entero y uno recortado se distinguen, y por el tamaño y no por la existencia.
