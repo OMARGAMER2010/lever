@@ -141,6 +141,16 @@ public enum TextKey: String, CaseIterable, Sendable {
     case switchRebuildTitle, switchRebuildBody, switchCacheNote, switchKeysTooOld
     case switchCartridgeNote
 
+    // Los controles de la consola híbrida, que Lever sí escribe
+    case menuSwitchControls, switchControlsTitle, switchControlsSubtitle
+    case switchControlsScopeGlobal, switchControlsScopeGame
+    case switchFaceSection, switchFaceByPosition, switchFaceByLabel, switchFaceNote
+    case switchControlsPadColumn, switchControlsKeyColumn, switchControlsPickPad
+    case switchControlsListening, switchControlsNoPad, switchControlsPadFrom
+    case switchControlsSave, switchControlsReset, switchControlsApplyNote
+    case switchControlsApplied, switchControlsNoPadId, switchControlsEmulatorOpen
+    case switchControlsUnreadable, switchControlsFailed, switchControlsAppliedToGame
+
     // Máquinas que ejecuta un programa aparte: madurez y firmware
     case maturitySolid, maturityExperimental, maturityNone
     case firmwareFromConsole, firmwareFromVendor
