@@ -7,8 +7,8 @@ import Foundation
 /// arregla cerrándolo. Un `false` mandaría al usuario a adivinar cuál de los dos le ha tocado.
 public enum ControlWriteOutcome: Equatable, Sendable {
     case applied
-    /// Se escribió el teclado, pero del mando no se supo el identificador. El juego se puede jugar;
-    /// el mando, no.
+    case saved
+    case missingTemplate
     case appliedWithoutGamepad
     /// El emulador está abierto. No se ha tocado nada.
     case emulatorIsRunning
@@ -18,6 +18,8 @@ public enum ControlWriteOutcome: Equatable, Sendable {
     public var textKey: TextKey {
         switch self {
         case .applied: return .switchControlsApplied
+        case .saved: return .switchControlsSaved
+        case .missingTemplate: return .switchInputTemplateMissing
         case .appliedWithoutGamepad: return .switchControlsNoPadId
         case .emulatorIsRunning: return .switchControlsEmulatorOpen
         case .unreadableConfig: return .switchControlsUnreadable
@@ -25,7 +27,7 @@ public enum ControlWriteOutcome: Equatable, Sendable {
         }
     }
 
-    public var isSuccess: Bool { self == .applied || self == .appliedWithoutGamepad }
+    public var isSuccess: Bool { self == .applied || self == .saved }
 }
 
 /// Escribe el mapa de controles en la configuración del emulador de la consola híbrida.
@@ -45,9 +47,8 @@ public enum ControlWriteOutcome: Equatable, Sendable {
 /// 2. **Lever no redacta un perfil desde cero: edita el que escribió el emulador.** Se toma la
 ///    entrada que ya está en el archivo y se sustituyen **solo los valores hoja de los botones**,
 ///    dejando intacto todo lo demás: zonas muertas, giroscopio, vibración, LED, y cualquier campo
-///    que una versión futura añada. Así los cambios de esquema se heredan gratis en vez de
-///    romperse. La plantilla propia de aquí abajo solo entra en juego cuando el archivo no tiene
-///    ninguna entrada que copiar.
+///    que una versión futura añada. Así los campos nuevos se conservan. Si no hay una plantilla
+///    válida del emulador, Lever lo indica y no escribe un esquema inventado.
 ///
 /// 3. **El peor fallo es legible.** Si el esquema cambiara de forma incompatible, lo que el usuario
 ///    ve es «los controles no son los que pedí», que se entiende y se deshace. Escribir claves de
@@ -58,6 +59,9 @@ public enum ControlWriteOutcome: Equatable, Sendable {
 ///    antes, no un archivo truncado—, y no se escribe nunca con el emulador abierto, porque lo
 ///    reescribe al cerrarse y el cambio se perdería sin que nadie lo entendiera.
 public enum EmulatorControls {
+    public static let virtualDeviceName = "Lever Keyboard and Mouse"
+    public static let templatesName = "Config.json.lever-input-templates.json"
+    public static let mouseSnapshotName = "Config.json.lever-before-mouse.json"
     /// Copia del archivo tal como estaba antes de que Lever lo tocara por primera vez. Se guarda
     /// una sola vez: si se rehiciera en cada escritura, la «copia del original» acabaría siendo
     /// copia de lo último que escribió Lever, que no sirve para nada.
@@ -102,17 +106,37 @@ public enum EmulatorControls {
               var raíz = try? JSONSerialization.jsonObject(with: datos) as? [String: Any]
         else { return .unreadableConfig }
 
-        let existentes = (raíz["input_config"] as? [[String: Any]]) ?? []
-        // El mando que se pide, y si no se pide ninguno, el que el archivo ya conociera. Así una
-        // escritura hecha sin mando delante no borra el que el usuario tenía configurado.
-        let mando = pad ?? knownPad(in: existentes)
-
-        raíz["input_config"] = slots(profile, pad: mando, from: existentes)
+        guard let existentes = raíz["input_config"] as? [[String: Any]] else { return .unreadableConfig }
+        let caché = archivo.deletingLastPathComponent().appendingPathComponent(templatesName)
+        var guardadas: [[String: Any]] = []
+        if fileManager.fileExists(atPath: caché.path) {
+            guard let datos = try? Data(contentsOf: caché),
+                  let leídas = try? JSONSerialization.jsonObject(with: datos) as? [[String: Any]]
+            else { return .unreadableConfig }
+            guardadas = leídas
+        }
+        // La configuración activa ya no contiene el dispositivo inactivo. Se conservan sus
+        // entradas aparte antes de sustituirlas, para recuperar también campos de versiones futuras.
+        let plantillas = existentes + guardadas.filter { antigua in
+            !existentes.contains { $0["id"] as? String == antigua["id"] as? String
+                && $0["backend"] as? String == antigua["backend"] as? String
+                && $0["player_index"] as? String == antigua["player_index"] as? String }
+        }
+        let mando = pad ?? (profile.inputDevice == .gamepad ? knownPad(in: plantillas) : nil)
+        guard let mando else { return .appliedWithoutGamepad }
+        guard (profile.inputDevice == .keyboardMouse) == (mando.name == virtualDeviceName) else { return .appliedWithoutGamepad }
+        guard let nuevas = slots(profile, pad: mando, from: plantillas) else { return .missingTemplate }
+        raíz["input_config"] = nuevas
         guard let salida = try? JSONSerialization.data(
             withJSONObject: raíz, options: [.prettyPrinted, .sortedKeys]
         ) else { return .writeFailed }
 
-        backUp(archivo, fileManager: fileManager)
+        do {
+            if mando.name == virtualDeviceName { try beginMouseSession(atConfig: archivo, data: datos, entries: existentes) }
+            let originales = try JSONSerialization.data(withJSONObject: plantillas, options: [.prettyPrinted, .sortedKeys])
+            try originales.write(to: caché, options: .atomic)
+            try backUp(archivo, fileManager: fileManager)
+        } catch { return .writeFailed }
 
         let temporal = archivo.deletingLastPathComponent()
             .appendingPathComponent("Config.json.lever-\(UUID().uuidString)")
@@ -121,47 +145,94 @@ public enum EmulatorControls {
             try? fileManager.removeItem(at: temporal)
             return .writeFailed
         }
-        return mando == nil ? .appliedWithoutGamepad : .applied
+        return .applied
+    }
+
+    private static func beginMouseSession(atConfig archivo: URL, data: Data, entries: [[String: Any]]) throws {
+        let copia = archivo.deletingLastPathComponent().appendingPathComponent(mouseSnapshotName)
+        if entries.allSatisfy({ $0["name"] as? String == virtualDeviceName }) && FileManager.default.fileExists(atPath: copia.path) { return }
+        try data.write(to: copia, options: .atomic)
+    }
+
+    /// El dispositivo SDL solo existe durante la sesión. Al cerrarla se recupera la entrada
+    /// anterior, conservando los cambios de gráficos o ventana que el emulador haya guardado.
+    /// El diario permite recuperar también una sesión interrumpida cuando Lever vuelve a abrirse.
+    @MainActor
+    public static func recoverMouseSession(for emulator: StandaloneEmulator, fileManager: FileManager = .default) {
+        guard !EmulatorSettings.isRunning(emulator) else { return }
+        _ = recoverMouseSession(atConfig: EmulatorSettings.configURL(for: emulator, fileManager: fileManager))
+    }
+
+    @discardableResult
+    public static func recoverMouseSession(atConfig archivo: URL) -> Bool {
+        let copia = archivo.deletingLastPathComponent().appendingPathComponent(mouseSnapshotName)
+        guard let guardado = try? Data(contentsOf: copia),
+              let original = try? JSONSerialization.jsonObject(with: guardado) as? [String: Any],
+              let entradas = original["input_config"] as? [[String: Any]],
+              let datos = try? Data(contentsOf: archivo),
+              var actual = try? JSONSerialization.jsonObject(with: datos) as? [String: Any],
+              let activas = actual["input_config"] as? [[String: Any]] else { return false }
+        do {
+            if activas.contains(where: { $0["name"] as? String == virtualDeviceName }) {
+                let anteriores = entradas.filter { $0["name"] as? String != virtualDeviceName }
+                // Ryujinx puede guardar un mando nuevo mientras el ratón sigue en otra ranura.
+                // Solo se recuperan las ranuras todavía virtuales; las ediciones físicas se respetan.
+                let recuperadas = activas.allSatisfy { $0["name"] as? String == virtualDeviceName }
+                    ? anteriores
+                    : activas.flatMap { entrada -> [[String: Any]] in
+                        guard entrada["name"] as? String == virtualDeviceName else { return [entrada] }
+                        guard let ranura = entrada["player_index"] as? String else { return [] }
+                        return anteriores.filter { $0["player_index"] as? String == ranura }
+                    }
+                actual["input_config"] = recuperadas
+                try JSONSerialization.data(withJSONObject: actual, options: [.prettyPrinted, .sortedKeys]).write(to: archivo, options: .atomic)
+            }
+            try FileManager.default.removeItem(at: copia)
+            return true
+        } catch { return false }
     }
 
     /// Guarda el archivo tal como estaba, la primera vez y solo la primera.
-    private static func backUp(_ archivo: URL, fileManager: FileManager) {
+    private static func backUp(_ archivo: URL, fileManager: FileManager) throws {
         let copia = archivo.deletingLastPathComponent().appendingPathComponent(backupName)
         guard !fileManager.fileExists(atPath: copia.path) else { return }
-        try? fileManager.copyItem(at: archivo, to: copia)
+        try fileManager.copyItem(at: archivo, to: copia)
     }
 
-    // MARK: - Las tres ranuras
+    // MARK: - El jugador principal
 
-    /// Las tres entradas que se escriben, y por qué son tres para dos aparatos.
-    ///
-    /// El emulador enlaza **un solo dispositivo por ranura de jugador**: si hay dos apuntando al
-    /// mismo jugador, se queda con uno y el otro no responde. Y el modo de pantalla elige la
-    /// ranura: puesto en la base mira `Player1`, y en la mano mira `Handheld`. Con el mando en una
-    /// sola de las dos, cambiar de modo dejaría el mando mudo sin que nada lo explicara. Por eso va
-    /// **duplicado en las dos**, con el mismo identificador, y el teclado se queda en `Player2` de
-    /// respaldo, que es donde no le quita el sitio a nadie.
+    /// Handheld y Docked consultan ranuras distintas. Solo el dispositivo elegido ocupa ambas;
+    /// Player2 pertenece a otro jugador (Cappy en Odyssey), no es una entrada alternativa de Mario.
     static func slots(
         _ profile: SwitchControlProfile,
-        pad: (id: String, name: String)?,
+        pad: (id: String, name: String),
         from existing: [[String: Any]]
-    ) -> [[String: Any]] {
-        let plantillaMando = existing.first { ($0["backend"] as? String) != "WindowKeyboard" }
-            ?? gamepadTemplate
-        let plantillaTeclado = existing.first { ($0["backend"] as? String) == "WindowKeyboard" }
-            ?? keyboardTemplate
-
-        var salida: [[String: Any]] = []
-        if let pad {
-            let base = gamepadEntry(profile, from: plantillaMando, pad: pad)
-            salida.append(place(base, type: "Handheld", slot: "Handheld"))
-            salida.append(place(base, type: "ProController", slot: "Player1"))
+    ) -> [[String: Any]]? {
+        let mandos = existing.filter { $0["backend"] as? String == "GamepadSDL2" }
+        let virtual = pad.name == virtualDeviceName
+        guard var plantilla = mandos.first(where: { $0["id"] as? String == pad.id })
+            ?? mandos.first(where: { $0["name"] as? String == pad.name })
+            ?? mandos.first(where: { $0["name"] as? String != virtualDeviceName }),
+              plantilla["left_joycon"] is [String: Any], plantilla["right_joycon"] is [String: Any],
+              plantilla["left_joycon_stick"] is [String: Any], plantilla["right_joycon_stick"] is [String: Any]
+        else { return nil }
+        if virtual {
+            // Un ratón no tiene deriva física. Heredar la zona muerta del DualSense perdería
+            // movimientos pequeños. La plantilla física permanece intacta en la caché.
+            plantilla["deadzone_left"] = 0.0; plantilla["deadzone_right"] = 0.0
+            plantilla["range_left"] = 1.0; plantilla["range_right"] = 1.0
+            for sección in ["left_joycon_stick", "right_joycon_stick"] {
+                var palanca = plantilla[sección] as? [String: Any] ?? [:]
+                for clave in ["invert_stick_x", "invert_stick_y", "rotate90_cw"] { palanca[clave] = false }
+                plantilla[sección] = palanca
+            }
+            for (sección, clave) in [("motion", "enable_motion"), ("rumble", "enable_rumble")] {
+                if var ajustes = plantilla[sección] as? [String: Any] { ajustes[clave] = false; plantilla[sección] = ajustes }
+            }
         }
-        salida.append(place(
-            keyboardEntry(profile, from: plantillaTeclado),
-            type: "ProController", slot: "Player2"
-        ))
-        return salida
+        let base = gamepadEntry(virtual ? .standard : profile, from: plantilla, pad: pad)
+        return [place(base, type: "Handheld", slot: "Handheld"),
+                place(base, type: "ProController", slot: "Player1")]
     }
 
     private static func place(
@@ -213,48 +284,21 @@ public enum EmulatorControls {
         return entrada
     }
 
-    /// La entrada del teclado. Mismo criterio, con la forma que el archivo le da a las palancas de
-    /// un teclado: cuatro sentidos por palanca, porque una tecla no tiene medias tintas.
-    static func keyboardEntry(
-        _ profile: SwitchControlProfile, from template: [String: Any]
-    ) -> [String: Any] {
-        var entrada = template
-        entrada["backend"] = "WindowKeyboard"
-        entrada["id"] = "0"
-        entrada["name"] = "Keyboard"
-
-        for control in SwitchPadInput.allCases {
-            let (sección, clave) = control.field
-            var objeto = entrada[sección] as? [String: Any] ?? [:]
-            objeto[clave] = profile.keyboardBinding(for: control)
-            entrada[sección] = objeto
-        }
-
-        for sección in ["left_joycon_stick", "right_joycon_stick"] {
-            var objeto = entrada[sección] as? [String: Any] ?? [:]
-            for delMando in ["joystick", "invert_stick_x", "invert_stick_y", "rotate90_cw"] {
-                objeto.removeValue(forKey: delMando)
-            }
-            entrada[sección] = objeto
-        }
-        return entrada
-    }
-
     // MARK: - El identificador del mando
 
-    /// El identificador que el emulador ya tiene guardado para un mando.
-    ///
-    /// Es el primer sitio donde se busca, y no por ahorrar: el identificador es `0-<GUID de SDL>`, y
-    /// ese GUID lleva dentro un CRC del nombre del dispositivo y el bus por el que está conectado.
-    /// No se puede construir a mano ni reutilizar entre cable y Bluetooth. El que ya está en el
-    /// archivo lo escribió el propio emulador, así que es correcto por definición.
-    public static func knownPad(named name: String?, atConfig archivo: URL) -> (id: String, name: String)? {
+    /// Busca también en las plantillas inactivas. Las entradas virtuales se excluyen para que
+    /// seleccionar «Mando» nunca vuelva a elegir el teclado de una sesión anterior.
+    public static func knownPad(named name: String? = nil, atConfig archivo: URL) -> (id: String, name: String)? {
         guard let datos = try? Data(contentsOf: archivo),
               let raíz = try? JSONSerialization.jsonObject(with: datos) as? [String: Any],
               let perfiles = raíz["input_config"] as? [[String: Any]]
         else { return nil }
-        if let name, let exacto = knownPad(in: perfiles, named: name) { return exacto }
-        return knownPad(in: perfiles)
+        let caché = archivo.deletingLastPathComponent().appendingPathComponent(templatesName)
+        let guardadas = (try? Data(contentsOf: caché)).flatMap {
+            try? JSONSerialization.jsonObject(with: $0) as? [[String: Any]]
+        } ?? []
+        if let name, let exacto = knownPad(in: perfiles + guardadas, named: name) { return exacto }
+        return knownPad(in: perfiles + guardadas)
     }
 
     /// La misma búsqueda sobre una lista ya leída. Pública porque es la parte que se puede probar
@@ -263,9 +307,9 @@ public enum EmulatorControls {
         in profiles: [[String: Any]], named name: String? = nil
     ) -> (id: String, name: String)? {
         for perfil in profiles {
-            guard (perfil["backend"] as? String) != "WindowKeyboard",
+            guard (perfil["backend"] as? String) == "GamepadSDL2",
                   let id = perfil["id"] as? String, !id.isEmpty, id != "0",
-                  let nombre = perfil["name"] as? String
+                  let nombre = perfil["name"] as? String, nombre != virtualDeviceName
             else { continue }
             if let name, nombre != name { continue }
             return (id, nombre)
@@ -273,35 +317,4 @@ public enum EmulatorControls {
         return nil
     }
 
-    // MARK: - Las plantillas de respaldo
-
-    /// Lo que se escribe cuando el archivo no tiene **ninguna** entrada que copiar, que es el caso
-    /// de un emulador recién instalado que nadie ha abierto todavía. Los valores son los que el
-    /// propio emulador pone por omisión; los botones los sustituye `gamepadEntry`.
-    ///
-    /// Calculadas y no guardadas: un `[String: Any]` no se puede compartir entre hilos, y como
-    /// constante estática el compilador lo rechaza con razón. Se arman al pedirlas, que es dos
-    /// veces por escritura y solo cuando el archivo no traía nada.
-    static var gamepadTemplate: [String: Any] { [
-        "version": 1,
-        "backend": "GamepadSDL2",
-        "deadzone_left": 0.1, "deadzone_right": 0.1,
-        "range_left": 1.0, "range_right": 1.0,
-        "trigger_threshold": 0.5,
-        "motion": ["motion_backend": "GamepadDriver", "sensitivity": 100,
-                   "gyro_deadzone": 1.0, "enable_motion": true],
-        "rumble": ["strong_rumble": 1.0, "weak_rumble": 1.0, "enable_rumble": true],
-        "led": ["enable_led": false, "turn_off_led": false, "use_rainbow": false, "led_color": 0],
-        // Los `SL` y `SR` son los botones del lomo de un Joy-Con suelto. Ningún mando entero los
-        // tiene, así que se quedan sin asignar en vez de robarle el sitio a otro.
-        "left_joycon": ["button_sl": SDLButton.unbound, "button_sr": SDLButton.unbound],
-        "right_joycon": ["button_sl": SDLButton.unbound, "button_sr": SDLButton.unbound]
-    ] }
-
-    static var keyboardTemplate: [String: Any] { [
-        "version": 1,
-        "backend": "WindowKeyboard",
-        "left_joycon": ["button_sl": SwitchKeyNames.unbound, "button_sr": SwitchKeyNames.unbound],
-        "right_joycon": ["button_sl": SwitchKeyNames.unbound, "button_sr": SwitchKeyNames.unbound]
-    ] }
 }

@@ -42,6 +42,7 @@ struct SwitchControlSheet: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: Theme.Spacing.loose) {
+                    mouseSettings
                     diagram
                     sticks
                     assignment
@@ -125,6 +126,38 @@ struct SwitchControlSheet: View {
     }
 
     // MARK: - El dibujo
+
+    private var mouseSettings: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Picker(s[.switchInputChoice], selection: $model.switchControlProfile.inputDevice) {
+                ForEach(SwitchInputDevice.allCases, id: \.self) { dispositivo in
+                    Text(s[dispositivo.textKey]).tag(dispositivo)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            if model.switchControlProfile.inputDevice == .keyboardMouse {
+                HStack {
+                    Text(s[.switchMouseSensitivity]).font(.system(size: 12, weight: .medium))
+                    Slider(value: $model.switchControlProfile.mouseSensitivity, in: 0.2...4, step: 0.1)
+                        .accessibilityLabel(s[.switchMouseSensitivity])
+                    Text(model.switchControlProfile.mouseSensitivity.formatted(.number.precision(.fractionLength(1))) + " ×")
+                        .font(.system(size: 11, design: .monospaced)).frame(width: 45)
+                }
+                Toggle(s[.switchMouseInvert], isOn: $model.switchControlProfile.invertMouseY)
+                    .font(.system(size: 12))
+                Text(s[.switchMouseHint]).font(.system(size: 11)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(s[.switchMouseLimit]).font(.system(size: 11)).foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button(s[.switchDesktopPreset]) {
+                    stopListening()
+                    model.switchControlProfile.keyboard.removeAll()
+                }
+                .controlSize(.small)
+            }
+        }
+    }
 
     /// El dibujo lleva los dieciséis botones que un mando puede asignar, y **no** los ocho sentidos
     /// de las palancas. No es por gusto: en el dibujo caben doce etiquetas por lado y veinticuatro
@@ -354,7 +387,10 @@ struct SwitchControlSheet: View {
         stopListening()
         editing = control
 
-        monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { evento in
+        monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { evento in
+            if evento.keyCode == 53 { stopListening(); return nil }
+            if [54, 55].contains(evento.keyCode) { return nil }
+            if evento.type == .flagsChanged && evento.modifierFlags.intersection([.shift, .control, .option, .capsLock]).isEmpty { return nil }
             guard let nombre = SwitchKeyNames.name(forKeyCode: evento.keyCode) else { return nil }
             model.switchControlProfile.keyboard[control] = nombre
             stopListening()

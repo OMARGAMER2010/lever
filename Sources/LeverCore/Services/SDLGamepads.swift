@@ -1,39 +1,16 @@
 import Foundation
 
-/// Enumera los mandos **con la misma biblioteca que usa el emulador**, para saber con qué
-/// identificador los va a ver él.
+/// Obtiene los bytes del GUID de la SDL del emulador. No se deducen del fabricante ni del
+/// transporte: SDL normaliza el bus y añade datos propios. Swift consulta una función que devuelve
+/// texto para evitar un retorno de estructura incompatible con @convention(c).
 ///
-/// **Por qué no se puede calcular.** El emulador identifica un mando como `0-<GUID de SDL>`, y ese
-/// GUID no es el par fabricante/modelo: lleva empaquetados un número de bus, un CRC del nombre del
-/// dispositivo, el fabricante, el modelo, la versión y qué controlador de SDL lo está atendiendo.
-///
-/// Y el número de bus **no es el transporte de verdad**, que es la trampa que lo cierra. Medido en
-/// este Mac: un DualSense conectado por Bluetooth da `030057564c050000e60c000000016800`, y ese
-/// `0300` de delante es el código de USB. Lo pone así porque SDL lo atiende por su controlador
-/// HIDAPI y ese normaliza el bus. Quien dedujera el `0500` de Bluetooth —que es lo que parece
-/// razonable— escribiría un identificador equivocado.
-///
-/// No hay forma de construirlo a mano sin reimplementar SDL, y una reimplementación que se desvíe
-/// en un byte produce un identificador que el archivo acepta y el emulador nunca reconoce:
-/// controles mudos y ningún mensaje de error.
-///
-/// Así que se le pregunta a la biblioteca del propio emulador, que es la única respuesta que no es
-/// una suposición. Y aun así **es el segundo sitio donde se busca**: si el `Config.json` ya tiene un
-/// identificador guardado, ese lo escribió el emulador y es correcto por definición —ver
-/// `EmulatorControls.knownPad`—.
-///
-/// **Solo se llaman funciones que devuelven texto o enteros.** El GUID se saca de la cadena de
-/// correspondencia (`SDL_GameControllerMappingForDeviceIndex`), cuyo primer campo es justo el GUID
-/// en hexadecimal, en vez de la función que lo devuelve como estructura de dieciséis bytes. Da lo
-/// mismo, y evita tener que acertar a mano cómo se pasa una estructura por valor entre Swift y C:
-/// equivocarse ahí no daría un error, daría bytes de basura escritos en la configuración ajena.
-///
-/// Se pide el subsistema de mandos y nada más: ni vídeo, ni audio, ni se abre ningún mando. No se
-/// le quita a nadie y no aparece ninguna ventana.
+/// El texto de SDL aún no es el identificador de Ryujinx. En 1.3.3 se convierte como System.Guid
+/// y se normaliza el CRC; la prueba integrada confirmó esa diferencia. Un identificador antiguo
+/// guardado por Lever puede contener el formato equivocado, así que se prefiere enumerar de nuevo.
 public enum SDLGamepads {
     /// Un mando visto por SDL.
     public struct Device: Equatable, Sendable, Identifiable {
-        /// Tal como lo escribe el emulador: `0-` y los treinta y dos dígitos del GUID.
+        /// Identificador de Ryujinx, con índice y GUID convertido al formato de System.Guid.
         public let id: String
         public let name: String
 
@@ -89,11 +66,36 @@ public enum SDLGamepads {
                 ?? nombreCrudo?(índice).map { String(cString: $0) }
                 ?? ""
             guard !nombre.isEmpty else { return nil }
-            return Device(id: "0-\(guid)", name: nombre)
+            guard let id = ryujinx133ID(forSDLGuid: guid) else { return nil }
+            return Device(id: id, name: nombre)
         }
     }
 
     // MARK: - El GUID
+
+    /// SDL devuelve bytes; Ryujinx 1.3.3 los recibe como System.Guid, que cambia el orden de los
+    /// tres primeros grupos al imprimirlos, añade guiones y normaliza el CRC. Es una conversión
+    /// del identificador enumerado, no un GUID inventado. La prueba integrada abrió el mando con
+    /// este formato; ni el hexadecimal de SDL ni cambiar solo su prefijo lo abrían.
+    public static func ryujinx133ID(forSDLGuid guid: String) -> String? {
+        guard self.guid(inMapping: guid + ",") != nil else { return nil }
+        let letras = Array(guid)
+        let bytes = stride(from: 0, to: 32, by: 2).map { String(letras[$0...($0 + 1)]) }
+        let orden = [3, 2, 1, 0, 5, 4, 7, 6, 8, 9, 10, 11, 12, 13, 14, 15]
+        var texto = ""
+        for (posición, índice) in orden.enumerated() {
+            if [4, 6, 8, 10].contains(posición) { texto += "-" }
+            texto += bytes[índice]
+        }
+        return "0-0000" + texto.dropFirst(4)
+    }
+
+    public static func supportsMouseBridge(inside app: URL) -> Bool {
+        // El número corto del bundle instalado dice 1.2 aunque el programa es 1.3.3. La cadena
+        // larga lleva la versión y el commit reales; no usamos la etiqueta corta para adivinar.
+        let versión = Bundle(url: app)?.object(forInfoDictionaryKey: "CFBundleLongVersionString") as? String
+        return versión?.hasPrefix("1.3.3-") == true || versión == "1.3.3"
+    }
 
     /// El GUID que abre una cadena de correspondencia de SDL: `<guid>,<nombre>,<botones…>`.
     ///

@@ -14,8 +14,8 @@ enum SwitchControlTests {
         try testAnUntouchedProfilePlaysWithTheAutomaticTranslation()
         try testWritesTheFourFaceButtonsWhereTheyBelong()
         try testKeepsTheFieldsItDoesNotUnderstand()
-        try testGivesThePadBothSlotsAndLeavesTheKeyboardOnAnother()
-        try testWithoutAPadItStillWritesTheKeyboard()
+        try testGivesTheSelectedDeviceBothPrimarySlots()
+        try testMissingDeviceDoesNotRewriteConfig()
         try testReusesTheIdentifierTheEmulatorAlreadyWroteDown()
         try testAConfigItCannotReadIsNotTouched()
         try testKeepsACopyOfTheOriginalOnce()
@@ -85,7 +85,7 @@ enum SwitchControlTests {
         let archivo = try write(sample, in: sitio)
 
         _ = EmulatorControls.apply(
-            SwitchControlProfile(faceLayout: .byLabel), pad: pad, atConfig: archivo
+            SwitchControlProfile(faceLayout: .byLabel, inputDevice: .gamepad), pad: pad, atConfig: archivo
         )
         let mando = try gamepadEntry(in: archivo)
         let derecho = mando["right_joycon"] as? [String: Any] ?? [:]
@@ -107,7 +107,7 @@ enum SwitchControlTests {
         let sitio = try TemporaryFixture()
         let archivo = try write(sample, in: sitio)
 
-        _ = EmulatorControls.apply(.standard, pad: pad, atConfig: archivo)
+        _ = EmulatorControls.apply(SwitchControlProfile(inputDevice: .gamepad), pad: pad, atConfig: archivo)
         let raíz = try root(of: archivo)
         let mando = try gamepadEntry(in: archivo)
 
@@ -126,20 +126,19 @@ enum SwitchControlTests {
         try expect(raíz["version"] as? Int == 70, "se tocó la versión de la configuración")
     }
 
-    /// Las tres ranuras: el mando duplicado en las dos que mira el emulador según el modo de
-    /// pantalla, y el teclado en una tercera para que no le quite el sitio.
-    private static func testGivesThePadBothSlotsAndLeavesTheKeyboardOnAnother() throws {
+    /// Player2 controla a otro jugador; no puede servir como entrada alternativa del principal.
+    private static func testGivesTheSelectedDeviceBothPrimarySlots() throws {
         let sitio = try TemporaryFixture()
         let archivo = try write(sample, in: sitio)
 
-        _ = EmulatorControls.apply(.standard, pad: pad, atConfig: archivo)
+        _ = EmulatorControls.apply(SwitchControlProfile(inputDevice: .gamepad), pad: pad, atConfig: archivo)
         let perfiles = try inputConfig(in: archivo)
-        try expect(perfiles.count == 3, "no salieron tres perfiles sino \(perfiles.count)")
+        try expect(perfiles.count == 2, "deben quedar solo las dos ranuras principales: \(perfiles.count)")
 
         let ranuras = perfiles.map { ($0["player_index"] as? String) ?? "?" }
         try expect(ranuras.contains("Handheld"), "falta la ranura de la mano")
         try expect(ranuras.contains("Player1"), "falta la ranura de la base")
-        try expect(ranuras.contains("Player2"), "falta la ranura del teclado")
+        try expect(!ranuras.contains("Player2"), "se creó un segundo jugador sin pedirlo")
 
         let delMando = perfiles.filter { ($0["backend"] as? String) == "GamepadSDL2" }
         try expect(delMando.count == 2, "el mando no está en las dos ranuras")
@@ -153,26 +152,21 @@ enum SwitchControlTests {
         try expect(porRanura["Handheld"] == "Handheld", "la ranura de la mano no es portátil")
         try expect(porRanura["Player1"] == "ProController", "la ranura de la base no es un mando")
 
-        let teclado = try expectOne(perfiles.filter { ($0["backend"] as? String) == "WindowKeyboard" })
-        let palanca = teclado["left_joycon_stick"] as? [String: Any] ?? [:]
-        try expect(palanca["stick_up"] as? String == "W", "el teclado no mueve la palanca")
-        // Un teclado no asigna la palanca entera: si quedara `joystick`, el archivo diría dos cosas
-        // a la vez sobre el mismo objeto.
-        try expect(palanca["joystick"] == nil, "al teclado le quedó la palanca de un mando")
+        try expect(perfiles.allSatisfy { $0["backend"] as? String == "GamepadSDL2" },
+                   "se añadió un dispositivo distinto del elegido")
     }
 
-    /// Sin identificador de mando se escribe el teclado igualmente. Es la diferencia entre un juego
-    /// que se puede jugar con el teclado y un juego que no responde a nada.
-    private static func testWithoutAPadItStillWritesTheKeyboard() throws {
+    /// Cambiar de dispositivo sin que el usuario lo elija ocultaría la causa de unos controles mudos.
+    private static func testMissingDeviceDoesNotRewriteConfig() throws {
         let sitio = try TemporaryFixture()
         let archivo = try write(sampleWithoutPad, in: sitio)
+        let antes = try Data(contentsOf: archivo)
 
-        let resultado = EmulatorControls.apply(.standard, pad: nil, atConfig: archivo)
+        let resultado = EmulatorControls.apply(SwitchControlProfile(inputDevice: .gamepad), pad: nil, atConfig: archivo)
         try expect(resultado == .appliedWithoutGamepad,
                    "sin mando no avisó de que faltaba: \(resultado)")
-        let perfiles = try inputConfig(in: archivo)
-        try expect(perfiles.count == 1, "escribió algo más que el teclado")
-        try expect(perfiles[0]["backend"] as? String == "WindowKeyboard", "no es el teclado")
+        let después = try Data(contentsOf: archivo)
+        try expect(antes == después && !resultado.isSuccess, "se cambió la entrada pese a faltar el dispositivo")
     }
 
     /// El identificador es `0-<GUID>`, y el GUID lleva un CRC del nombre y el bus: no se puede
@@ -188,7 +182,7 @@ enum SwitchControlTests {
                    "no reaprovechó el identificador guardado")
 
         // Y aplicando sin decirle ninguno, se queda con ese en vez de borrar el mando del usuario.
-        _ = EmulatorControls.apply(.standard, pad: nil, atConfig: archivo)
+        _ = EmulatorControls.apply(SwitchControlProfile(inputDevice: .gamepad), pad: nil, atConfig: archivo)
         let mando = try gamepadEntry(in: archivo)
         try expect(mando["id"] as? String == "0-030057564c050000e60c000000016800",
                    "una escritura sin mando delante borró el que había")
@@ -206,7 +200,7 @@ enum SwitchControlTests {
         let archivo = sitio.directoryURL.appendingPathComponent("Config.json")
         try Data("esto no es json".utf8).write(to: archivo)
 
-        let resultado = EmulatorControls.apply(.standard, pad: pad, atConfig: archivo)
+        let resultado = EmulatorControls.apply(SwitchControlProfile(inputDevice: .gamepad), pad: pad, atConfig: archivo)
         try expect(resultado == .unreadableConfig, "no dijo que no sabía leerlo: \(resultado)")
         let quedó = String(data: try Data(contentsOf: archivo), encoding: .utf8)
         try expect(quedó == "esto no es json", "tocó un archivo que no había entendido")
@@ -219,12 +213,12 @@ enum SwitchControlTests {
         let archivo = try write(sample, in: sitio)
         let copia = sitio.directoryURL.appendingPathComponent(EmulatorControls.backupName)
 
-        _ = EmulatorControls.apply(SwitchControlProfile(faceLayout: .byLabel),
+        _ = EmulatorControls.apply(SwitchControlProfile(faceLayout: .byLabel, inputDevice: .gamepad),
                                    pad: pad, atConfig: archivo)
         try expect(FileManager.default.fileExists(atPath: copia.path), "no guardó copia del original")
         let primera = try Data(contentsOf: copia)
 
-        _ = EmulatorControls.apply(.standard, pad: pad, atConfig: archivo)
+        _ = EmulatorControls.apply(SwitchControlProfile(inputDevice: .gamepad), pad: pad, atConfig: archivo)
         let segunda = try Data(contentsOf: copia)
         try expect(segunda == primera, "la copia del original cambió en la segunda escritura")
         // Y la copia es de verdad la de antes: lleva el rombo que traía el archivo de muestra.

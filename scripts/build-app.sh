@@ -14,6 +14,7 @@ app_path="$project_root/dist/Lever.app"
 
 echo "▸ Compilando (release)…"
 swift build -c release --product Lever
+swift build -c release --product LeverInputBridge
 
 bin_dir="$(swift build -c release --product Lever --show-bin-path)"
 binary="$bin_dir/Lever"
@@ -36,8 +37,9 @@ iconutil -c icns Resources/AppIcon.iconset -o Resources/AppIcon.icns
 
 echo "▸ Armando el bundle…"
 rm -rf "$app_path"
-mkdir -p "$app_path/Contents/MacOS" "$app_path/Contents/Resources"
+mkdir -p "$app_path/Contents/MacOS" "$app_path/Contents/Resources" "$app_path/Contents/Frameworks"
 cp "$binary" "$app_path/Contents/MacOS/Lever"
+cp "$bin_dir/libLeverInputBridge.dylib" "$app_path/Contents/Frameworks/libLeverInputBridge.dylib"
 cp "$project_root/Resources/Info.plist" "$app_path/Contents/Info.plist"
 cp "$project_root/Resources/AppIcon.icns" "$app_path/Contents/Resources/AppIcon.icns"
 # El guion que monta el emulador viaja dentro: la app se abre desde el Escritorio, donde no hay

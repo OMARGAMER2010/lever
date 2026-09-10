@@ -153,6 +153,15 @@ public enum TextKey: String, CaseIterable, Sendable {
     case switchControlsListening, switchControlsNoPad, switchControlsPadFrom
     case switchControlsSave, switchControlsReset, switchControlsApplyNote
     case switchControlsApplied, switchControlsNoPadId, switchControlsEmulatorOpen
+    case switchKeyboardMouse, switchGamepad, switchInputChoice, switchMouseHint
+    case switchMouseSensitivity, switchMouseInvert, switchDesktopPreset, switchControlsSaved
+    case switchMouseUnavailable, switchInputTemplateMissing, switchMouseFailed, switchMouseReady
+    case switchMouseInvalidSettings
+    case switchMouseLimit
+    case switchQualityTitle, switchQualityScale, switchQualityUnknown, switchQualityLowerUnsupported
+    case switchQualityNative, switchQualityBalanced, switchQualityPerformance, switchQualityResolution
+    case switchQuality150, switchQuality200
+    case switchQualityFilter, switchQualityNote, switchQualityFailed, switchQualityApplied
     case switchControlsUnreadable, switchControlsFailed, switchControlsAppliedToGame
 
     // Máquinas que ejecuta un programa aparte: madurez y firmware

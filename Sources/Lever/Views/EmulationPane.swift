@@ -10,6 +10,7 @@ import LeverCore
 struct EmulationPane: View {
     @ObservedObject var model: AppModel
     @State private var showsMapper = false
+    @State private var showsSwitchControls = false
 
     private var s: Strings { model.strings }
 
@@ -38,6 +39,7 @@ struct EmulationPane: View {
             disclaimer
         }
         .sheet(isPresented: $showsMapper) { ControlMapperSheet(model: model) }
+        .sheet(isPresented: $showsSwitchControls) { SwitchControlSheet(model: model) }
     }
 
     // MARK: - El juego elegido
@@ -71,10 +73,7 @@ struct EmulationPane: View {
                 }
 
                 Divider()
-                // Dos caminos, y no es cosmético: una ROM la ejecuta RetroArch con un núcleo y
-                // controles que Lever mapea; un paquete de la consola híbrida lo ejecuta un
-                // programa aparte que trae los suyos. Enseñar el diagrama del mando aquí sería
-                // ofrecer un ajuste que no va a ninguna parte.
+                // Cada motor necesita su propio formato de controles y lanzamiento.
                 if model.switchFacts.isRecognised {
                     packageSection
                     // Solo con un cartucho delante: un paquete de la tienda no tiene partición de
@@ -89,14 +88,16 @@ struct EmulationPane: View {
                     emulatorSection
                     // Solo si se sabe leer la configuración de ese emulador. `nil` es «no lo sé»,
                     // y no se enseña nada antes que enseñar una suposición.
-                    if let entrada = model.switchInput {
+                    if model.canEditSwitchControls {
                         Divider()
-                        inputSection(entrada)
+                        controlChoiceSection
                     }
                     if let modo = model.switchDisplayMode {
                         Divider()
                         displayModeSection(modo)
                     }
+                    Divider()
+                    qualitySection
                 } else if model.psMachine != nil {
                     playStationSection
                     Divider()
@@ -319,6 +320,86 @@ struct EmulationPane: View {
     }
 
     // MARK: - Con qué se juega
+
+    private var controlChoiceSection: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(s[.switchInputChoice]).font(.system(size: 12, weight: .semibold))
+                Spacer()
+                Button(s[.controlsEdit]) { showsSwitchControls = true }
+                    .controlSize(.small)
+                    .accessibilityLabel(s[.menuSwitchControls])
+            }
+            Picker(s[.switchInputChoice], selection: Binding(
+                get: { model.switchControlProfile.inputDevice },
+                set: { model.selectSwitchInputDevice($0) }
+            )) {
+                ForEach(SwitchInputDevice.allCases, id: \.self) { dispositivo in
+                    Text(s[dispositivo.textKey]).tag(dispositivo)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .accessibilityIdentifier("switch-input-device")
+            if model.switchControlProfile.inputDevice == .keyboardMouse {
+                Text(s[model.switchMouseIsAvailable ? .switchMouseHint : .switchMouseUnavailable])
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let estado = model.switchMouseStatus {
+                Text(s[estado]).font(.system(size: 11)).foregroundStyle(.secondary)
+            }
+            if model.switchEmulatorIsRunning {
+                Text(s[.switchControlsSaved]).font(.system(size: 11)).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var qualitySection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(s[.switchQualityTitle]).font(.system(size: 12, weight: .semibold))
+            if let calidad = model.switchQuality, let escala = calidad.scale, let filtro = calidad.filter {
+                Text(s(.switchQualityScale, escala.formatted(.number.precision(.fractionLength(0...2))), filtro))
+                    .font(.system(size: 11, weight: .medium))
+                Picker(s[.switchQualityResolution], selection: Binding(
+                    get: { model.switchQuality?.scale ?? escala },
+                    set: { if let valor = EmulatorResolutionScale(rawValue: $0) { model.setSwitchQuality(.scale(valor)) } }
+                )) {
+                    if EmulatorResolutionScale(rawValue: escala) == nil {
+                        Text("\(escala.formatted()) ×").tag(escala)
+                    }
+                    ForEach(EmulatorResolutionScale.allCases, id: \.rawValue) { valor in
+                        Text(s[valor.textKey]).tag(valor.rawValue)
+                            .disabled(valor.rawValue < 1 && model.switchLowerScaleUnsupported)
+                    }
+                }
+                .pickerStyle(.menu)
+                .disabled(model.switchEmulatorIsRunning)
+                Picker(s[.switchQualityFilter], selection: Binding(
+                    get: { model.switchQuality?.filter ?? filtro },
+                    set: { if let valor = EmulatorScalingFilter(rawValue: $0) { model.setSwitchQuality(.filter(valor)) } }
+                )) {
+                    if EmulatorScalingFilter(rawValue: filtro) == nil { Text(filtro).tag(filtro) }
+                    ForEach(EmulatorScalingFilter.allCases, id: \.rawValue) { valor in
+                        Text(valor == .fsr ? "FSR" : "Bilinear").tag(valor.rawValue)
+                    }
+                }
+                .pickerStyle(.menu)
+                .disabled(model.switchEmulatorIsRunning)
+                Text(s[model.switchEmulatorIsRunning ? .switchControlsEmulatorOpen : .switchQualityNote])
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text(s[.switchQualityUnknown]).font(.system(size: 11)).foregroundStyle(.secondary)
+            }
+            if model.switchLowerScaleUnsupported {
+                Text(s[.switchQualityLowerUnsupported])
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
 
     /// Lo que el emulador tiene configurado para recibir entrada.
     ///

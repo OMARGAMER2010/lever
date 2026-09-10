@@ -1,0 +1,215 @@
+diff --git a/global.json b/global.json
+index cdbb589..f657889 100644
+--- a/global.json
++++ b/global.json
+@@ -1,6 +1,6 @@
+ {
+   "sdk": {
+     "version": "9.0.100",
+-    "rollForward": "latestFeature"
++    "rollForward": "latestMajor"
+   }
+ }
+diff --git a/nuget.config b/nuget.config
+index c8d71a8..6ed8f8d 100644
+--- a/nuget.config
++++ b/nuget.config
+@@ -5,8 +5,7 @@
+         <clear />
+         <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+         <!-- Only needed when using pre-release versions of Ryujinx.LibHac. -->
+-        <add key="LibHacAlpha" value="https://git.ryujinx.app/api/v4/projects/17/packages/nuget/index.json" />
+-        <add key="Ryujinx.UpdateClient" value="https://git.ryujinx.app/api/v4/projects/71/packages/nuget/index.json" />
++        <add key="LibHacAlpha" value="https://git.ryujinx.app/api/packages/projects/nuget/index.json" />
+     </packageSources>
+     <packageSourceMapping>
+         <!-- key value for <packageSource> should match key values from <packageSources> element -->
+@@ -14,10 +13,6 @@
+         <packageSource key="nuget.org">
+             <package pattern="*" />
+         </packageSource>
+-        <packageSource key="Ryujinx.UpdateClient">
+-            <package pattern="Ryujinx.UpdateClient" />
+-            <package pattern="Ryujinx.Systems.Update.Common" />
+-        </packageSource>
+         <packageSource key="LibHacAlpha">
+             <package pattern="Ryujinx.LibHac" />
+         </packageSource>
+diff --git a/src/Ryujinx.Graphics.Gpu/Image/TextureCache.cs b/src/Ryujinx.Graphics.Gpu/Image/TextureCache.cs
+index f3df8b0..c1a4388 100644
+--- a/src/Ryujinx.Graphics.Gpu/Image/TextureCache.cs
++++ b/src/Ryujinx.Graphics.Gpu/Image/TextureCache.cs
+@@ -146,6 +146,15 @@ namespace Ryujinx.Graphics.Gpu.Image
+         /// <returns>True if eligible</returns>
+         private static TextureScaleMode IsUpscaleCompatible(TextureInfo info, bool withUpscale)
+         {
++            // Una cadena mip completa puede volverse inválida al reducir la textura. Se deja
++            // esa textura a escala nativa para conservar todos sus niveles y vistas; el resto
++            // de los render targets sigue pudiendo reducirse.
++            if (!TextureScaleGeometry.SupportsMipLevels(info.Width / info.SamplesInX,
++                    info.Height / info.SamplesInY, info.Levels, GraphicsConfig.ResScale))
++            {
++                return TextureScaleMode.Blacklisted;
++            }
++
+             if ((info.Target == Target.Texture2D || info.Target == Target.Texture2DArray || info.Target == Target.Texture2DMultisample) && !info.FormatInfo.IsCompressed)
+             {
+                 return UpscaleSafeMode(info) ? (withUpscale ? TextureScaleMode.Scaled : TextureScaleMode.Eligible) : TextureScaleMode.Undesired;
+diff --git a/src/Ryujinx.Graphics.Vulkan/Window.cs b/src/Ryujinx.Graphics.Vulkan/Window.cs
+index b67b0db..5d7052b 100644
+--- a/src/Ryujinx.Graphics.Vulkan/Window.cs
++++ b/src/Ryujinx.Graphics.Vulkan/Window.cs
+@@ -14,6 +14,8 @@ namespace Ryujinx.Graphics.Vulkan
+         private const int SurfaceWidth = 1280;
+         private const int SurfaceHeight = 720;
+ 
++        private readonly Ryujinx.Common.FrameTimeRecorder _frameRecorder = Ryujinx.Common.FrameTimeRecorder.FromEnvironment("present");
++
+         private readonly VulkanRenderer _gd;
+         private readonly SurfaceKHR _surface;
+         private readonly PhysicalDevice _physicalDevice;
+@@ -482,6 +484,7 @@ namespace Ryujinx.Graphics.Vulkan
+             {
+                 _gd.SwapchainApi.QueuePresent(_gd.Queue, in presentInfo);
+             }
++            _frameRecorder?.Record();
+         }
+ 
+         public override void SetAntiAliasing(AntiAliasing effect)
+diff --git a/src/Ryujinx.HLE/PerformanceStatistics.cs b/src/Ryujinx.HLE/PerformanceStatistics.cs
+index 84b9eb0..edb3dd6 100644
+--- a/src/Ryujinx.HLE/PerformanceStatistics.cs
++++ b/src/Ryujinx.HLE/PerformanceStatistics.cs
+@@ -7,6 +7,7 @@ namespace Ryujinx.HLE
+     public class PerformanceStatistics
+     {
+         private readonly Switch _device;
++        private readonly FrameTimeRecorder _frameRecorder = FrameTimeRecorder.FromEnvironment("game");
+ 
+         private const int FrameTypeGame = 0;
+         private const int PercentTypeFifo = 0;
+@@ -100,6 +101,7 @@ namespace Ryujinx.HLE
+ 
+         public void RecordGameFrameTime()
+         {
++            _frameRecorder?.Record();
+             RecordFrameTime(FrameTypeGame);
+         }
+ 
+diff --git a/src/Ryujinx.Common/FrameTimeRecorder.cs b/src/Ryujinx.Common/FrameTimeRecorder.cs
+new file mode 100644
+--- /dev/null
++++ b/src/Ryujinx.Common/FrameTimeRecorder.cs
+@@ -0,0 +1,87 @@
++using System;
++using System.Collections.Generic;
++using System.Diagnostics;
++using System.Globalization;
++using System.IO;
++using System.Text;
++using System.Threading;
++
++namespace Ryujinx.Common
++{
++    // Instrumentación de laboratorio, inactiva sin una ruta explícita. Las escrituras se hacen
++    // por lotes fuera del hilo de render para no convertir la medición en una fuente de tirones.
++    public sealed class FrameTimeRecorder
++    {
++        private readonly object _sampleLock = new();
++        private readonly object _writeLock = new();
++        private readonly string _path;
++        private readonly long _start = Stopwatch.GetTimestamp();
++        private readonly Timer _timer;
++        private List<(double Time, double Milliseconds)> _pending = new(512);
++        private long _previous;
++        private volatile bool _failed;
++
++        private FrameTimeRecorder(string path)
++        {
++            _path = path;
++            File.WriteAllText(path, $"# started_utc={DateTime.UtcNow:O}\nelapsed_s,frame_ms\n");
++            _timer = new Timer(_ => Flush(), null, 5000, 5000);
++            AppDomain.CurrentDomain.ProcessExit += (_, _) => Flush();
++        }
++
++        public static FrameTimeRecorder FromEnvironment(string source)
++        {
++            string prefix = Environment.GetEnvironmentVariable("LEVER_FRAME_LOG");
++            if (string.IsNullOrWhiteSpace(prefix) || !Path.IsPathRooted(prefix)) return null;
++            try { return new FrameTimeRecorder(prefix + "." + source + ".csv"); }
++            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
++            {
++                Console.Error.WriteLine($"Lever frame recorder: {error.Message}");
++                return null;
++            }
++        }
++
++        public void Record()
++        {
++            if (_failed) return;
++            long now = Stopwatch.GetTimestamp();
++            lock (_sampleLock)
++            {
++                if (_previous != 0 && _pending.Count < 36000)
++                {
++                    _pending.Add(((double)(now - _start) / Stopwatch.Frequency,
++                        1000.0 * (now - _previous) / Stopwatch.Frequency));
++                }
++                _previous = now;
++            }
++        }
++
++        private void Flush()
++        {
++            lock (_writeLock)
++            {
++                if (_failed) return;
++                List<(double Time, double Milliseconds)> samples;
++                lock (_sampleLock)
++                {
++                    samples = _pending;
++                    _pending = new(512);
++                }
++                if (samples.Count == 0) return;
++                StringBuilder output = new(samples.Count * 24);
++                foreach (var sample in samples)
++                {
++                    output.Append(sample.Time.ToString("F6", CultureInfo.InvariantCulture)).Append(',')
++                        .Append(sample.Milliseconds.ToString("F6", CultureInfo.InvariantCulture)).Append('\n');
++                }
++                try { File.AppendAllText(_path, output.ToString()); }
++                catch (Exception error) when (error is IOException or UnauthorizedAccessException)
++                {
++                    _failed = true;
++                    _timer.Dispose();
++                    Console.Error.WriteLine($"Lever frame recorder: {error.Message}");
++                }
++            }
++        }
++    }
++}
+diff --git a/src/Ryujinx.Graphics.Gpu/Image/TextureScaleGeometry.cs b/src/Ryujinx.Graphics.Gpu/Image/TextureScaleGeometry.cs
+new file mode 100644
+--- /dev/null
++++ b/src/Ryujinx.Graphics.Gpu/Image/TextureScaleGeometry.cs
+@@ -0,0 +1,20 @@
++using System;
++
++namespace Ryujinx.Graphics.Gpu.Image
++{
++    public static class TextureScaleGeometry
++    {
++        public static bool SupportsMipLevels(int width, int height, int levels, float scale)
++        {
++            if (scale >= 1f || levels <= 1)
++            {
++                return true;
++            }
++
++            int scaledWidth = Math.Max(1, (int)MathF.Ceiling(width * scale));
++            int scaledHeight = Math.Max(1, (int)MathF.Ceiling(height * scale));
++            int availableLevels = 1 + System.Numerics.BitOperations.Log2((uint)Math.Max(scaledWidth, scaledHeight));
++            return levels <= availableLevels;
++        }
++    }
++}

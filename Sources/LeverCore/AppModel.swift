@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import AppKit
 
 @MainActor
 public final class AppModel: ObservableObject {
@@ -155,6 +156,7 @@ public final class AppModel: ObservableObject {
     /// A qué se le guarda: a todos los juegos o solo a este. Dos niveles y no tres, porque aquí
     /// solo hay una máquina.
     @Published public var switchControlScope = SwitchControlScope.global
+    @Published public private(set) var switchMouseStatus: TextKey?
     /// Si el juego se abre ocupando la pantalla entera.
     @Published public var playFullscreen: Bool {
         didSet { Preferences.playFullscreen = playFullscreen }
@@ -352,8 +354,56 @@ public final class AppModel: ObservableObject {
 
     /// En qué modo de pantalla está el emulador. `nil` si no se sabe leer el suyo.
     public var switchDisplayMode: EmulatorDisplayMode? {
+        guard let archivo = switchQualityConfigURL else { return nil }
+        return EmulatorSettings.displayMode(atConfig: archivo)
+    }
+
+    public var switchQuality: EmulatorQuality? {
+        guard let archivo = switchQualityConfigURL else { return nil }
+        return EmulatorQuality.read(atConfig: archivo)
+    }
+
+    private var switchQualityConfigURL: URL? {
         guard let emulador = switchEmulator?.emulator else { return nil }
-        return EmulatorSettings.displayMode(of: emulador, fileManager: fileManager)
+        return EmulatorQuality.effectiveConfig(in: emulador.dataURL(fileManager: fileManager),
+                                              gameID: switchGameId, fileManager: fileManager)
+    }
+
+    public var switchLowerScaleUnsupported: Bool {
+        switchEmulator.map { !EmulatorQuality.supportsReduction(inside: $0.app) } ?? true
+    }
+
+    public func setSwitchQuality(_ change: EmulatorQuality.Change) {
+        guard let emulador = switchEmulator, let archivo = switchQualityConfigURL else { return }
+        let resultado = EmulatorQuality.apply(change,
+            atConfig: archivo,
+            supportsReduction: EmulatorQuality.supportsReduction(inside: emulador.app),
+            isRunning: EmulatorSettings.isRunning(emulador.emulator))
+        switch resultado {
+        case .applied:
+            clearError()
+            add(strings[.switchQualityApplied], level: .success)
+            objectWillChange.send()
+        case .emulatorRunning: showError(strings[.switchControlsEmulatorOpen])
+        case .unsupportedScale: showError(strings[.switchQualityLowerUnsupported])
+        case .unreadableConfig: showError(strings[.switchQualityUnknown])
+        case .writeFailed: showError(strings[.switchQualityFailed])
+        }
+    }
+
+    public var switchMouseIsAvailable: Bool {
+        switchEmulator.map { SwitchMouseSession.isAvailable(inside: $0.app) } == true
+    }
+
+    public func selectSwitchInputDevice(_ device: SwitchInputDevice) {
+        let anterior = switchControlProfile
+        let ámbitoAnterior = switchControlScope
+        switchControlProfile.inputDevice = device
+        if let juego = switchGameId { switchControlScope = .game(juego) }
+        if !saveSwitchControls().isSuccess {
+            switchControlProfile = anterior
+            switchControlScope = ámbitoAnterior
+        }
     }
 
     /// Si el emulador está abierto. Importa porque reescribe su configuración al cerrarse, y un
@@ -366,9 +416,14 @@ public final class AppModel: ObservableObject {
     /// Cambia entre dibujar a 1080p y a 720p. Es el ajuste de rendimiento que más se nota y el
     /// único que cuesta nitidez, así que lo pulsa el usuario.
     public func toggleSwitchDisplayMode() {
-        guard let emulador = switchEmulator?.emulator, let actual = switchDisplayMode else { return }
+        guard let emulador = switchEmulator?.emulator, let actual = switchDisplayMode,
+              let archivo = switchQualityConfigURL else { return }
+        guard !EmulatorSettings.isRunning(emulador) else {
+            showError(strings[.switchControlsEmulatorOpen])
+            return
+        }
         let nuevo = actual.other
-        guard EmulatorSettings.setDisplayMode(nuevo, for: emulador, fileManager: fileManager) else {
+        guard EmulatorSettings.setDisplayMode(nuevo, atConfig: archivo, fileManager: fileManager) else {
             showError(strings[.displayModeFailed])
             return
         }
@@ -405,61 +460,56 @@ public final class AppModel: ObservableObject {
 
     /// Con qué identificador ve el emulador al mando que hay puesto, y de dónde salió ese dato.
     ///
-    /// Dos sitios, en este orden: el que el propio emulador ya apuntó en su configuración, que es
-    /// correcto por definición; y si no hay ninguno, preguntándoselo a la biblioteca SDL que el
-    /// emulador lleva dentro. Si los dos fallan devuelve `nil`, y quien llama **no debe inventarse
-    /// uno**: el archivo lo aceptaría y el emulador no lo reconocería nunca.
+    /// La versión comprobada se enumera de nuevo: el sprint 7 guardaba el formato crudo de SDL,
+    /// que Ryujinx no usa al comparar. En otras versiones solo se reutiliza una identidad
+    /// existente para un mando que siga conectado, sin adivinar una conversión nueva.
     public func switchPadIdentity() -> (pad: (id: String, name: String), source: String)? {
         guard let emulador = switchEmulator else { return nil }
         let conectado = GamepadWatcher.connectedNow().first
         let configuración = EmulatorSettings.configURL(for: emulador.emulator, fileManager: fileManager)
-
-        if let guardado = EmulatorControls.knownPad(named: conectado?.name, atConfig: configuración) {
-            return (guardado, emulador.emulator.name)
+        if SDLGamepads.supportsMouseBridge(inside: emulador.app) {
+            let vistos = SDLGamepads.enumerate(inside: emulador.app)
+                .filter { $0.name != EmulatorControls.virtualDeviceName }
+            if vistos.count == 1, let único = vistos.first { return ((único.id, único.name), "SDL · Ryujinx 1.3.3") }
+            if let conectado, let visto = vistos.first(where: { $0.name == conectado.name }) {
+                return ((visto.id, visto.name), "SDL · Ryujinx 1.3.3")
+            }
+            return nil
         }
-        // Solo con un mando delante: sin él, SDL enumeraría cero y no habría nada que apuntar.
-        guard let conectado else { return nil }
-
-        // Una sola pasada: cada llamada arranca y suelta el subsistema de SDL, y hacerlo dos veces
-        // por una lista que no cambia entre medias es pagarlo dos veces.
-        let vistos = SDLGamepads.enumerate(inside: emulador.app)
-        // Con uno solo no hay a quién confundirlo. Con varios hay que acertar por el nombre, y aun
-        // así no siempre coincide: IOKit da el nombre del producto y SDL el suyo. Si no se puede
-        // decidir, no se decide — escribir el identificador de otro mando es peor que no escribir.
-        if vistos.count == 1, let único = vistos.first { return ((único.id, único.name), "SDL") }
-        guard let visto = vistos.first(where: { $0.name == conectado.name }) else { return nil }
-        return ((visto.id, visto.name), "SDL")
+        guard let conectado,
+              let guardado = EmulatorControls.knownPad(named: conectado.name, atConfig: configuración),
+              guardado.name == conectado.name else { return nil }
+        return (guardado, emulador.emulator.name)
     }
 
     /// Carga el perfil que le toca a este juego. Se llama al reconocerlo, igual que con las ROMs.
     private func loadSwitchControls() {
+        if let emulador = switchEmulator?.emulator { EmulatorControls.recoverMouseSession(for: emulador, fileManager: fileManager) }
         let juego = switchGameId
         switchControlProfile = switchControls.resolved(gameId: juego)
         switchControlScope = switchControls.effectiveScope(gameId: juego)
     }
 
-    /// Guarda el perfil en el nivel elegido **y lo escribe en la configuración del emulador**.
-    ///
-    /// Las dos cosas juntas y no solo la primera: guardar sin aplicar dejaría al usuario mirando
-    /// unos controles que dicen una cosa y un emulador que hace otra, que es exactamente el fallo
-    /// que esta pantalla existe para quitar.
+    /// El dispositivo virtual existe solo durante la partida. Guardar prepara la próxima sesión;
+    /// escribir aquí dejaría un dispositivo inexistente si el usuario no abre el juego todavía.
     @discardableResult
     public func saveSwitchControls() -> ControlWriteOutcome {
-        guard let emulador = switchEmulator else { return .unreadableConfig }
         do {
+            if switchControlProfile.inputDevice == .keyboardMouse {
+                _ = try SwitchMouseSession.configuration(profile: switchControlProfile, sdl: URL(fileURLWithPath: "/"))
+            }
             try switchControls.save(switchControlProfile, for: switchControlScope)
+        } catch let error as SwitchMouseSession.Failure {
+            showError(strings[error.textKey])
+            return .writeFailed
         } catch {
             showError(error.localizedDescription)
             return .writeFailed
         }
-        let resultado = EmulatorControls.apply(
-            switchControlProfile, pad: switchPadIdentity()?.pad,
-            for: emulador.emulator, fileManager: fileManager
-        )
-        add(strings[resultado.textKey], level: resultado.isSuccess ? .success : .warning)
-        if !resultado.isSuccess { showError(strings[resultado.textKey]) } else { clearError() }
+        add(strings[.switchControlsSaved], level: .success)
+        clearError()
         objectWillChange.send()
-        return resultado
+        return .saved
     }
 
     /// Tira el perfil del nivel elegido y vuelve a lo que mande por debajo. Sin nada por debajo,
@@ -467,6 +517,7 @@ public final class AppModel: ObservableObject {
     public func resetSwitchControls() {
         switchControls.remove(switchControlScope)
         switchControlProfile = switchControls.resolved(gameId: switchGameId)
+        switchControlScope = switchControls.effectiveScope(gameId: switchGameId)
     }
 
     /// Deja los controles de **este** juego escritos antes de lanzarlo.
@@ -475,27 +526,21 @@ public final class AppModel: ObservableObject {
     /// `games/<identificador>/` solo tiene caché—, así que la única forma de que dos juegos tengan
     /// esquemas distintos es escribir el que toca justo antes de abrir cada uno.
     ///
-    /// No avisa de sus fallos como lo hace `saveSwitchControls`: aquí el usuario ha pulsado
-    /// «Jugar», y pararle el lanzamiento porque no se supo el identificador del mando sería cambiar
-    /// un problema pequeño por uno grande. Se apunta en la actividad y se sigue.
-    private func applySwitchControlsBeforeLaunch() {
-        guard let emulador = switchEmulator else { return }
-        let perfil = switchControls.resolved(gameId: switchGameId)
+    /// Si no se puede aplicar el dispositivo elegido, se detiene el lanzamiento: abrir con otro
+    /// dispositivo ocultaría el problema y volvería a dejar controles que no responden.
+    private func applySwitchControlsBeforeLaunch(_ perfil: SwitchControlProfile, pad: (id: String, name: String)?) -> Bool {
+        guard let emulador = switchEmulator else { return false }
         let resultado = EmulatorControls.apply(
-            perfil, pad: switchPadIdentity()?.pad,
+            perfil, pad: pad,
             for: emulador.emulator, fileManager: fileManager
         )
-        switch resultado {
-        case .applied:
+        if resultado.isSuccess {
             add(strings(.switchControlsAppliedToGame, strings[switchControlScope.textKey]),
                 level: .info)
-        // Que el emulador esté abierto no es un fallo aquí: significa que ya está en marcha con la
-        // configuración que leyó al arrancar, y reescribírsela ahora no cambiaría nada.
-        case .emulatorIsRunning:
-            break
-        default:
-            add(strings[resultado.textKey], level: .warning)
+        } else {
+            showError(strings[resultado.textKey])
         }
+        return resultado.isSuccess
     }
 
     /// Si falta `zstd`, que es lo único que hace falta para rehacer un paquete comprimido y que
@@ -1958,6 +2003,7 @@ public final class AppModel: ObservableObject {
     /// `.nsz`, así que hay que descomprimirlo antes, y eso pesa lo que pesa el juego. Se hace una
     /// vez y se guarda; la segunda vez se abre directo.
     public func playSwitchPackage() {
+        guard !isPlayingRom else { return }
         guard let paquete = selectedRom, switchFacts.isRecognised else {
             showError(strings[.errPickRom])
             return
@@ -1965,6 +2011,22 @@ public final class AppModel: ObservableObject {
         guard let emulador = switchEmulator else {
             showError(strings[.errNoSwitchEmulator])
             return
+        }
+
+        guard !EmulatorSettings.isRunning(emulador.emulator) else {
+            showError(strings[.switchControlsEmulatorOpen])
+            return
+        }
+
+        if switchGameId == "0100000000010000", switchLowerScaleUnsupported {
+            guard let escala = switchQuality?.scale else {
+                showError(strings[.switchQualityUnknown])
+                return
+            }
+            guard escala >= 1 else {
+                showError(strings[.switchQualityLowerUnsupported])
+                return
+            }
         }
 
         clearError()
@@ -2008,18 +2070,70 @@ public final class AppModel: ObservableObject {
             // guardarlos porque el emulador solo tiene una configuración de entrada para todo: el
             // perfil del juego que se lanza tiene que ser el que esté puesto en el momento de
             // lanzarlo.
-            applySwitchControlsBeforeLaunch()
-
             activityMessage = strings[.statusLaunchingEmulator]
+            var ratón: SwitchMouseSession?
             do {
-                try SwitchTools.open(emulator: emulador.app, game: aJugar)
+                let perfil = switchControls.resolved(gameId: switchGameId)
+                let mando: (id: String, name: String)?
+                if perfil.inputDevice == .keyboardMouse {
+                    let preparada = try SwitchMouseSession.prepare(profile: perfil, emulator: emulador.app)
+                    ratón = preparada
+                    mando = (preparada.device.id, preparada.device.name)
+                } else {
+                    mando = switchPadIdentity()?.pad
+                    guard mando != nil else {
+                        activityMessage = strings[.statusFailed]
+                        showError(strings[.switchControlsNoPadId]); return
+                    }
+                }
+                guard applySwitchControlsBeforeLaunch(perfil, pad: mando) else {
+                    ratón?.finish()
+                    activityMessage = strings[.statusFailed]
+                    return
+                }
+                if let ratón {
+                    switchMouseStatus = nil
+                    let aplicación = try await ratón.open(emulator: emulador.app, game: aJugar)
+                    monitorSwitchMouseSession(ratón, application: aplicación, emulator: emulador.emulator)
+                } else {
+                    try SwitchTools.open(emulator: emulador.app, game: aJugar)
+                }
                 // Como con RetroArch y como con el emulador de Android: el juego es otro programa
                 // y sigue por su cuenta. Lever no se queda esperando a que alguien termine.
                 activityMessage = strings[.statusApkRunning]
+            } catch let error as SwitchMouseSession.Failure {
+                ratón?.finish()
+                EmulatorControls.recoverMouseSession(for: emulador.emulator, fileManager: fileManager)
+                activityMessage = strings[.statusFailed]
+                showError(strings[error.textKey])
             } catch {
+                ratón?.finish()
+                EmulatorControls.recoverMouseSession(for: emulador.emulator, fileManager: fileManager)
                 activityMessage = strings[.statusFailed]
                 showError(error.localizedDescription)
             }
+        }
+    }
+
+    private func monitorSwitchMouseSession(_ session: SwitchMouseSession, application: NSRunningApplication, emulator: StandaloneEmulator) {
+        Task { [weak self] in
+            var monitor = SwitchMouseSession.StartupMonitor()
+            let límite = ContinuousClock.now.advanced(by: .seconds(45))
+            while !application.isTerminated {
+                if monitor.status != .switchMouseReady,
+                   let estado = monitor.update(isReady: session.isReady, hasFailed: session.hasFailed,
+                                               timedOut: ContinuousClock.now >= límite) {
+                    self?.switchMouseStatus = estado
+                    if let self {
+                        add(strings[estado], level: estado == .switchMouseReady ? .success : .warning)
+                    }
+                }
+                try? await Task.sleep(for: .milliseconds(500))
+            }
+            session.finish()
+            EmulatorControls.recoverMouseSession(for: emulator)
+            self?.switchMouseStatus = nil
+            self?.objectWillChange.send()
         }
     }
 

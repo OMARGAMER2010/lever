@@ -56,6 +56,10 @@ public enum SwitchKeyNames {
         byKeyCode[code]
     }
 
+    public static func keyCode(for name: String) -> UInt16? {
+        byKeyCode.first { $0.value == name }?.key
+    }
+
     /// Cómo se enseña una tecla en la hoja. El nombre del archivo vale para el archivo, pero
     /// «ShiftLeft» en pantalla se lee peor que «⇧», y «Tilde» no dice qué tecla es.
     public static func label(for name: String) -> String {

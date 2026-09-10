@@ -226,8 +226,17 @@ public enum SDLButton {
 /// significa la traducción de fábrica, que es la que hace que un juego recién soltado se juegue sin
 /// tocar nada. Es la diferencia entre un archivo de dos líneas y uno de cuarenta que hay que
 /// mantener al día cada vez que cambie un valor por omisión.
+public enum SwitchInputDevice: String, CaseIterable, Codable, Sendable {
+    case keyboardMouse, gamepad
+
+    public var textKey: TextKey { self == .keyboardMouse ? .switchKeyboardMouse : .switchGamepad }
+}
+
 public struct SwitchControlProfile: Equatable, Sendable, Codable {
     public var faceLayout: SwitchFaceLayout
+    public var inputDevice: SwitchInputDevice
+    public var mouseSensitivity: Double
+    public var invertMouseY: Bool
     /// Lo que el usuario haya cambiado del mando, con nombres de SDL.
     public var gamepad: [SwitchPadInput: String]
     /// Lo que haya cambiado del teclado, con nombres de Ryujinx.
@@ -236,18 +245,39 @@ public struct SwitchControlProfile: Equatable, Sendable, Codable {
     public init(
         faceLayout: SwitchFaceLayout = .byPosition,
         gamepad: [SwitchPadInput: String] = [:],
-        keyboard: [SwitchPadInput: String] = [:]
+        keyboard: [SwitchPadInput: String] = [:],
+        inputDevice: SwitchInputDevice = .keyboardMouse,
+        mouseSensitivity: Double = 1,
+        invertMouseY: Bool = false
     ) {
         self.faceLayout = faceLayout
         self.gamepad = gamepad
         self.keyboard = keyboard
+        self.inputDevice = inputDevice
+        self.mouseSensitivity = mouseSensitivity
+        self.invertMouseY = invertMouseY
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case faceLayout, gamepad, keyboard, inputDevice, mouseSensitivity, invertMouseY
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let valores = try decoder.container(keyedBy: CodingKeys.self)
+        faceLayout = try valores.decodeIfPresent(SwitchFaceLayout.self, forKey: .faceLayout) ?? .byPosition
+        gamepad = try valores.decodeIfPresent([SwitchPadInput: String].self, forKey: .gamepad) ?? [:]
+        keyboard = try valores.decodeIfPresent([SwitchPadInput: String].self, forKey: .keyboard) ?? [:]
+        inputDevice = try valores.decodeIfPresent(SwitchInputDevice.self, forKey: .inputDevice) ?? .keyboardMouse
+        mouseSensitivity = try valores.decodeIfPresent(Double.self, forKey: .mouseSensitivity) ?? 1
+        invertMouseY = try valores.decodeIfPresent(Bool.self, forKey: .invertMouseY) ?? false
     }
 
     /// La de fábrica: por posición y sin nada tocado.
     public static let standard = SwitchControlProfile()
 
     public var isUntouched: Bool {
-        faceLayout == .byPosition && gamepad.isEmpty && keyboard.isEmpty
+        faceLayout == .byPosition && gamepad.isEmpty && keyboard.isEmpty && inputDevice == .keyboardMouse
+            && mouseSensitivity == 1 && !invertMouseY
     }
 
     // MARK: - Lo que de verdad se va a escribir
@@ -292,15 +322,14 @@ public struct SwitchControlProfile: Equatable, Sendable, Codable {
         return mapa
     }
 
-    /// La disposición de teclado que el propio emulador escribe cuando no hay ninguna. Se copia tal
-    /// cual a propósito: quien busque ayuda en internet va a encontrar esta, y que la de Lever sea
-    /// otra es una pelea que no vale la pena.
+    /// Las acciones frecuentes quedan junto a WASD. Los nombres siguen siendo los botones de la
+    /// consola: Shift es ZL, cuyo significado depende del juego y no siempre es correr.
     public static let defaultKeyboard: [SwitchPadInput: String] = [
         .dpadUp: "Up", .dpadDown: "Down", .dpadLeft: "Left", .dpadRight: "Right",
-        .a: "Z", .b: "X", .x: "C", .y: "V",
-        .l: "E", .r: "U", .zl: "Q", .zr: "O",
-        .minus: "Minus", .plus: "Plus",
-        .leftStickButton: "F", .rightStickButton: "H",
+        .a: "E", .b: "Space", .x: "C", .y: "F",
+        .l: "Q", .r: "R", .zl: "ShiftLeft", .zr: "V",
+        .minus: "Tab", .plus: "Enter",
+        .leftStickButton: "G", .rightStickButton: "H",
         .leftStickUp: "W", .leftStickDown: "S", .leftStickLeft: "A", .leftStickRight: "D",
         .rightStickUp: "I", .rightStickDown: "K", .rightStickLeft: "J", .rightStickRight: "L"
     ]
