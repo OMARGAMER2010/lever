@@ -5,6 +5,8 @@
 **Abre archivos `.exe` de Windows, descomprime `.rar` e instala `.apk` de Android desde tu Mac.**
 Sin cuentas, sin servidor, sin telemetría. Todo local.
 
+[English](README.en.md)
+
 </div>
 
 > **El nombre.** Una palanca es lo que metes en la rendija de un cajón clavado para abrirlo: eso es
@@ -19,6 +21,7 @@ Sin cuentas, sin servidor, sin telemetría. Todo local.
 |---|---|
 | **Programas** | Ejecuta `.exe` y `.msi` de Windows a través de Wine, en un entorno propio que no toca nada más de tu Mac. |
 | **Juegos nativos** | Hay `.exe` que solo son un envoltorio: en Godot el juego vive en el `.pck` de al lado, en Ren'Py son guiones de Python y en LÖVE va pegado al final del propio `.exe`. Esos archivos sirven igual en Mac. La app los junta con el motor oficial de macOS y te deja un `.app` nativo, sin Wine y sin Rosetta. |
+| **Juegos de Steam** | Una biblioteca de Steam para Windows en su propio entorno, aparte del resto. Instalas desde Steam como en cualquier PC y los juegos salen en una lista con su botón de jugar. Direct3D se traduce a Metal con D3DMetal. |
 | **Comprimidos** | Extrae `.rar`, `.zip`, `.7z`, `.tar`, `.iso`, `.cab` y compañía. Admite contraseñas y nunca borra el original. |
 | **Android** | Ejecuta un `.apk` en el propio Mac, dentro de un emulador que la app monta y arranca sola. También sirve un móvil enchufado por USB. Y los formatos que traen la app partida en trozos —`.xapk`, `.apks`, `.aab`— se desmontan, se eligen los trozos que le tocan a tu aparato y se instalan juntos, con sus datos de expansión. |
 | **Consolas** | Reconoce un juego de consola por su cabecera —no por la extensión— y lo ejecuta con el núcleo de libretro que le toca, que se descarga solo. Once máquinas, de la NES a la PSP. Los controles se mapean con un diagrama que tiene la forma del mando que tengas enchufado. |
@@ -41,32 +44,66 @@ sesiones y arranca según el del sistema.
 bash scripts/install.sh
 ```
 
-Revisa qué falta, **instala solo lo que se puede instalar sin preguntar**, compila la app, genera
-el icono y deja `Lever.app` en el Escritorio, lista para abrir con doble clic.
+Mira qué te falta, te dice cuánto ocupa, comprueba que te cabe y pregunta antes de bajar nada.
+Luego compila la app y te deja `Lever.app` en el Escritorio, lista para abrir con doble clic.
 
-Si prefieres solo construirla en `dist/`, o solo revisar las dependencias:
+Por partes, si lo prefieres:
 
 ```bash
-bash scripts/build-app.sh          # compilar y armar el .app
+bash scripts/dependencies.sh                   # la lista con tamaños, y pregunta
+bash scripts/dependencies.sh --check           # solo mirar, sin tocar nada
+bash scripts/dependencies.sh --all             # todo lo que falte, sin preguntar
+bash scripts/dependencies.sh --only wine,zstd  # solo esas piezas
+bash scripts/build-app.sh                      # compilar y armar el .app
 open dist/Lever.app
-
-bash scripts/dependencies.sh          # revisar e instalar lo automático
-bash scripts/dependencies.sh --check  # solo informar, sin tocar nada
 ```
 
-### Qué se instala solo y qué no
+### Qué pregunta, y por qué
 
-`scripts/dependencies.sh` mira los mismos directorios que mira la app —no el `PATH` de tu
-terminal, que no es el que hereda una app abierta desde el Finder— y parte lo que falta en dos:
+Enseña cada pieza con su tamaño, suma lo que va a descargar y lo compara con tu espacio libre
+dejando 2 GB de margen: llenar el disco del todo deja el Mac inservible, no solo la instalación.
+Después eliges tú: todo, unas cuantas, o nada.
 
-| | |
-|---|---|
-| **Se instala solo** | `sevenzip` (`7zz`), `unar` y `adb`. Pocos megas, sin licencias, sin contraseña, sin decisiones. |
-| **Se explica, no se instala** | Wine, Rosetta 2 y el SDK de Android. Son gigas, o piden tu contraseña, o hay que elegir entre opciones que no son equivalentes. |
+Mira los mismos directorios que mira la app, no el `PATH` de tu terminal —que no es el que hereda
+una app abierta desde el Finder—, así que no te dirá «ya está» de algo que la app no va a encontrar.
 
-Lo del segundo grupo sale impreso con la orden exacta lista para pegar. Instalarlo a ciegas sería
-descargar varios gigas que quizá no quieres y elegir por ti entre cosas distintas. La app arranca
-igual y te dice qué le falta cuando lo necesita.
+Los tamaños son aproximados y redondeados hacia arriba, porque Homebrew no dice cuánto pesa algo
+hasta que lo está bajando. Y si lo lanzas desde un guion, sin terminal delante, solo informa: nadie
+puede contestar a una pregunta que nadie lee.
+
+La app arranca igual sin todo instalado, y te dice qué le falta cuando lo necesita.
+
+## Cómo se usa
+
+Arrastra el archivo a la ventana y ya está: la app se coloca sola en la pestaña que toca. Lo de
+abajo es por si quieres saber qué esperar de cada cosa.
+
+**Un programa de Windows.** Suelta el `.exe` o el `.msi` y pulsa **Ejecutar**. La primera vez Wine
+monta su entorno y tarda un poco; después ya no.
+
+**Un juego que puede ser nativo.** Si el `.exe` resulta ser solo un envoltorio —Godot, Ren'Py,
+LÖVE, NW.js, Electron, Java—, aparece el botón para hacer un `.app` de Mac. Eliges dónde lo deja, y
+ese `.app` ya no necesita Wine ni Rosetta.
+
+**Juegos de Steam.** En «Programas», **Abrir Steam de Windows** abre tu biblioteca; instalas desde
+ahí como en cualquier PC. Los juegos instalados aparecen en la lista con su botón de **Jugar**, que
+los abre por Steam. Si alguno se queda en su propio lanzador y no pasa de ahí, en **⋯ → Elegir el
+ejecutable** le dices con qué archivo arranca de verdad, y Lever lo recuerda.
+
+**Un comprimido.** Suéltalo, elige dónde va y pulsa **Extraer**. Si pide contraseña, hay casilla. El
+original no se toca nunca.
+
+**Un `.apk`.** Enchufa un móvil por USB, o deja que la app monte el emulador. Pulsa **Ejecutar** y
+hace la cadena entera: arranca lo que haga falta, espera, instala y abre la app. Los `.xapk`,
+`.apks` y `.aab` se desmontan solos y se instalan por trozos.
+
+**Un juego de consola retro.** Suelta la ROM. La app reconoce la máquina por la cabecera del
+archivo, no por la extensión, se baja el núcleo que le toca y lo abre. Los controles se configuran
+sobre un diagrama con la forma del mando que tengas enchufado.
+
+**La consola híbrida y la familia PlayStation.** Estas no traen emulador puesto: el programa lo
+pones tú y la app lo encuentra y lo lanza. Las llaves y el firmware también son tuyos —la app los
+lee, no los reparte—. Los paquetes comprimidos se rehacen antes de jugar.
 
 ## Requisitos
 
@@ -290,6 +327,18 @@ Wine no es Windows. Los programas que necesitan controladores, sistemas anti-tra
 avanzados fallarán. Los instaladores y las utilidades sencillas son los que mejor funcionan. Si un
 programa no arranca, no es culpa de la app: es el límite de la capa de compatibilidad.
 
+### Steam
+
+La biblioteca de Steam vive en su propio entorno, aparte del resto de programas de Windows:
+cambiar o restablecer Wine no te la borra. Direct3D se traduce a Metal con D3DMetal, y lo bien o
+mal que vaya depende del juego y de tu Mac, así que pruébalo antes de hacerte ilusiones. Los juegos
+con anti-trampas en línea no van a funcionar, y eso no tiene arreglo desde aquí.
+
+### Consolas
+
+Los núcleos de libretro se descargan solos. Las máquinas que necesitan BIOS o firmware te lo dicen,
+y ese archivo lo pones tú: la app no lo trae ni lo va a buscar por ahí.
+
 ### Android
 
 Un `.apk` no se ejecuta *directamente* en macOS como un `.exe` bajo Wine: hace falta un Android
@@ -302,8 +351,3 @@ normales van bien; los juegos 3D pesados y todo lo que lleve anti-trampas sufrir
 Con 8 GB de RAM, cerrar cosas antes ayuda.
 
 Instalar fuera de Google Play se salta sus comprobaciones. Pon solo archivos de origen conocido.
-
-## Bitácora
-
-- [`progress.md`](progress.md) — qué se ha hecho y por qué
-- [`memoria.md`](memoria.md) — contexto del proyecto y trampas conocidas
