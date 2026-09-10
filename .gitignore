@@ -5,6 +5,3 @@ dist/
 # El icono lo regenera scripts/make-icon.swift en cada compilación.
 Resources/AppIcon.icns
 Resources/AppIcon.iconset/
-
-
-
