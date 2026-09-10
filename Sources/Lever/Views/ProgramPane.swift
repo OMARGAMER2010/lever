@@ -10,6 +10,28 @@ struct ProgramPane: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.loose) {
+            if model.windowsSteamIsReady {
+                Panel(padding: Theme.Spacing.normal) {
+                    VStack(alignment: .leading, spacing: Theme.Spacing.tight) {
+                        Text(s[.windowsSteamTitle])
+                            .font(.system(size: 12, weight: .semibold))
+                        Text(s[.windowsSteamBody])
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Button(s[model.isOpeningWindowsSteam ? .windowsSteamOpening : .windowsSteamOpen],
+                               action: model.openWindowsSteam)
+                            .controlSize(.small)
+                            .disabled(model.isOpeningWindowsSteam)
+                        if model.superCastilloIsReady {
+                            Button(s[model.isRunningSuperCastillo ? .superCastilloRunning : .superCastilloPlayOffline],
+                                   action: model.runSuperCastilloOffline)
+                                .controlSize(.small)
+                                .disabled(model.isRunningSuperCastillo)
+                        }
+                    }
+                }
+            }
             if model.selectedProgram == nil {
                 DropZone(
                     title: s[.dropProgramTitle],

@@ -837,6 +837,90 @@ public final class AppModel: ObservableObject {
 
     // MARK: - Ejecutar un programa de Windows
 
+    @Published public private(set) var isOpeningWindowsSteam = false
+    public var windowsSteamIsReady: Bool { WindowsSteam().isReady }
+    @Published public private(set) var isRunningSuperCastillo = false
+    public var superCastilloIsReady: Bool { WindowsSteam().superCastilloIsReady }
+
+    public func runSuperCastilloOffline() {
+        guard !isRunningSuperCastillo else { return }
+        let steam = WindowsSteam()
+        guard steam.superCastilloIsReady else {
+            showError(strings[.superCastilloMissing])
+            return
+        }
+        clearError()
+        isRunningSuperCastillo = true
+        Task { [weak self] in
+            guard let self else { return }
+            defer { isRunningSuperCastillo = false }
+            guard await windowsSteamSyncIsUsable(steam) else { return }
+            do {
+                let result = try await runner.run(steam.superCastilloCommand())
+                if !result.succeeded {
+                    showError(strings(.errProgramExit, String(result.exitCode)))
+                }
+            } catch {
+                showError(error.localizedDescription)
+            }
+        }
+    }
+
+    /// Comprueba la sincronización del motor antes de lanzar. msync solo funciona si el
+    /// servidor de Wine y todos sus clientes piden lo mismo, y quien arranca primero es quien
+    /// la fija: Steam y el juego comparten prefijo, así que comparten servidor.
+    ///
+    /// Si ya hay un servidor con otra configuración, Lever avisa y no lanza nada. No lo termina
+    /// por su cuenta: ese servidor sostiene la sesión de Steam del usuario y, muchas veces, una
+    /// partida sin guardar. Cerrarlo es una decisión suya, desde el menú del juego o de Steam.
+    /// Cuando no se puede leer el entorno no se inventa nada: se avisa y se sigue.
+    private func windowsSteamSyncIsUsable(_ steam: WindowsSteam) async -> Bool {
+        let state: WindowsSteam.SyncState
+        do {
+            let probe = try await runner.run(steam.syncProbeCommand())
+            state = probe.succeeded ? steam.syncState(processListing: probe.output) : .unreadable
+        } catch {
+            state = .unreadable
+        }
+        switch state {
+        case .different:
+            showError(strings[.wineSyncMismatch])
+            return false
+        case .unreadable:
+            add(strings[.wineSyncUnreadable], level: .warning)
+        case .noServer, .matching:
+            add(strings[.wineSyncShared], level: .info)
+        }
+        return true
+    }
+
+    public func openWindowsSteam() {
+        guard !isOpeningWindowsSteam else { return }
+        let steam = WindowsSteam()
+        guard steam.isReady else {
+            showError(strings[.windowsSteamMissing])
+            return
+        }
+        clearError()
+        isOpeningWindowsSteam = true
+        Task { [weak self] in
+            guard let self else { return }
+            defer { isOpeningWindowsSteam = false }
+            guard await windowsSteamSyncIsUsable(steam) else { return }
+            do {
+                let result = try await runner.run(steam.command())
+                // Steam usa 42 cuando entrega el control a su actualizador.
+                if result.succeeded || result.exitCode == 42 {
+                    add(strings[.windowsSteamStarted], level: .info)
+                } else {
+                    showError(strings(.errProgramExit, String(result.exitCode)))
+                }
+            } catch {
+                showError(error.localizedDescription)
+            }
+        }
+    }
+
     public func runProgram() {
         guard !isRunningProgram, !isPreparingWindows else { return }
         guard let program = selectedProgram,

@@ -77,6 +77,10 @@ public enum TextKey: String, CaseIterable, Sendable {
     // Tarjeta de Wine
     case windowsCardTitle, windowsCardBody, wineSettings, closeAll, resetWindows, otherWine
     case wineDisclaimer, programWillOpen
+    case windowsSteamTitle, windowsSteamBody, windowsSteamOpen, windowsSteamOpening
+    case windowsSteamMissing, windowsSteamStarted
+    case superCastilloPlayOffline, superCastilloRunning, superCastilloMissing
+    case wineSyncShared, wineSyncMismatch, wineSyncUnreadable
 
     // Hechos del archivo
     case contentsReading, contentsItems, contentsAndMore, willOpenWith, willOpenWithWhy

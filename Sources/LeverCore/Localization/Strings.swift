@@ -25,6 +25,18 @@ public struct Strings: Sendable {
     }
 
     private static let spanishTable: [TextKey: String] = [
+        .windowsSteamTitle: "Juegos de Steam para Windows",
+        .windowsSteamBody: "Instala tus juegos desde Steam. Esta biblioteca usa un entorno separado. Super Castillo requiere jugar sin conexión; en Alto rondó los 60 FPS de media estimada, sin garantía de que se mantenga.",
+        .windowsSteamOpen: "Abrir Steam de Windows",
+        .windowsSteamOpening: "Abriendo Steam de Windows…",
+        .windowsSteamMissing: "La instalación de Steam para Windows está incompleta. Revisa su motor y sus archivos antes de abrirla.",
+        .windowsSteamStarted: "Se inició Steam en su entorno de Windows.",
+        .superCastilloPlayOffline: "Jugar Super Castillo sin conexión",
+        .superCastilloRunning: "Super Castillo en ejecución",
+        .superCastilloMissing: "Faltan Super Castillo o su motor gráfico. Completa la instalación antes de jugar.",
+        .wineSyncShared: "Steam y Super Castillo comparten la sincronización MSync del motor.",
+        .wineSyncMismatch: "El entorno de Windows ya tiene un servidor de Wine con otra sincronización. Guarda la partida y cierra Super Castillo y Steam desde sus propios menús; luego vuelve a intentarlo. Lever no los cierra por ti para no costarte una partida.",
+        .wineSyncUnreadable: "No se pudo leer la sincronización del servidor de Wine que ya está en marcha. Se continúa sin esa comprobación.",
         .tabPrograms: "Programas",
         .tabArchives: "Comprimidos",
         .tabAndroid: "Android",
@@ -582,6 +594,18 @@ public struct Strings: Sendable {
     ]
 
     private static let englishTable: [TextKey: String] = [
+        .windowsSteamTitle: "Windows games on Steam",
+        .windowsSteamBody: "Install your games from Steam. This library uses a separate environment. Super Castillo requires offline play; on High it averaged close to 60 FPS in testing, with no guarantee that it holds.",
+        .windowsSteamOpen: "Open Windows Steam",
+        .windowsSteamOpening: "Opening Windows Steam…",
+        .windowsSteamMissing: "The Windows Steam installation is incomplete. Check its runtime and files before opening it.",
+        .windowsSteamStarted: "Started Steam in its Windows environment.",
+        .superCastilloPlayOffline: "Play Super Castillo offline",
+        .superCastilloRunning: "Super Castillo is running",
+        .superCastilloMissing: "Super Castillo or its graphics runtime is missing. Complete the installation before playing.",
+        .wineSyncShared: "Steam and Super Castillo share the engine's MSync synchronization.",
+        .wineSyncMismatch: "The Windows environment already has a Wine server using a different synchronization. Save your game and quit Super Castillo and Steam from their own menus, then try again. Lever will not close them for you, so you do not lose a save.",
+        .wineSyncUnreadable: "Could not read the synchronization of the Wine server already running. Continuing without that check.",
         .tabPrograms: "Programs",
         .tabArchives: "Archives",
         .tabAndroid: "Android",
