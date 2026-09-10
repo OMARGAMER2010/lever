@@ -79,7 +79,9 @@ public enum TextKey: String, CaseIterable, Sendable {
     case wineDisclaimer, programWillOpen
     case windowsSteamTitle, windowsSteamBody, windowsSteamOpen, windowsSteamOpening
     case windowsSteamMissing, windowsSteamStarted
-    case superCastilloPlayOffline, superCastilloRunning, superCastilloMissing
+    case steamGamesNone, steamGamePlay, steamGameOpening, steamGameOptions
+    case steamGamePickExecutable, steamGameUseSteam, steamGamePickHint
+    case steamGameNoExecutables, steamGameViaExecutable, steamGameExecutableChosen
     case wineSyncShared, wineSyncMismatch, wineSyncUnreadable
 
     // Hechos del archivo

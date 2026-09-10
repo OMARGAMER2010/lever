@@ -17,6 +17,25 @@ public enum Preferences {
         static let resumeSessions = "resumeSessions"
         static let switchKeysPath = "switchKeysPath"
         static let switchEmulatorPath = "switchEmulatorPath"
+        static let steamExecutables = "steamExecutables"
+    }
+
+    /// El ejecutable elegido a mano para un juego de Steam, por identificador de la app.
+    ///
+    /// Lo normal es que esté vacío: casi todos los juegos abren bien por Steam. Se guarda solo
+    /// para los que meten un lanzador por medio y hay que rodearlo.
+    public static func steamExecutable(forAppID appID: String) -> String? {
+        (defaults.dictionary(forKey: Key.steamExecutables) as? [String: String])?[appID]
+    }
+
+    public static func setSteamExecutable(_ path: String?, forAppID appID: String) {
+        var chosen = (defaults.dictionary(forKey: Key.steamExecutables) as? [String: String]) ?? [:]
+        if let path {
+            chosen[appID] = path
+        } else {
+            chosen.removeValue(forKey: appID)
+        }
+        defaults.set(chosen, forKey: Key.steamExecutables)
     }
 
     /// Si los juegos de consola se abren ocupando la pantalla entera.

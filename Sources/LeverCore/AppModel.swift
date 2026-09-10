@@ -880,29 +880,59 @@ public final class AppModel: ObservableObject {
         }
     }
 
-    // MARK: - Ejecutar un programa de Windows
+    // MARK: - Juegos de Steam para Windows
+
+    /// Los ejecutables entre los que elegir para un juego, cuando hay que saltarse un lanzador.
+    public struct SteamExecutableOptions: Equatable, Sendable {
+        public let game: SteamGame
+        public let executables: [URL]
+    }
 
     @Published public private(set) var isOpeningWindowsSteam = false
-    public var windowsSteamIsReady: Bool { WindowsSteam().isReady }
-    @Published public private(set) var isRunningSuperCastillo = false
-    public var superCastilloIsReady: Bool { WindowsSteam().superCastilloIsReady }
+    @Published public private(set) var steamGames: [SteamGame] = []
+    /// El juego que se está abriendo ahora mismo, por su identificador de Steam.
+    @Published public private(set) var openingSteamAppID: String?
+    @Published public private(set) var steamExecutableOptions: SteamExecutableOptions?
 
-    public func runSuperCastilloOffline() {
-        guard !isRunningSuperCastillo else { return }
+    public var windowsSteamIsReady: Bool { WindowsSteam().isReady }
+
+    public func refreshSteamGames() {
         let steam = WindowsSteam()
-        guard steam.superCastilloIsReady else {
-            showError(strings[.superCastilloMissing])
+        steamGames = steam.isReady ? steam.installedGames() : []
+    }
+
+    /// El ejecutable elegido a mano para este juego, si se eligió alguno.
+    public func steamExecutable(for game: SteamGame) -> URL? {
+        Preferences.steamExecutable(forAppID: game.appID).map { URL(fileURLWithPath: $0) }
+    }
+
+    /// Abre un juego por Steam, que es quien sabe cómo arranca cada uno.
+    ///
+    /// Salvo que se haya elegido un ejecutable a mano: algunos juegos meten un lanzador por
+    /// medio que no llega a abrirse sin conexión, y entonces hay que entrar por la puerta de al
+    /// lado. Esa elección se recuerda, porque un juego que lo necesita lo necesita siempre.
+    public func runSteamGame(_ game: SteamGame) {
+        guard openingSteamAppID == nil else { return }
+        let steam = WindowsSteam()
+        guard steam.isReady else {
+            showError(strings[.windowsSteamMissing])
             return
         }
+        let chosen = steamExecutable(for: game)
+        let launch: SteamLaunch = chosen.map { .executable($0) } ?? .throughSteam
         clearError()
-        isRunningSuperCastillo = true
+        openingSteamAppID = game.appID
         Task { [weak self] in
             guard let self else { return }
-            defer { isRunningSuperCastillo = false }
+            defer { openingSteamAppID = nil }
             guard await windowsSteamSyncIsUsable(steam) else { return }
             do {
-                let result = try await runner.run(steam.superCastilloCommand())
-                if !result.succeeded {
+                let result = try await runner.run(steam.gameCommand(game, launch: launch))
+                // Por Steam el mandato vuelve en seguida: solo le pasa el recado a la sesión
+                // que ya está abierta, y el juego sigue por su cuenta. El 42 es el relevo al
+                // actualizador. Por ejecutable, en cambio, el mandato dura toda la partida.
+                let fine = chosen == nil ? (result.succeeded || result.exitCode == 42) : result.succeeded
+                if !fine {
                     showError(strings(.errProgramExit, String(result.exitCode)))
                 }
             } catch {
@@ -911,9 +941,37 @@ public final class AppModel: ObservableObject {
         }
     }
 
+    /// Busca los ejecutables del juego para que la persona elija. Steam no guarda cuál es el de
+    /// arranque en ningún sitio que se pueda leer, así que se ofrecen ordenados por parecido y
+    /// decide ella; recorrer la carpeta de un juego grande lleva su rato, así que va aparte.
+    public func askForSteamExecutable(_ game: SteamGame) {
+        let steam = WindowsSteam()
+        Task { [weak self] in
+            guard let self else { return }
+            let found = await Task.detached { steam.executableCandidates(for: game) }.value
+            steamExecutableOptions = SteamExecutableOptions(game: game, executables: found)
+        }
+    }
+
+    public func useSteamExecutable(_ executable: URL, for game: SteamGame) {
+        Preferences.setSteamExecutable(executable.path, forAppID: game.appID)
+        steamExecutableOptions = nil
+        add(strings(.steamGameExecutableChosen, game.name, executable.lastPathComponent), level: .info)
+    }
+
+    /// Vuelve a lo normal: que lo abra Steam.
+    public func useSteamForGame(_ game: SteamGame) {
+        Preferences.setSteamExecutable(nil, forAppID: game.appID)
+        steamExecutableOptions = nil
+    }
+
+    public func cancelSteamExecutableChoice() {
+        steamExecutableOptions = nil
+    }
+
     /// Comprueba la sincronización del motor antes de lanzar. msync solo funciona si el
     /// servidor de Wine y todos sus clientes piden lo mismo, y quien arranca primero es quien
-    /// la fija: Steam y el juego comparten prefijo, así que comparten servidor.
+    /// la fija: Steam y los juegos comparten prefijo, así que comparten servidor.
     ///
     /// Si ya hay un servidor con otra configuración, Lever avisa y no lanza nada. No lo termina
     /// por su cuenta: ese servidor sostiene la sesión de Steam del usuario y, muchas veces, una

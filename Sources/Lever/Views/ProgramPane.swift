@@ -10,28 +10,7 @@ struct ProgramPane: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.loose) {
-            if model.windowsSteamIsReady {
-                Panel(padding: Theme.Spacing.normal) {
-                    VStack(alignment: .leading, spacing: Theme.Spacing.tight) {
-                        Text(s[.windowsSteamTitle])
-                            .font(.system(size: 12, weight: .semibold))
-                        Text(s[.windowsSteamBody])
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Button(s[model.isOpeningWindowsSteam ? .windowsSteamOpening : .windowsSteamOpen],
-                               action: model.openWindowsSteam)
-                            .controlSize(.small)
-                            .disabled(model.isOpeningWindowsSteam)
-                        if model.superCastilloIsReady {
-                            Button(s[model.isRunningSuperCastillo ? .superCastilloRunning : .superCastilloPlayOffline],
-                                   action: model.runSuperCastilloOffline)
-                                .controlSize(.small)
-                                .disabled(model.isRunningSuperCastillo)
-                        }
-                    }
-                }
-            }
+            if model.windowsSteamIsReady { steamPanel }
             if model.selectedProgram == nil {
                 DropZone(
                     title: s[.dropProgramTitle],
@@ -56,6 +35,86 @@ struct ProgramPane: View {
     }
 
     // MARK: - Juego que puede correr nativo
+
+    /// La biblioteca de Steam para Windows: abrirla, y abrir cualquier juego instalado en ella.
+    private var steamPanel: some View {
+        Panel(padding: Theme.Spacing.normal) {
+            VStack(alignment: .leading, spacing: Theme.Spacing.tight) {
+                Text(s[.windowsSteamTitle])
+                    .font(.system(size: 12, weight: .semibold))
+                Text(s[.windowsSteamBody])
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button(s[model.isOpeningWindowsSteam ? .windowsSteamOpening : .windowsSteamOpen],
+                       action: model.openWindowsSteam)
+                    .controlSize(.small)
+                    .disabled(model.isOpeningWindowsSteam)
+                if model.steamGames.isEmpty {
+                    Text(s[.steamGamesNone])
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    ForEach(model.steamGames) { steamGameRow($0) }
+                }
+                if let options = model.steamExecutableOptions { executablePicker(options) }
+            }
+        }
+        .onAppear(perform: model.refreshSteamGames)
+    }
+
+    private func steamGameRow(_ game: SteamGame) -> some View {
+        HStack(spacing: Theme.Spacing.tight) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(game.name).font(.system(size: 11, weight: .medium))
+                if model.steamExecutable(for: game) != nil {
+                    Text(s[.steamGameViaExecutable])
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer(minLength: Theme.Spacing.tight)
+            Button(s[model.openingSteamAppID == game.appID ? .steamGameOpening : .steamGamePlay]) {
+                model.runSteamGame(game)
+            }
+            .controlSize(.small)
+            .disabled(model.openingSteamAppID != nil)
+            Menu {
+                Button(s[.steamGamePickExecutable]) { model.askForSteamExecutable(game) }
+                if model.steamExecutable(for: game) != nil {
+                    Button(s[.steamGameUseSteam]) { model.useSteamForGame(game) }
+                }
+            } label: {
+                Image(systemName: "ellipsis")
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help(s[.steamGameOptions])
+        }
+    }
+
+    /// Los ejecutables entre los que elegir. Se muestran aquí mismo, debajo del juego, en vez
+    /// de en una hoja aparte: es una decisión de un clic y no merece tapar la ventana.
+    private func executablePicker(_ options: AppModel.SteamExecutableOptions) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(s(.steamGamePickHint, options.game.name))
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if options.executables.isEmpty {
+                Text(s[.steamGameNoExecutables]).font(.system(size: 11))
+            }
+            ForEach(options.executables, id: \.self) { executable in
+                Button(executable.lastPathComponent) {
+                    model.useSteamExecutable(executable, for: options.game)
+                }
+                .controlSize(.small)
+            }
+            Button(s[.close], action: model.cancelSteamExecutableChoice)
+                .controlSize(.small)
+        }
+    }
 
     /// Aparece solo cuando el `.exe` resulta ser el envoltorio de un motor que sí existe para Mac.
     @ViewBuilder

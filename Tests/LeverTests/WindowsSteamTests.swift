@@ -3,80 +3,165 @@ import LeverCore
 
 enum WindowsSteamTests {
     static func run() async throws {
-        try testTheInstallationAndItsCommands()
-        try testSteamAndTheGameShareTheEngineSynchronization()
+        try testTheInstallationAndHowSteamOpens()
+        try testSteamAndTheGamesShareTheEngineSynchronization()
+        try testItReadsTheLibraryAndRanksTheExecutables()
+        try testTheTwoWaysIntoAGame()
         try testItReadsTheSyncOfAServerAlreadyRunning()
         try testTheProbeAsksTheSystemForTheEnvironments()
         try await testTheProbeReallyPrintsEnvironments()
     }
 
-    private static func testTheInstallationAndItsCommands() throws {
-        let fixture = try TemporaryFixture()
+    /// Crea una instalación de mentira con todas las piezas que `isReady` exige.
+    private static func prepared(_ fixture: TemporaryFixture) throws -> WindowsSteam {
         let steam = WindowsSteam(root: fixture.directoryURL)
-        try expect(!steam.isReady, "un entorno vacío no debe ofrecer abrir Steam")
-        for url in [steam.wineURL, steam.steamURL, steam.frameworksURL.appendingPathComponent("libinotify.0.dylib"),
-                    steam.prefixURL.appendingPathComponent("drive_c/windows/system32/kernel32.dll")] {
-            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let pieces = [steam.engineURL, steam.steamURL,
+                      steam.frameworksURL.appendingPathComponent("libinotify.0.dylib"),
+                      steam.prefixURL.appendingPathComponent("drive_c/windows/system32/kernel32.dll"),
+                      steam.engineURL.deletingLastPathComponent().deletingLastPathComponent()
+                          .appendingPathComponent("lib/external/D3DMetal.framework/D3DMetal")]
+        for url in pieces {
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
+                                                    withIntermediateDirectories: true)
             try Data("fixture".utf8).write(to: url)
             try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
         }
+        return steam
+    }
+
+    private static func testTheInstallationAndHowSteamOpens() throws {
+        let fixture = try TemporaryFixture()
+        let empty = WindowsSteam(root: fixture.directoryURL)
+        try expect(!empty.isReady, "un entorno vacío no debe ofrecer abrir Steam")
+
+        let steam = try prepared(fixture)
         try expect(steam.isReady, "la instalación preparada debe poder abrirse")
+        try expect(steam.engineURL.path.contains("sikarugir-10.0_6-d3dmetal"),
+                   "el motor tiene que ser el que lleva D3DMetal dentro")
+
         let command = steam.command()
-        try expect(command.executableURL == steam.wineURL, "Steam debe usar su motor, no el Wine global")
+        try expect(command.executableURL == steam.engineURL, "Steam debe usar su motor, no el Wine global")
+        try expect(command.arguments == [steam.steamURL.path],
+                   "las rutas con espacios deben llegar en un solo argumento")
         try expect(command.environment?["WINEPREFIX"] == steam.prefixURL.path,
                    "Steam debe conservar su biblioteca y registros en su propio entorno")
         try expect(command.environment?["DYLD_FALLBACK_LIBRARY_PATH"]?.contains(steam.frameworksURL.path) == true,
                    "sin las bibliotecas del motor wineserver falla antes de abrir Steam")
-        try expect(command.arguments == [steam.steamURL.path], "las rutas con espacios deben llegar en un solo argumento")
+        try expect(command.environment?["DYLD_FRAMEWORK_PATH"]?.hasSuffix("/lib/external") == true,
+                   "D3DMetal necesita resolver su framework al crear el dispositivo")
+        try expect(command.environment?["MTL_HUD_ENABLED"] == "0",
+                   "el uso normal no debe mostrar el HUD de diagnóstico")
+        try expect(steam.command(showHUD: true).environment?["MTL_HUD_LOG_ENABLED"] == "1",
+                   "la medición debe registrar tiempos de cuadro")
+
         try FileManager.default.removeItem(at: steam.frameworksURL.appendingPathComponent("libinotify.0.dylib"))
         try expect(!steam.isReady, "un motor sin sus bibliotecas no está preparado")
-
-        let game = steam.superCastilloCommand(showHUD: true)
-        try expect(game.executableURL.path.contains("sikarugir-10.0_6-d3dmetal"),
-                   "Super Castillo no puede usar el renderizador de Wine que falló en el primer arranque")
-        try expect(game.arguments.first?.hasSuffix("/Game/supercastillo.exe") == true,
-                   "el modo sin conexión debe abrir el juego, no start_protected_game.exe")
-        try expect(game.environment?["SteamAppId"] == "1234567", "el juego debe identificarse ante Steam")
-        try expect(game.environment?["WINEPREFIX"] == steam.prefixURL.path,
-                   "el juego necesita la sesión legítima y biblioteca de Steam")
-        try expect(game.environment?["DYLD_FRAMEWORK_PATH"]?.hasSuffix("/lib/external") == true,
-                   "D3DMetal necesita resolver su framework al crear el dispositivo")
-        try expect(game.environment?["MTL_HUD_LOG_ENABLED"] == "1", "la medición debe registrar tiempos de cuadro")
-        try expect(steam.superCastilloCommand().environment?["MTL_HUD_ENABLED"] == "0",
-                   "el uso normal no debe mostrar el HUD de diagnóstico")
-        try expect(game.environment?["WINEDLLOVERRIDES"]?.contains("d3d11,d3d12,dxgi=b") == true,
-                   "el juego necesita las DLL de D3DMetal, no las de Wine")
     }
 
-    /// Steam y el juego hablan con el mismo servidor de Wine. Si una de las dos órdenes pide
-    /// msync y la otra no, el cliente que llega después se queda sin msync: el motor exige
-    /// que servidor y clientes coincidan. Por eso la configuración vive en un solo sitio.
-    private static func testSteamAndTheGameShareTheEngineSynchronization() throws {
+    /// Steam y los juegos hablan con el mismo servidor de Wine. Si una orden pide msync y otra
+    /// no, el cliente que llega después se queda sin msync: el motor exige que servidor y
+    /// clientes coincidan. Por eso la configuración vive en un solo sitio.
+    private static func testSteamAndTheGamesShareTheEngineSynchronization() throws {
         try expect(WindowsSteam.synchronization["WINEMSYNC"] == "1",
                    "MSync es lo que se midió cerca de 60 FPS; sin la variable no se activa")
         try expect(WindowsSteam.synchronization["WINEESYNC"] == "0",
                    "esync y msync no conviven: hay que apagar el que no se usa")
 
         let steam = WindowsSteam(root: URL(fileURLWithPath: "/Users/quien/Library/Application Support/Lever"))
+        let game = SteamGame(appID: "42", name: "Un juego",
+                             installDirectory: URL(fileURLWithPath: "/tmp/Un juego"))
         let forSteam = steam.command().environment
-        let forGame = steam.superCastilloCommand().environment
+        let viaSteam = steam.gameCommand(game, launch: .throughSteam).environment
+        let viaExecutable = steam.gameCommand(
+            game, launch: .executable(URL(fileURLWithPath: "/tmp/Un juego/juego.exe"))).environment
+
         for (name, value) in WindowsSteam.synchronization {
-            try expect(forSteam?[name] == value, "Steam debe pedir \(name)=\(value)")
-            try expect(forGame?[name] == value, "Super Castillo debe pedir \(name)=\(value)")
+            for (quién, entorno) in [("Steam", forSteam), ("el juego por Steam", viaSteam),
+                                     ("el juego por ejecutable", viaExecutable)] {
+                try expect(entorno?[name] == value, "\(quién) debe pedir \(name)=\(value)")
+            }
         }
-
-        // Lo que de verdad importa no es el valor, sino que nadie pueda cambiar uno y olvidar
-        // el otro: las dos órdenes tienen que coincidir variable por variable.
+        // Lo que importa no es el valor, sino que nadie pueda cambiar uno y olvidar los otros.
         for name in WindowsSteam.synchronization.keys {
-            try expect(forSteam?[name] == forGame?[name],
-                       "Steam y el juego difieren en \(name) y comparten servidor")
+            try expect(forSteam?[name] == viaSteam?[name] && forSteam?[name] == viaExecutable?[name],
+                       "Steam y los juegos difieren en \(name) y comparten servidor")
         }
+        // Un juego que arranca por Steam hereda su entorno: el motor tiene que ser el mismo.
+        try expect(steam.command().executableURL == steam.gameCommand(game, launch: .throughSteam).executableURL,
+                   "si Steam corre con otro motor, el juego que lanza se queda sin D3DMetal")
+    }
 
-        // El cambio no debe tocar lo que ya funcionaba.
-        try expect(forSteam?["WINEDLLOVERRIDES"] == "mscoree,mshtml=",
-                   "Steam no necesita las DLL de D3DMetal")
-        try expect(forSteam?["WINEDEBUG"] == "fixme-all,err-hid", "Steam conserva su nivel de registro")
-        try expect(forGame?["WINEDEBUG"] == "fixme-all,err-hid", "el juego conserva su nivel de registro")
+    private static func testItReadsTheLibraryAndRanksTheExecutables() throws {
+        let fixture = try TemporaryFixture()
+        let steam = try prepared(fixture)
+        let fm = FileManager.default
+
+        // Manifiestos como los que escribe Steam: pares de valores entre comillas y tabuladores.
+        try write("""
+        "AppState"
+        {
+        \t"appid"\t\t"1234567"
+        \t"name"\t\t"SUPER CASTILLO"
+        \t"StateFlags"\t\t"4"
+        \t"installdir"\t\t"SUPER CASTILLO"
+        }
+        """, to: steam.steamappsURL.appendingPathComponent("appmanifest_1234567.acf"))
+        try write("""
+        "AppState"
+        {
+        \t"appid"\t\t"228980"
+        \t"name"\t\t"Steamworks Common Redistributables"
+        \t"installdir"\t\t"Steamworks Shared"
+        }
+        """, to: steam.steamappsURL.appendingPathComponent("appmanifest_228980.acf"))
+
+        let games = steam.installedGames()
+        try expect(games.count == 1, "la fontanería de Steam no es un juego que se pueda jugar")
+        let game = try unwrap(games.first)
+        try expect(game.appID == "1234567" && game.name == "SUPER CASTILLO",
+                   "el manifiesto da el identificador y el nombre")
+        try expect(game.installDirectory.lastPathComponent == "SUPER CASTILLO",
+                   "la carpeta del juego sale de installdir, dentro de common")
+
+        for relative in ["Game/supercastillo.exe", "Game/start_protected_game.exe",
+                         "Game/oalinst.exe", "vcredist_x64.exe"] {
+            try write("exe", to: game.installDirectory.appendingPathComponent(relative))
+        }
+        let candidates = steam.executableCandidates(for: game)
+        try expect(candidates.count == 4, "se ofrecen todos: esconder uno sería decidir por la persona")
+        try expect(candidates.first?.lastPathComponent == "supercastillo.exe",
+                   "el que se llama como el juego es el candidato más probable")
+        let last = try unwrap(candidates.last?.lastPathComponent)
+        try expect(["vcredist_x64.exe", "oalinst.exe"].contains(last),
+                   "un instalador de bibliotecas va al final, no arriba")
+        let plumbing = candidates.suffix(2).map(\.lastPathComponent).sorted()
+        try expect(plumbing == ["oalinst.exe", "vcredist_x64.exe"],
+                   "los dos instaladores son los dos últimos")
+
+        try fm.removeItem(at: steam.steamappsURL.appendingPathComponent("appmanifest_1234567.acf"))
+        try expect(steam.installedGames().isEmpty, "sin manifiestos no hay juegos")
+    }
+
+    private static func testTheTwoWaysIntoAGame() throws {
+        let steam = WindowsSteam(root: URL(fileURLWithPath: "/Users/quien/Library/Application Support/Lever"))
+        let game = SteamGame(appID: "1234567", name: "SUPER CASTILLO",
+                             installDirectory: URL(fileURLWithPath: "/tmp/SUPER CASTILLO"))
+
+        let viaSteam = steam.gameCommand(game, launch: .throughSteam)
+        try expect(viaSteam.arguments == [steam.steamURL.path, "-applaunch", "1234567"],
+                   "por Steam se le pide el juego por su identificador: Steam sabe cómo arranca")
+        try expect(viaSteam.environment?["SteamAppId"] == nil,
+                   "si lo lanza Steam, Steam se identifica solo; fingirlo sería mentira")
+
+        let executable = URL(fileURLWithPath: "/tmp/SUPER CASTILLO/Game/supercastillo.exe")
+        let direct = steam.gameCommand(game, launch: .executable(executable))
+        try expect(direct.arguments == [executable.path],
+                   "al saltarse el lanzador se abre el ejecutable elegido, y nada más")
+        try expect(direct.currentDirectoryURL == executable.deletingLastPathComponent(),
+                   "un juego busca sus datos al lado de su ejecutable")
+        try expect(direct.environment?["SteamAppId"] == "1234567"
+                   && direct.environment?["SteamGameId"] == "1234567",
+                   "sin el lanzador nadie le dice al juego quién es: hay que decírselo")
     }
 
     /// Un servidor ya en marcha con otra sincronización no se arregla desde Lever sin matarlo,
@@ -86,7 +171,8 @@ enum WindowsSteamTests {
         // Ruta con espacio, como la real: «Application Support» parte el entorno en varios
         // trozos cuando ps lo imprime, y el análisis tiene que aguantarlo.
         let steam = WindowsSteam(root: URL(fileURLWithPath: "/Users/quien/Library/Application Support/Lever"))
-        let server = steam.wineURL.deletingLastPathComponent().appendingPathComponent("wineserver").path
+        let server = steam.engineURL.deletingLastPathComponent()
+            .appendingPathComponent("wineserver").path
         let prefix = steam.prefixURL.path
 
         try expect(steam.syncState(processListing: "") == .noServer,
@@ -166,6 +252,19 @@ enum WindowsSteamTests {
         try expect(lines > 20, "con solo \(lines) líneas ps no está mirando más allá del terminal")
         try expect(result.output.contains("PATH="), "ps no está imprimiendo el entorno de los procesos")
         print("INFO WindowsSteam: servidor de Wine del prefijo de Steam = \(steam.syncState(processListing: result.output))")
+    }
+
+    // MARK: - Ayudas
+
+    private static func write(_ text: String, to url: URL) throws {
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        try Data(text.utf8).write(to: url)
+    }
+
+    private static func unwrap<T>(_ value: T?) throws -> T {
+        try expect(value != nil, "se esperaba un valor y llegó nada")
+        return value!
     }
 
     /// Una línea como la que imprime `ps axeww -o pid=,command=`: el PID alineado a la derecha,
