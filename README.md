@@ -2,7 +2,8 @@
 
 # Lever
 
-**Abre archivos `.exe` de Windows, descomprime `.rar` e instala `.apk` de Android desde tu Mac.**
+**Abre `.exe` de Windows, descomprime `.rar`, instala `.apk` de Android, corre tus juegos de
+Steam y de consola, y convierte algunos en apps nativas de Mac.**
 Sin cuentas, sin servidor, sin telemetría. Todo local.
 
 [English](README.en.md)

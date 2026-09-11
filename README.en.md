@@ -2,7 +2,8 @@
 
 # Lever
 
-**Open Windows `.exe` files, unpack `.rar` archives and install Android `.apk`s from your Mac.**
+**Open Windows `.exe` files, unpack `.rar` archives, install Android `.apk`s, run your Steam and
+console games, and turn some of them into native Mac apps.**
 No accounts, no server, no telemetry. All local.
 
 [Español](README.md)
