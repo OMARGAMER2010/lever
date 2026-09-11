@@ -40,12 +40,24 @@ sesiones y arranca según el del sistema.
 
 ## Instalar
 
+Un solo comando, y te va llevando de la mano:
+
 ```bash
-bash scripts/install.sh
+curl -fsSL https://raw.githubusercontent.com/OMARGAMER2010/lever/main/scripts/bootstrap.sh | bash
 ```
 
-Mira qué te falta, te dice cuánto ocupa, comprueba que te cabe y pregunta antes de bajar nada.
-Luego compila la app y te deja `Lever.app` en el Escritorio, lista para abrir con doble clic.
+Cinco pantallas: comprueba que tu Mac puede compilarla, te enseña qué falta con su tamaño y
+cuánto espacio hace falta, compila, y te deja `Lever.app` en el Escritorio. Ninguna pantalla hace
+nada sin que digas sí, y puedes parar en cualquier punto.
+
+Si prefieres leer lo que vas a ejecutar antes de ejecutarlo —que es lo sensato—, clónalo y lanza
+exactamente lo mismo a mano:
+
+```bash
+git clone https://github.com/OMARGAMER2010/lever.git
+cd lever
+bash scripts/install.sh
+```
 
 Por partes, si lo prefieres:
 

@@ -36,13 +36,24 @@ to go looking for it again. Spanish and English, with the flag picker in the top
 
 ## Install
 
+One command, and it walks you through:
+
 ```bash
-bash scripts/install.sh
+curl -fsSL https://raw.githubusercontent.com/OMARGAMER2010/lever/main/scripts/bootstrap.sh | bash
 ```
 
-It checks what you're missing, tells you how much it takes, makes sure it fits, and asks before
-downloading anything. Then it builds the app and leaves `Lever.app` on your Desktop, ready to
-double-click.
+Five screens: it checks your Mac can build it, shows what's missing with sizes and how much space
+that needs, builds, and leaves `Lever.app` on your Desktop. No screen does anything without you
+saying yes, and you can stop at any point.
+
+If you'd rather read what you're about to run before running it — which is the sensible thing —
+clone it and run exactly the same by hand:
+
+```bash
+git clone https://github.com/OMARGAMER2010/lever.git
+cd lever
+bash scripts/install.sh
+```
 
 Piece by piece, if you'd rather:
 
