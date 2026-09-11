@@ -64,7 +64,7 @@ t() {
             ready)      echo "Ready" ;;
             openNow)    echo "Open it now? [Y/n]: " ;;
             yours)      echo "What's still up to you: emulators, console keys and firmware. Lever finds them and launches them, it doesn't hand them out." ;;
-            readMore)   echo "How each part works: README.en.md" ;;
+            readMore)   echo "How each part works: README.md" ;;
         esac
     else
         case "$1" in
@@ -99,7 +99,7 @@ t() {
             ready)      echo "Listo" ;;
             openNow)    echo "¿La abro ahora? [S/n]: " ;;
             yours)      echo "Lo que sigue siendo tuyo: los emuladores, y las llaves y el firmware de consola. Lever los encuentra y los lanza, no los reparte." ;;
-            readMore)   echo "Cómo funciona cada parte: README.md" ;;
+            readMore)   echo "Cómo funciona cada parte: README.es.md" ;;
         esac
     fi
 }
