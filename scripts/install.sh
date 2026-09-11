@@ -47,7 +47,8 @@ t() {
             macOK)      echo "macOS %s" ;;
             macOld)     echo "Lever needs macOS 13 or newer, and this is %s." ;;
             swiftOK)    echo "Swift %s" ;;
-            noSwift)    echo "Swift is missing, and it is what builds the app. Install the command line tools with:" ;;
+            noSwift)    echo "The Xcode command line tools are missing, and they bring Swift, which builds the app. Install them with:" ;;
+            swiftOld)   echo "Building Lever needs Swift 6 or newer, and this is %s. Update the command line tools (or Xcode) and come back." ;;
             brewOK)     echo "Homebrew" ;;
             noBrew)     echo "Homebrew (optional here, but it installs almost everything else)" ;;
             deps)       echo "What's missing" ;;
@@ -82,7 +83,8 @@ t() {
             macOK)      echo "macOS %s" ;;
             macOld)     echo "Lever necesita macOS 13 o más nuevo, y este es %s." ;;
             swiftOK)    echo "Swift %s" ;;
-            noSwift)    echo "Falta Swift, que es quien compila la app. Instala las herramientas de línea de órdenes con:" ;;
+            noSwift)    echo "Faltan las herramientas de línea de órdenes de Xcode, que traen Swift, que es quien compila la app. Instálalas con:" ;;
+            swiftOld)   echo "Compilar Lever necesita Swift 6 o más nuevo, y aquí hay %s. Actualiza las herramientas de línea de órdenes (o Xcode) y vuelve." ;;
             brewOK)     echo "Homebrew" ;;
             noBrew)     echo "Homebrew (aquí es opcional, pero instala casi todo lo demás)" ;;
             deps)       echo "Lo que falta" ;;
@@ -138,12 +140,21 @@ fi
 # shellcheck disable=SC2059
 ok "$(printf "$(t macOK)" "$mac")"
 
-if ! command -v swift > /dev/null 2>&1; then
+# Igual que git: /usr/bin/swift existe sin herramientas de desarrollo y solo abre el instalador.
+# Y el paquete declara swift-tools-version 6.0, así que una versión anterior no puede compilarlo.
+swift_version="$(swift --version 2>/dev/null | grep -oE 'Apple Swift version [0-9]+\.[0-9]+' | grep -oE '[0-9]+\.[0-9]+' | head -1)"
+if [[ -z "$swift_version" ]]; then
     printf '\n  %s✗%s  %s\n\n      xcode-select --install\n\n' "$yellow" "$reset" "$(t noSwift)"
     exit 1
 fi
+if (( ${swift_version%%.*} < 6 )); then
+    printf '\n  %s✗%s  ' "$yellow" "$reset"
+    # shellcheck disable=SC2059
+    printf "$(t swiftOld)" "$swift_version"; printf '\n\n'
+    exit 1
+fi
 # shellcheck disable=SC2059
-ok "$(printf "$(t swiftOK)" "$(swift --version 2>/dev/null | grep -oE 'version [0-9.]+' | head -1 | cut -d' ' -f2)")"
+ok "$(printf "$(t swiftOK)" "$swift_version")"
 
 if command -v brew > /dev/null 2>&1 || [[ -x /opt/homebrew/bin/brew ]]; then ok "$(t brewOK)"; else nope "$(t noBrew)"; fi
 

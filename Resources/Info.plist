@@ -4,50 +4,22 @@
 <dict>
 	<key>CFBundleDisplayName</key>
 	<string>Lever</string>
-	<key>CFBundleExecutable</key>
-	<string>Lever</string>
-	<key>CFBundleIdentifier</key>
-	<string>com.local.lever</string>
-	<key>CFBundleName</key>
-	<string>Lever</string>
-	<key>CFBundleIconFile</key>
-	<string>AppIcon</string>
-	<key>CFBundlePackageType</key>
-	<string>APPL</string>
-	<key>CFBundleShortVersionString</key>
-	<string>3.4</string>
-	<key>CFBundleVersion</key>
-	<string>7</string>
-	<key>LSMinimumSystemVersion</key>
-	<string>13.0</string>
-	<key>LSApplicationCategoryType</key>
-	<string>public.app-category.utilities</string>
-	<key>NSHighResolutionCapable</key>
-	<true/>
-	<key>NSHumanReadableCopyright</key>
-	<string>Utilidad local. Sin cuentas, sin servidor, sin telemetría.</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>exe</string>
+				<string>msi</string>
+			</array>
 			<key>CFBundleTypeName</key>
 			<string>Programa de Windows</string>
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
 			<key>LSHandlerRank</key>
 			<string>Alternate</string>
-			<key>CFBundleTypeExtensions</key>
-			<array>
-				<string>exe</string>
-				<string>msi</string>
-			</array>
 		</dict>
 		<dict>
-			<key>CFBundleTypeName</key>
-			<string>Juego de consola</string>
-			<key>CFBundleTypeRole</key>
-			<string>Viewer</string>
-			<key>LSHandlerRank</key>
-			<string>Alternate</string>
 			<key>CFBundleTypeExtensions</key>
 			<array>
 				<string>nes</string>
@@ -73,30 +45,14 @@
 				<string>pbp</string>
 				<string>cso</string>
 			</array>
-		</dict>
-		<dict>
-			<!-- Los paquetes de la consola híbrida van aparte de «Juego de consola» porque no los
-			     ejecuta un núcleo de RetroArch, sino un emulador que instala el usuario. Es la
-			     misma división que hace el código entre RetroPlatform y StandaloneMachine. -->
 			<key>CFBundleTypeName</key>
-			<string>Juego de consola híbrida</string>
+			<string>Juego de consola</string>
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
 			<key>LSHandlerRank</key>
 			<string>Alternate</string>
-			<!-- Se reclama por extensión y **no** por `LSItemContentTypes`, que sería lo natural
-			     teniendo tipos declarados abajo. El motivo es una regla de LaunchServices que se
-			     paga cara:
-
-			     1. Cuando hay `LSItemContentTypes`, las extensiones de aquí se ignoran. La app pasa
-			        a reclamar solo sus propios tipos.
-			     2. Y una declaración **exportada** gana siempre a una importada. Los emuladores de
-			        esta consola exportan los suyos —Ryujinx declara `com.ryujinx.xci`—, así que en
-			        cuanto hay uno instalado, un `.xci` deja de resolver al tipo de Lever.
-
-			     Juntas, las dos dejaban a Lever fuera hasta de la lista de candidatas: reclamaba un
-			     tipo al que ya no resolvía ningún archivo. Reclamando la extensión, Lever entra
-			     sea cual sea el tipo que gane, y quién abre por defecto lo decide el usuario. -->
+		</dict>
+		<dict>
 			<key>CFBundleTypeExtensions</key>
 			<array>
 				<string>xci</string>
@@ -104,14 +60,14 @@
 				<string>nsp</string>
 				<string>nsz</string>
 			</array>
-		</dict>
-		<dict>
 			<key>CFBundleTypeName</key>
-			<string>Aplicación de Android</string>
+			<string>Juego de consola híbrida</string>
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
 			<key>LSHandlerRank</key>
 			<string>Alternate</string>
+		</dict>
+		<dict>
 			<key>CFBundleTypeExtensions</key>
 			<array>
 				<string>apk</string>
@@ -120,14 +76,14 @@
 				<string>aab</string>
 				<string>apkm</string>
 			</array>
-		</dict>
-		<dict>
 			<key>CFBundleTypeName</key>
-			<string>Archivo comprimido</string>
+			<string>Aplicación de Android</string>
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
 			<key>LSHandlerRank</key>
 			<string>Alternate</string>
+		</dict>
+		<dict>
 			<key>CFBundleTypeExtensions</key>
 			<array>
 				<string>rar</string>
@@ -143,29 +99,47 @@
 				<string>arj</string>
 				<string>lzh</string>
 			</array>
+			<key>CFBundleTypeName</key>
+			<string>Archivo comprimido</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
 		</dict>
 	</array>
-	<!-- Importados y no exportados: estos formatos no son de Lever. No existe un tipo oficial para
-	     ninguno de ellos, así que lo declara quien los abre, que es lo que significa «imported».
-
-	     Conforman con `public.data` y no con `public.archive`, que sería la tentación por el
-	     nombre. Un `.xci` es la copia byte a byte de un cartucho —contenido cifrado, con su hueco
-	     vacío al final— y no algo que se pueda extraer: declararlo como archivo comprimido haría
-	     que macOS se lo ofreciera a los extractores del sistema, y eso acaba en un error largo.
-
-	     Las extensiones se comparan sin distinguir mayúsculas, así que un `.XCI` de un volcado
-	     viejo entra por el mismo sitio. -->
+	<key>CFBundleExecutable</key>
+	<string>Lever</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.local.lever</string>
+	<key>CFBundleName</key>
+	<string>Lever</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0.0</string>
+	<key>CFBundleVersion</key>
+	<string>7</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.utilities</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>13.0</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>Utilidad local. Sin cuentas, sin servidor, sin telemetría.</string>
 	<key>UTImportedTypeDeclarations</key>
 	<array>
 		<dict>
-			<key>UTTypeIdentifier</key>
-			<string>com.local.lever.switch-cartridge</string>
-			<key>UTTypeDescription</key>
-			<string>Copia de cartucho de consola híbrida</string>
 			<key>UTTypeConformsTo</key>
 			<array>
 				<string>public.data</string>
 			</array>
+			<key>UTTypeDescription</key>
+			<string>Copia de cartucho de consola híbrida</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.local.lever.switch-cartridge</string>
 			<key>UTTypeTagSpecification</key>
 			<dict>
 				<key>public.filename-extension</key>
@@ -175,14 +149,14 @@
 			</dict>
 		</dict>
 		<dict>
-			<key>UTTypeIdentifier</key>
-			<string>com.local.lever.switch-cartridge-compressed</string>
-			<key>UTTypeDescription</key>
-			<string>Copia de cartucho de consola híbrida (comprimida)</string>
 			<key>UTTypeConformsTo</key>
 			<array>
 				<string>public.data</string>
 			</array>
+			<key>UTTypeDescription</key>
+			<string>Copia de cartucho de consola híbrida (comprimida)</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.local.lever.switch-cartridge-compressed</string>
 			<key>UTTypeTagSpecification</key>
 			<dict>
 				<key>public.filename-extension</key>
@@ -192,14 +166,14 @@
 			</dict>
 		</dict>
 		<dict>
-			<key>UTTypeIdentifier</key>
-			<string>com.local.lever.switch-package</string>
-			<key>UTTypeDescription</key>
-			<string>Paquete de consola híbrida</string>
 			<key>UTTypeConformsTo</key>
 			<array>
 				<string>public.data</string>
 			</array>
+			<key>UTTypeDescription</key>
+			<string>Paquete de consola híbrida</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.local.lever.switch-package</string>
 			<key>UTTypeTagSpecification</key>
 			<dict>
 				<key>public.filename-extension</key>
@@ -209,14 +183,14 @@
 			</dict>
 		</dict>
 		<dict>
-			<key>UTTypeIdentifier</key>
-			<string>com.local.lever.switch-package-compressed</string>
-			<key>UTTypeDescription</key>
-			<string>Paquete de consola híbrida (comprimido)</string>
 			<key>UTTypeConformsTo</key>
 			<array>
 				<string>public.data</string>
 			</array>
+			<key>UTTypeDescription</key>
+			<string>Paquete de consola híbrida (comprimido)</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.local.lever.switch-package-compressed</string>
 			<key>UTTypeTagSpecification</key>
 			<dict>
 				<key>public.filename-extension</key>

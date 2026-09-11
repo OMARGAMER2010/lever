@@ -4,7 +4,7 @@
 
 **Abre `.exe` de Windows, descomprime `.rar`, instala `.apk` de Android, corre tus juegos de
 Steam y de consola, y convierte algunos en apps nativas de Mac.**
-Sin cuentas, sin servidor, sin telemetría. Todo local.
+Sin cuentas, sin telemetría, y nada tuyo sale de tu Mac.
 
 [English](README.md) · **Español**
 
@@ -110,6 +110,14 @@ original no se toca nunca.
 hace la cadena entera: arranca lo que haga falta, espera, instala y abre la app. Los `.xapk`,
 `.apks` y `.aab` se desmontan solos y se instalan por trozos.
 
+**Cuando hay versión nueva.** Al abrir Lever aparece un aviso arriba, con dos respuestas. **Instalar
+ahora** trae el código nuevo, lo compila y reemplaza la app, en una ventana de Terminal para que veas
+qué pasa; la anterior se guarda por si acaso, y se compila antes de tocar nada, así que un fallo te
+deja con la que ya tenías. **Más tarde** quita el aviso hasta que vuelvas a abrir Lever.
+
+Para saber si hay versión nueva, Lever le pregunta a GitHub por la última etiqueta publicada. Es lo
+único que pide a la red por su cuenta, y solo pide: no manda nada sobre ti ni sobre tu Mac.
+
 **Un juego de consola retro.** Suelta la ROM. La app reconoce la máquina por la cabecera del
 archivo, no por la extensión, se baja el núcleo que le toca y lo abre. Los controles se configuran
 sobre un diagrama con la forma del mando que tengas enchufado.
@@ -121,7 +129,10 @@ lee, no los reparte—. Los paquetes comprimidos se rehacen antes de jugar.
 ## Requisitos
 
 - macOS 13 o posterior (probado en macOS 15, Apple Silicon).
-- Xcode Command Line Tools, solo para compilar.
+- Las herramientas de línea de órdenes de Xcode, **con Swift 6 o más nuevo**, solo para compilar. En
+  un Mac recién sacado de la caja no están: se instalan con `xcode-select --install`, y sin ellas el
+  instalador te lo dice y para. Cuidado, porque `/usr/bin/swift` existe igual en todos los Mac — es
+  un atajo que solo abre el instalador, así que «existe» no quiere decir «funciona».
 
 Las herramientas externas **no** vienen incluidas. La app las busca sola y, si falta alguna, ofrece
 instalarla con Homebrew desde la propia ventana:

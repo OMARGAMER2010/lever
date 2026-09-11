@@ -880,6 +880,52 @@ public final class AppModel: ObservableObject {
         }
     }
 
+    // MARK: - Versión nueva
+
+    /// La versión publicada, cuando es más nueva que la instalada.
+    @Published public private(set) var newerVersion: String?
+    @Published public private(set) var isInstallingUpdate = false
+
+    /// Se pregunta una vez al arrancar, y en silencio: si GitHub no contesta, no pasa nada.
+    public func lookForNewVersion() async {
+        guard newerVersion == nil, !isInstallingUpdate else { return }
+        newerVersion = await UpdateCheck.newerVersion()
+    }
+
+    /// «Más tarde» quiere decir ahora no, no «no me lo vuelvas a decir nunca»: el aviso se va y
+    /// reaparece en el siguiente arranque. Por eso no se guarda en disco.
+    public func postponeUpdate() {
+        newerVersion = nil
+    }
+
+    /// Arranca la actualización en una ventana de Terminal.
+    ///
+    /// A la vista y no a escondidas: traer el código y compilarlo tarda un par de minutos, y una
+    /// app que se queda muda ese rato parece colgada. Además el guion tiene que cerrar Lever para
+    /// reemplazarla, así que el progreso no cabe dentro de Lever.
+    public func installUpdateNow() {
+        guard !isInstallingUpdate else { return }
+        guard let guion = Bundle.main.url(forResource: "update", withExtension: "sh") else {
+            showError(strings[.updateScriptMissing])
+            return
+        }
+        clearError()
+        isInstallingUpdate = true
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                _ = try await runner.run(ProcessCommand(
+                    executableURL: URL(fileURLWithPath: "/usr/bin/open"),
+                    arguments: ["-a", "Terminal", guion.path],
+                    currentDirectoryURL: nil))
+                add(strings[.updateStarted], level: .info)
+            } catch {
+                isInstallingUpdate = false
+                showError(error.localizedDescription)
+            }
+        }
+    }
+
     // MARK: - Juegos de Steam para Windows
 
     /// Los ejecutables entre los que elegir para un juego, cuando hay que saltarse un lanzador.

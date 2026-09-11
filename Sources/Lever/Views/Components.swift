@@ -231,6 +231,10 @@ struct NoticeBanner: View {
     let message: String
     var actionTitle: String?
     var action: (() -> Void)?
+    /// El segundo botón, para los avisos que tienen dos respuestas y no una. Va a la izquierda
+    /// del principal, que es donde se mira al final.
+    var secondaryTitle: String?
+    var secondaryAction: (() -> Void)?
 
     var body: some View {
         HStack(alignment: .top, spacing: Theme.Spacing.normal) {
@@ -251,6 +255,11 @@ struct NoticeBanner: View {
 
             Spacer(minLength: Theme.Spacing.tight)
 
+            if let secondaryTitle, let secondaryAction {
+                Button(secondaryTitle, action: secondaryAction)
+                    .controlSize(.regular)
+                    .padding(.top, 1)
+            }
             if let actionTitle, let action {
                 Button(actionTitle, action: action)
                     .controlSize(.regular)

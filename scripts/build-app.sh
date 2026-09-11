@@ -41,12 +41,19 @@ mkdir -p "$app_path/Contents/MacOS" "$app_path/Contents/Resources" "$app_path/Co
 cp "$binary" "$app_path/Contents/MacOS/Lever"
 cp "$bin_dir/libLeverInputBridge.dylib" "$app_path/Contents/Frameworks/libLeverInputBridge.dylib"
 cp "$project_root/Resources/Info.plist" "$app_path/Contents/Info.plist"
+# De dónde salió esta app. Lo lee scripts/update.sh para volver al mismo código en vez de clonar
+# otra copia. Queda solo en el bundle instalado, no en el Info.plist del repositorio.
+/usr/libexec/PlistBuddy -c "Add :LeverSourcePath string $project_root" \
+    "$app_path/Contents/Info.plist" > /dev/null 2>&1 || true
 cp "$project_root/Resources/AppIcon.icns" "$app_path/Contents/Resources/AppIcon.icns"
 # El guion que monta el emulador viaja dentro: la app se abre desde el Escritorio, donde no hay
 # código fuente cerca, y tiene que poder lanzarlo.
 cp "$project_root/scripts/android-emulator.sh" "$app_path/Contents/Resources/android-emulator.sh"
 # El guion que compila los complementos nativos de Godot viaja por el mismo motivo.
 cp "$project_root/scripts/build-gozen.sh" "$app_path/Contents/Resources/build-gozen.sh"
+# Y el que se actualiza a sí misma: lo lanza el banner de versión nueva.
+cp "$project_root/scripts/update.sh" "$app_path/Contents/Resources/update.sh"
+chmod +x "$app_path/Contents/Resources/"*.sh
 printf 'APPL????' > "$app_path/Contents/PkgInfo"
 chmod +x "$app_path/Contents/MacOS/Lever"
 

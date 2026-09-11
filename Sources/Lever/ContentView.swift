@@ -9,10 +9,32 @@ struct ContentView: View {
 
     private var s: Strings { model.strings }
 
+    /// El aviso de versión nueva. Dos respuestas: instalar ahora, o más tarde —que lo esconde
+    /// hasta el siguiente arranque—. Mientras instala, «más tarde» desaparece: ya no hay elección.
+    @ViewBuilder
+    private var updateBanner: some View {
+        if let nueva = model.newerVersion {
+            let instalando = model.isInstallingUpdate
+            let segundoTítulo: String? = instalando ? nil : s[.updateLater]
+            let segundaAcción: (() -> Void)? = instalando ? nil : { model.postponeUpdate() }
+            NoticeBanner(
+                kind: .info,
+                title: s(.updateTitle, nueva),
+                message: s[.updateBody],
+                actionTitle: s[instalando ? .updateInstalling : .updateNow],
+                action: { model.installUpdateNow() },
+                secondaryTitle: segundoTítulo,
+                secondaryAction: segundaAcción
+            )
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: Theme.Spacing.loose) {
+                    updateBanner
+
                     if model.isInstallingTools {
                         NoticeBanner(
                             kind: .warning,
@@ -42,6 +64,7 @@ struct ContentView: View {
             ActionBar(model: model, mode: mode)
             ActivityPane(model: model, isExpanded: $showsActivity)
         }
+        .task { await model.lookForNewVersion() }
         // Se puede soltar un archivo en cualquier parte de la ventana, no solo en la zona marcada.
         .onDrop(of: [.fileURL], isTargeted: nil) { providers in
             DropZone.load(providers) { urls in

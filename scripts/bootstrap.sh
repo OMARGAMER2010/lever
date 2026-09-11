@@ -24,7 +24,7 @@ t() {
             confirm) echo "Use %s? [Y/n]: " ;;
             other)   echo "Path: " ;;
             noTTY)   echo "No terminal to ask questions in. Clone it by hand and run scripts/install.sh" ;;
-            noGit)   echo "git is missing. Install the command line tools with:" ;;
+            noGit)   echo "The Xcode command line tools are missing, and they bring git. Install them with:" ;;
             cloning) echo "Downloading the code…" ;;
             updating) echo "Already there. Bringing it up to date…" ;;
             failed)  echo "Could not download the code. Check your connection and try again." ;;
@@ -38,7 +38,7 @@ t() {
             confirm) echo "¿Lo pongo en %s? [S/n]: " ;;
             other)   echo "Ruta: " ;;
             noTTY)   echo "No hay terminal donde preguntarte. Clona a mano y lanza scripts/install.sh" ;;
-            noGit)   echo "Falta git. Instala las herramientas de línea de órdenes con:" ;;
+            noGit)   echo "Faltan las herramientas de línea de órdenes de Xcode, que traen git. Instálalas con:" ;;
             cloning) echo "Bajando el código…" ;;
             updating) echo "Ya estaba. Lo pongo al día…" ;;
             failed)  echo "No se pudo bajar el código. Mira tu conexión y vuelve a intentarlo." ;;
@@ -69,7 +69,9 @@ case "${answer:-s}" in
 esac
 dir="${dir/#\~/$HOME}"
 
-if ! command -v git > /dev/null 2>&1; then
+# /usr/bin/git está en todos los Mac aunque no haya herramientas de desarrollo: es un atajo que,
+# sin ellas, solo abre el instalador y falla. Así que no vale preguntar si existe; hay que probarlo.
+if ! git --version > /dev/null 2>&1; then
     printf '\n  %s✗%s  %s\n\n      xcode-select --install\n\n' "$yellow" "$reset" "$(t noGit)"
     exit 1
 fi

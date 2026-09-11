@@ -4,7 +4,7 @@
 
 **Open Windows `.exe` files, unpack `.rar` archives, install Android `.apk`s, run your Steam and
 console games, and turn some of them into native Mac apps.**
-No accounts, no server, no telemetry. All local.
+No accounts, no telemetry, and nothing of yours leaves your Mac.
 
 **English** · [Español](README.es.md)
 
@@ -106,6 +106,14 @@ asks for one. The original is never touched.
 the whole chain: starts what it needs, waits, installs, opens the app. `.xapk`, `.apks` and `.aab`
 come apart on their own and install in pieces.
 
+**When there's a new version.** Opening Lever shows a notice at the top with two answers. **Install
+now** fetches the new code, builds it and replaces the app, in a Terminal window so you can watch;
+the old one is kept aside, and it builds before touching anything, so a failure leaves you with what
+you already had. **Later** hides the notice until you open Lever again.
+
+To know whether there's a new version, Lever asks GitHub for the latest published tag. That's the
+only thing it asks the network on its own, and it only asks: it sends nothing about you or your Mac.
+
 **A retro console game.** Drop the ROM. Lever recognises the machine from the file's header, not its
 extension, downloads the core it needs and opens it. Controls are set on a diagram shaped like
 whichever pad you have plugged in.
@@ -116,8 +124,13 @@ it doesn't hand them out.
 
 ## Requirements
 
-macOS 13 or newer. Swift 6 to build it. Everything else is optional and Lever tells you when it
-needs something: Homebrew installs most of it, and `scripts/dependencies.sh` walks you through it.
+macOS 13 or newer, and the Xcode command line tools **with Swift 6 or newer** to build it. A Mac
+straight out of the box doesn't have them: `xcode-select --install` puts them there, and without them
+the installer says so and stops. Careful with one thing — `/usr/bin/swift` exists on every Mac even
+without them; it's a stub that only opens the installer, so "it exists" is not "it works".
+
+Everything else is optional and Lever tells you when it needs something: Homebrew installs most of
+it, and `scripts/dependencies.sh` walks you through it.
 
 On Apple silicon, Wine needs Rosetta 2. Emulators, firmware and keys are not included — you bring
 your own.

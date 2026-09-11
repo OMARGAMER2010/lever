@@ -83,6 +83,8 @@ public enum TextKey: String, CaseIterable, Sendable {
     case steamGamePickExecutable, steamGameUseSteam, steamGamePickHint
     case steamGameNoExecutables, steamGameViaExecutable, steamGameExecutableChosen
     case wineSyncShared, wineSyncMismatch, wineSyncUnreadable
+    case updateTitle, updateBody, updateNow, updateLater, updateInstalling
+    case updateStarted, updateScriptMissing
 
     // Hechos del archivo
     case contentsReading, contentsItems, contentsAndMore, willOpenWith, willOpenWithWhy
