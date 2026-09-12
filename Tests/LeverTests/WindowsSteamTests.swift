@@ -8,8 +8,12 @@ enum WindowsSteamTests {
         try testItReadsTheLibraryAndRanksTheExecutables()
         try testTheTwoWaysIntoAGame()
         try testItReadsTheSyncOfAServerAlreadyRunning()
+        try testItFindsTheClientAlreadyOpen()
+        try testItOffersEveryProcessThatCouldHoldTheWindow()
         try testTheProbeAsksTheSystemForTheEnvironments()
+        try testTheWayToAskSteamToQuit()
         try await testTheProbeReallyPrintsEnvironments()
+        try await testTheCheapProbeAlsoFindsTheClient()
     }
 
     /// Crea una instalación de mentira con todas las piezas que `isReady` exige.
@@ -231,6 +235,104 @@ enum WindowsSteamTests {
                    "el servidor del prefijo de Steam debe encontrarse en un listado completo")
     }
 
+    /// Saber si Steam ya está abierto es la diferencia entre abrirlo y no hacer nada: un
+    /// segundo `steam.exe` solo le pasa el recado al que ya corre y se va sin error, así que
+    /// sin esta comprobación el botón dice que abrió Steam y no aparece ninguna ventana.
+    private static func testItFindsTheClientAlreadyOpen() throws {
+        let steam = WindowsSteam(root: URL(fileURLWithPath: "/Users/quien/Library/Application Support/Lever"))
+        let cliente = steam.steamURL.path
+        let server = steam.engineURL.deletingLastPathComponent()
+            .appendingPathComponent("wineserver").path
+        let prefix = steam.prefixURL.path
+
+        try expect(steam.runningClient(processListing: "") == nil,
+                   "sin procesos no hay Steam abierto")
+
+        let abierto = psLine(72494, cliente, [("WINEPREFIX", prefix), ("WINEMSYNC", "1")])
+        try expect(steam.runningClient(processListing: abierto) == 72494,
+                   "el cliente de este prefijo es el que hay que traer al frente")
+
+        // El mandato llega sin entorno cuando la comprobación es la barata: la ruta del
+        // ejecutable ya vive dentro del prefijo, así que por sí sola dice de quién es.
+        try expect(steam.runningClient(processListing: psLine(72494, cliente, [])) == 72494,
+                   "la ruta del cliente basta: no hace falta leer el entorno de nadie")
+
+        // Steam se queda corriendo con los argumentos con que lo abrieron. `-silent` es el que
+        // importa: arranca sin ventana, que es el caso que hay que saber reconocer.
+        try expect(steam.runningClient(processListing: psLine(72494, cliente + " -silent", [])) == 72494,
+                   "el cliente con argumentos sigue siendo el cliente")
+
+        try expect(steam.runningClient(processListing: psLine(72494, cliente + "tra", [])) == nil,
+                   "«steam.exetra» no es «steam.exe»: la ruta tiene que acabar donde acaba")
+
+        try expect(steam.runningClient(processListing: psLine(72496, server, [("WINEPREFIX", prefix)])) == nil,
+                   "el servidor de Wine no es el cliente de Steam")
+
+        // El Steam de Game Porting Toolkit aparece con la ruta de Windows detrás de su
+        // cargador, no con la del prefijo de Lever: no es este Steam.
+        let ajeno = psLine(17259, "/Applications/Game Porting Toolkit.app/Contents/Resources/wine/bin/"
+                           + "wine64-preloader C:\\Program Files (x86)\\Steam\\steam.exe", [])
+        try expect(steam.runningClient(processListing: ajeno) == nil,
+                   "el Steam de otro entorno no es el de Lever")
+
+        let otroPrefijo = WindowsSteam(root: URL(fileURLWithPath: "/Users/quien/Library/Application Support/Otro"))
+        try expect(steam.runningClient(processListing: psLine(72494, otroPrefijo.steamURL.path, [])) == nil,
+                   "el Steam de otra instalación no es el de este prefijo")
+
+        // Nombrar el archivo no es serlo: buscarlo con grep deja la ruta en la línea del grep.
+        let señuelo = psLine(77102, "ugrep -G \(cliente) /tmp", [])
+        try expect(steam.runningClient(processListing: señuelo) == nil,
+                   "mencionar la ruta del cliente no es estar ejecutándolo")
+
+        let listado = ["    1 /sbin/launchd", señuelo, abierto, "  302 /usr/libexec/logd"]
+            .joined(separator: "\n")
+        try expect(steam.runningClient(processListing: listado) == 72494,
+                   "el cliente debe encontrarse entre cientos de líneas")
+    }
+
+    /// La ventana de Steam no es siempre del mismo proceso: su interfaz la dibuja el navegador
+    /// que lleva dentro, y mirando solo `steam.exe` se concluiría que Steam no tiene ventana
+    /// justo cuando está abierto y visible —y entonces se le pediría cerrarse sin motivo—.
+    private static func testItOffersEveryProcessThatCouldHoldTheWindow() throws {
+        let steam = WindowsSteam(root: URL(fileURLWithPath: "/Users/quien/Library/Application Support/Lever"))
+        let cliente = psLine(72494, steam.steamURL.path, [])
+        let navegador = psLine(72530, "C:\\Program Files (x86)\\Steam\\bin\\cef\\cef.win64\\"
+                               + "steamwebhelper.exe -nocrashdialog -lang=en_US", [])
+        let pestaña = psLine(72561, "C:\\Program Files (x86)\\Steam\\bin\\cef\\cef.win64\\"
+                             + "steamwebhelper.exe --type=renderer", [])
+
+        try expect(steam.windowOwners(processListing: "").isEmpty,
+                   "sin procesos no hay ninguna ventana que traer")
+
+        let listado = ["    1 /sbin/launchd", navegador, cliente, pestaña].joined(separator: "\n")
+        let dueños = steam.windowOwners(processListing: listado)
+        try expect(dueños == [72494, 72530, 72561],
+                   "el cliente va primero y detrás los procesos de la interfaz; salió \(dueños)")
+
+        // Solo con el navegador también hay a quién preguntar: es el caso normal con Steam
+        // abierto, cuando el cliente se ha quedado sin ventana propia.
+        try expect(steam.windowOwners(processListing: navegador) == [72530],
+                   "el navegador por sí solo puede ser el que tiene la ventana")
+
+        let servidor = psLine(72496, steam.engineURL.deletingLastPathComponent()
+                              .appendingPathComponent("wineserver").path, [])
+        try expect(steam.windowOwners(processListing: servidor).isEmpty,
+                   "el servidor de Wine no dibuja ventanas")
+    }
+
+    /// Un Steam que sigue en marcha sin ventana no se puede traer al frente, y matarlo a
+    /// señales sería cortarle la escritura. Steam trae su propia orden de cierre ordenado.
+    private static func testTheWayToAskSteamToQuit() throws {
+        let steam = WindowsSteam(root: URL(fileURLWithPath: "/Users/quien/Library/Application Support/Lever"))
+        let cierre = steam.shutdownCommand()
+        try expect(cierre.executableURL == steam.engineURL,
+                   "la orden de cierre va por el mismo motor que lo abrió")
+        try expect(cierre.arguments == [steam.steamURL.path, "-shutdown"],
+                   "«-shutdown» es la forma que tiene Steam de pedirse el cierre a sí mismo")
+        try expect(cierre.environment?["WINEPREFIX"] == steam.prefixURL.path,
+                   "hay que hablar con el Steam de este prefijo, no con otro")
+    }
+
     private static func testTheProbeAsksTheSystemForTheEnvironments() throws {
         let probe = WindowsSteam(root: URL(fileURLWithPath: "/tmp/lever")).syncProbeCommand()
         try expect(probe.executableURL.path == "/bin/ps", "la comprobación usa la herramienta del sistema")
@@ -252,6 +354,27 @@ enum WindowsSteamTests {
         try expect(lines > 20, "con solo \(lines) líneas ps no está mirando más allá del terminal")
         try expect(result.output.contains("PATH="), "ps no está imprimiendo el entorno de los procesos")
         print("INFO WindowsSteam: servidor de Wine del prefijo de Steam = \(steam.syncState(processListing: result.output))")
+    }
+
+    /// La comprobación barata pide los procesos sin su entorno: el entorno de todos los
+    /// procesos del usuario son cientos de miles de bytes que no hacen falta para saber si
+    /// Steam está abierto. Que ps acepte esas opciones se comprueba contra el sistema.
+    private static func testTheCheapProbeAlsoFindsTheClient() async throws {
+        let steam = WindowsSteam()
+        let probe = steam.clientProbeCommand()
+        try expect(probe.arguments.contains("axww"),
+                   "sin «ax» ps solo ve los procesos del terminal y sin «ww» recorta la línea")
+        try expect(!probe.arguments.contains("axeww"),
+                   "esta comprobación no necesita el entorno de nadie")
+
+        let result = try await ProcessRunner().run(probe)
+        try expect(result.succeeded, "ps rechazó las opciones de la comprobación barata")
+        let lines = result.output.split(separator: "\n").count
+        try expect(lines > 20, "con solo \(lines) líneas ps no está mirando más allá del terminal")
+        try expect(!result.output.contains("PATH="),
+                   "esta comprobación no debería imprimir el entorno de los procesos")
+        print("INFO WindowsSteam: cliente de Steam ya abierto = "
+              + (steam.runningClient(processListing: result.output).map(String.init) ?? "ninguno"))
     }
 
     // MARK: - Ayudas

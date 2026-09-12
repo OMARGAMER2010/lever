@@ -971,7 +971,8 @@ public final class AppModel: ObservableObject {
         Task { [weak self] in
             guard let self else { return }
             defer { openingSteamAppID = nil }
-            guard await windowsSteamSyncIsUsable(steam) else { return }
+            let listing = await processListing(steam.syncProbeCommand())
+            guard windowsSteamSyncIsUsable(steam, listing: listing) else { return }
             do {
                 let result = try await runner.run(steam.gameCommand(game, launch: launch))
                 // Por Steam el mandato vuelve en seguida: solo le pasa el recado a la sesión
@@ -1015,6 +1016,17 @@ public final class AppModel: ObservableObject {
         steamExecutableOptions = nil
     }
 
+    /// Le pregunta al sistema por sus procesos. `nil` cuando no se pudo leer: de un listado a
+    /// medias no se deduce nada, y quien pregunta decide qué hacer con el silencio.
+    private func processListing(_ probe: ProcessCommand) async -> String? {
+        do {
+            let result = try await runner.run(probe)
+            return result.succeeded ? result.output : nil
+        } catch {
+            return nil
+        }
+    }
+
     /// Comprueba la sincronización del motor antes de lanzar. msync solo funciona si el
     /// servidor de Wine y todos sus clientes piden lo mismo, y quien arranca primero es quien
     /// la fija: Steam y los juegos comparten prefijo, así que comparten servidor.
@@ -1023,14 +1035,8 @@ public final class AppModel: ObservableObject {
     /// por su cuenta: ese servidor sostiene la sesión de Steam del usuario y, muchas veces, una
     /// partida sin guardar. Cerrarlo es una decisión suya, desde el menú del juego o de Steam.
     /// Cuando no se puede leer el entorno no se inventa nada: se avisa y se sigue.
-    private func windowsSteamSyncIsUsable(_ steam: WindowsSteam) async -> Bool {
-        let state: WindowsSteam.SyncState
-        do {
-            let probe = try await runner.run(steam.syncProbeCommand())
-            state = probe.succeeded ? steam.syncState(processListing: probe.output) : .unreadable
-        } catch {
-            state = .unreadable
-        }
+    private func windowsSteamSyncIsUsable(_ steam: WindowsSteam, listing: String?) -> Bool {
+        let state = listing.map { steam.syncState(processListing: $0) } ?? .unreadable
         switch state {
         case .different:
             showError(strings[.wineSyncMismatch])
@@ -1043,6 +1049,15 @@ public final class AppModel: ObservableObject {
         return true
     }
 
+    /// Abre Steam, o trae al frente el que ya estuviera abierto.
+    ///
+    /// Las dos mitades hacen falta. Steam solo admite una copia por prefijo: el `steam.exe` que
+    /// se lance con otro ya en marcha le pasa el recado y termina en seguida **sin error**, de
+    /// modo que mirar solo el resultado del mandato da por abierto un Steam que nadie ve. Y en
+    /// el arranque de verdad pasa lo contrario: el mandato dura toda la sesión, horas, así que
+    /// esperarlo dejaba el botón en «Abriendo Steam…» y desactivado hasta que Steam se cerrara
+    /// —que es lo que hacía que pulsarlo no hiciera nada—. Así que lo que se espera no es el
+    /// mandato, sino que aparezca la ventana, que es lo que la persona pidió al pulsar.
     public func openWindowsSteam() {
         guard !isOpeningWindowsSteam else { return }
         let steam = WindowsSteam()
@@ -1054,20 +1069,114 @@ public final class AppModel: ObservableObject {
         isOpeningWindowsSteam = true
         Task { [weak self] in
             guard let self else { return }
-            defer { isOpeningWindowsSteam = false }
-            guard await windowsSteamSyncIsUsable(steam) else { return }
+            // Una sola mirada a los procesos responde a las dos preguntas: con qué
+            // sincronización corre el servidor de Wine y si Steam ya está abierto.
+            let listing = await processListing(steam.syncProbeCommand())
+            guard windowsSteamSyncIsUsable(steam, listing: listing) else {
+                isOpeningWindowsSteam = false
+                return
+            }
+            if listing.flatMap({ steam.runningClient(processListing: $0) }) != nil {
+                await reviveWindowsSteam(steam)
+            } else {
+                await launchWindowsSteam(steam)
+            }
+        }
+    }
+
+    /// Steam ya estaba en marcha: lo que falta es verlo.
+    ///
+    /// Casi siempre es que su ventana está detrás, o que acaba de arrancar y todavía la está
+    /// dibujando; en los dos casos lo único que hay que hacer es esperarla y traerla al frente.
+    ///
+    /// Si en todo ese rato no aparece ninguna, es que quedó corriendo a ciegas —pasa al cerrar
+    /// su ventana, porque el icono de la barra de Windows no se ve en macOS—. Entonces no hay
+    /// nada que enseñar y volver a lanzarlo tampoco vale, porque el segundo `steam.exe` le pasa
+    /// el recado al primero y se va: hay que sacar de en medio al primero. Se le pide con su
+    /// propia orden de cierre, que termina de escribir lo que tenga a medias, y se abre de nuevo.
+    private func reviveWindowsSteam(_ steam: WindowsSteam) async {
+        if await windowsSteamCameUp(steam, within: .seconds(60)) {
+            isOpeningWindowsSteam = false
+            add(strings[.windowsSteamAlreadyOpen], level: .info)
+            return
+        }
+        add(strings[.windowsSteamNoWindow], level: .warning)
+        _ = try? await runner.run(steam.shutdownCommand())
+        // Cerrarse le lleva un momento, y hasta que se va no deja entrar a otro.
+        let limit = ContinuousClock.now.advanced(by: .seconds(30))
+        while ContinuousClock.now < limit {
+            try? await Task.sleep(for: .milliseconds(500))
+            let listing = await processListing(steam.clientProbeCommand())
+            if listing.flatMap({ steam.runningClient(processListing: $0) }) == nil { break }
+        }
+        await launchWindowsSteam(steam)
+    }
+
+    /// Arranca Steam y suelta el botón cuando ya está abierto, no cuando termina.
+    ///
+    /// El mandato se queda en marcha aparte, únicamente para poder contar un fallo: si Steam se
+    /// cae al arrancar, el aviso llega igual aunque el botón ya esté libre.
+    private func launchWindowsSteam(_ steam: WindowsSteam) async {
+        Task { [weak self] in
+            guard let self else { return }
             do {
                 let result = try await runner.run(steam.command())
                 // Steam usa 42 cuando entrega el control a su actualizador.
-                if result.succeeded || result.exitCode == 42 {
-                    add(strings[.windowsSteamStarted], level: .info)
-                } else {
+                if !(result.succeeded || result.exitCode == 42) {
                     showError(strings(.errProgramExit, String(result.exitCode)))
                 }
             } catch {
                 showError(error.localizedDescription)
             }
         }
+
+        defer { isOpeningWindowsSteam = false }
+        // Un arranque en frío tarde: descomprime el cliente, mira si hay actualización y monta
+        // su navegador. La primera vez de todas, más.
+        if await windowsSteamCameUp(steam, within: .seconds(120)) {
+            add(strings[.windowsSteamStarted], level: .info)
+        } else {
+            add(strings[.windowsSteamSlow], level: .warning)
+        }
+    }
+
+    /// Espera a que Steam tenga ventana y la trae al frente.
+    ///
+    /// Que su proceso esté en la lista no basta: aparece bastantes segundos antes de dibujar
+    /// nada, y darlo por abierto ahí es justo lo que hacía que el botón pareciera no funcionar.
+    /// La señal honesta es que macOS lo tenga por una aplicación con ventana, porque es lo mismo
+    /// que quería la persona al pulsar: ver Steam delante.
+    private func windowsSteamCameUp(_ steam: WindowsSteam, within margin: Duration) async -> Bool {
+        let limit = ContinuousClock.now.advanced(by: margin)
+        while ContinuousClock.now < limit {
+            let listing = await processListing(steam.clientProbeCommand())
+            let owners = listing.map { steam.windowOwners(processListing: $0) } ?? []
+            if Self.bringToFront(owners, ofRuntime: steam.engineURL) { return true }
+            try? await Task.sleep(for: .milliseconds(500))
+        }
+        return false
+    }
+
+    /// Trae al frente la ventana de Steam, que es la de alguno de sus procesos: para macOS cada
+    /// proceso de Wine es una aplicación aparte, y solo cuenta como tal el que tiene ventana.
+    ///
+    /// Se exige además que el ejecutable esté dentro de este motor, porque el nombre del proceso
+    /// de Windows no dice de qué instalación es: así no se trae al frente el Steam de otro Wine
+    /// que esté corriendo a la vez.
+    private static func bringToFront(_ pids: [Int32], ofRuntime engine: URL) -> Bool {
+        let runtime = engine.deletingLastPathComponent().deletingLastPathComponent()
+            .standardizedFileURL.resolvingSymlinksInPath().path
+        for pid in pids {
+            guard let app = NSRunningApplication(processIdentifier: pid), !app.isTerminated,
+                  app.activationPolicy == .regular,
+                  let executable = app.executableURL?.standardizedFileURL
+                      .resolvingSymlinksInPath().path,
+                  executable.hasPrefix(runtime),
+                  app.activate(options: [.activateAllWindows])
+            else { continue }
+            return true
+        }
+        return false
     }
 
     public func runProgram() {

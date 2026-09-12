@@ -42,6 +42,10 @@ public struct WindowsSteam: Sendable {
         "WINEESYNC": "0"
     ]
 
+    /// El navegador que Steam lleva dentro y con el que dibuja su interfaz. Su proceso es el
+    /// que suele tener la ventana, así que sin él no se puede traer Steam al frente.
+    static let userInterfaceExecutable = "steamwebhelper.exe"
+
     /// Entradas de la biblioteca que no son juegos, sino la fontanería de Steam. Se esconden
     /// para no ofrecer «jugar» a un paquete de bibliotecas de Microsoft.
     static let plumbingAppIDs: Set<String> = [
@@ -122,6 +126,19 @@ public struct WindowsSteam: Sendable {
         ProcessCommand(executableURL: engineURL, arguments: [steamURL.path],
                        currentDirectoryURL: steamURL.deletingLastPathComponent(),
                        environment: environment(showHUD: showHUD))
+    }
+
+    /// Le pide a Steam que se cierre solo.
+    ///
+    /// Hace falta para el Steam que sigue en marcha sin ventana: no se puede traer al frente lo
+    /// que no tiene ventana, y volver a lanzarlo no sirve —el segundo `steam.exe` le pasa el
+    /// recado al primero y se va—, así que la única salida es que el primero se vaya. `-shutdown`
+    /// es la orden que Steam se da a sí mismo, la misma que su menú: termina de escribir lo que
+    /// tenga a medias y cierra. No es una señal: a señales se le cortaría la escritura.
+    public func shutdownCommand() -> ProcessCommand {
+        ProcessCommand(executableURL: engineURL, arguments: [steamURL.path, "-shutdown"],
+                       currentDirectoryURL: steamURL.deletingLastPathComponent(),
+                       environment: sharedEnvironment())
     }
 
     public func gameCommand(_ game: SteamGame, launch: SteamLaunch,
@@ -249,6 +266,71 @@ public struct WindowsSteam: Sendable {
                        currentDirectoryURL: nil)
     }
 
+    /// Pregunta por los procesos sin su entorno, que para saber si Steam está abierto no hace
+    /// falta: la ruta del ejecutable ya dice de qué prefijo es. Y el entorno de todos los
+    /// procesos del usuario son cientos de miles de bytes que se leerían para nada, porque esta
+    /// comprobación se repite mientras Steam arranca.
+    public func clientProbeCommand() -> ProcessCommand {
+        ProcessCommand(executableURL: URL(fileURLWithPath: "/bin/ps"),
+                       arguments: ["axww", "-o", "pid=,command="],
+                       currentDirectoryURL: nil)
+    }
+
+    /// El proceso de Steam que ya está en marcha en este prefijo, si lo hay.
+    ///
+    /// Es la diferencia entre abrir Steam y no hacer nada: cuando ya hay uno corriendo, el
+    /// `steam.exe` que se lance después solo le pasa el recado y termina sin error, así que
+    /// Lever creería haberlo abierto mientras no aparece ninguna ventana.
+    ///
+    /// La comparación es por igualdad con la ruta real de `steam.exe`, no por terminación: esa
+    /// ruta vive dentro del prefijo, así que identifica a este Steam y solo a este. El de otra
+    /// instalación tiene otra ruta, el de Game Porting Toolkit aparece con la ruta de Windows
+    /// detrás de su cargador, y una orden que se limite a nombrar el archivo —un `grep`— no la
+    /// tiene como mandato. Vale con la salida de las dos comprobaciones, con entorno o sin él.
+    public func runningClient(processListing: String) -> Int32? {
+        for line in processListing.split(separator: "\n") {
+            guard let parts = Self.split(psLine: String(line)),
+                  isClient(command: parts.command) else { continue }
+            return parts.pid
+        }
+        return nil
+    }
+
+    /// Si este mandato es el cliente de Steam de este prefijo.
+    ///
+    /// La ruta tiene que abrir el mandato y acabar donde acaba, pero puede llevar argumentos
+    /// detrás: Steam se queda corriendo con `-silent`, que es precisamente como se queda sin
+    /// ventana, y exigir el mandato entero dejaría sin reconocer justo ese caso. Que la ruta
+    /// esté al principio es lo que distingue ejecutarla de solo nombrarla.
+    private func isClient(command: String) -> Bool {
+        guard command.hasPrefix(steamURL.path) else { return false }
+        let rest = command.dropFirst(steamURL.path.count)
+        return rest.isEmpty || rest.hasPrefix(" ")
+    }
+
+    /// Los procesos de este Steam que pueden tener la ventana, el cliente primero.
+    ///
+    /// Hace falta porque no siempre la tiene el mismo: `steam.exe` es el cliente, pero su
+    /// interfaz la dibuja el navegador que Steam lleva dentro, `steamwebhelper.exe`, y entonces
+    /// la ventana es de ese —el cliente se queda sin ninguna—. Cuál de los dos la tiene depende
+    /// del momento del arranque, así que se ofrecen los dos y decide quien mire las ventanas.
+    ///
+    /// Al cliente se le reconoce por su ruta real, que vive dentro del prefijo y por tanto solo
+    /// puede ser este. El navegador aparece con su ruta de Windows, que no dice de qué
+    /// instalación es: eso lo confirma después su ejecutable de macOS.
+    public func windowOwners(processListing: String) -> [Int32] {
+        var owners: [Int32] = []
+        for line in processListing.split(separator: "\n") {
+            guard let parts = Self.split(psLine: String(line)) else { continue }
+            if isClient(command: parts.command) {
+                owners.insert(parts.pid, at: 0)
+            } else if parts.command.contains(Self.userInterfaceExecutable) {
+                owners.append(parts.pid)
+            }
+        }
+        return owners
+    }
+
     /// Interpreta la salida de `syncProbeCommand`. Va separada de la ejecución para poder
     /// probarla con listados reales en vez de depender de qué haya abierto la máquina.
     public func syncState(processListing: String) -> SyncState {
@@ -286,14 +368,14 @@ public struct WindowsSteam: Sendable {
     /// `NOMBRE=valor`, porque ps no marca el límite. Es una heurística deliberadamente
     /// estrecha: solo reconoce el servidor cuando el mandato termina en «wineserver», y si se
     /// equivoca lo hace hacia no avisar, nunca hacia impedir que el usuario juegue.
-    private static func split(psLine line: String) -> (command: String, environment: String)? {
+    private static func split(psLine line: String) -> (pid: Int32, command: String,
+                                                       environment: String)? {
         var pieces = line.split(separator: " ").map(String.init)
-        guard pieces.count >= 2 else { return nil }
-        pieces.removeFirst()
+        guard pieces.count >= 2, let pid = Int32(pieces.removeFirst()) else { return nil }
         guard let cut = pieces.firstIndex(where: isAssignment) else {
-            return (pieces.joined(separator: " "), "")
+            return (pid, pieces.joined(separator: " "), "")
         }
-        return (pieces[..<cut].joined(separator: " "), pieces[cut...].joined(separator: " "))
+        return (pid, pieces[..<cut].joined(separator: " "), pieces[cut...].joined(separator: " "))
     }
 
     private static func isAssignment(_ piece: String) -> Bool {
