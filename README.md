@@ -10,6 +10,33 @@ No accounts, no telemetry, and nothing of yours leaves your Mac.
 
 </div>
 
+## See it running
+
+![Lever: Programs tab, Steam library and drag-and-drop area](docs/media/lever.jpg)
+
+[Watch or download the Lever clip · MP4, silent, 1.3 s](docs/media/lever.mp4?raw=true)
+
+Real captures from this Mac. These short excerpts illustrate the interface and selected game
+scenes; they are not compatibility guarantees or benchmarks.
+
+| Elden Ring | Kirby's Adventure |
+|---|---|
+| ![Elden Ring running with the Metal HUD visible](docs/media/elden-ring.jpg) | ![Kirby's Adventure showing its flying tutorial](docs/media/kirby.jpg) |
+| [MP4 · silent, 1.8 s](docs/media/elden-ring.mp4?raw=true) | [MP4 · silent, 1.6 s](docs/media/kirby.mp4?raw=true) |
+
+Elden Ring is shown through the Windows/Metal setup; the HUD is a momentary reading, not a
+claim of sustained 60 FPS. Kirby shows the game's built-in tutorial sequence.
+
+![Super Mario Odyssey: live main menu in Ryujinx](docs/media/super-mario-odyssey.jpg)
+
+**Super Mario Odyssey (SMO):** main menu captured live in the installed Ryujinx emulator.
+This capture verifies that the menu renders; it does not demonstrate gameplay or a launch through Lever.
+
+The images display directly in this README. MP4 links open the file or download it depending on
+your browser; an inline video player is not required. Clips are cropped excerpts at normal speed,
+with audio omitted. Game artwork belongs to its respective owners; no games, keys or firmware
+are distributed here. [Capture details](docs/media/README.md).
+
 > **The name.** A lever is what you wedge into a stuck drawer to get it open — that's unpacking.
 > And figuratively, leverage is the force that opens a door that was closed to you — that's what
 > Wine does with an `.exe`. An ordinary word, nothing invented.

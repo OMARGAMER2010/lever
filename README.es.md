@@ -10,6 +10,33 @@ Sin cuentas, sin telemetría, y nada tuyo sale de tu Mac.
 
 </div>
 
+## En funcionamiento
+
+![Lever: pestaña Programas, biblioteca de Steam y zona para arrastrar archivos](docs/media/lever.jpg)
+
+[Ver o descargar el clip de Lever · MP4, sin audio, 1,3 s](docs/media/lever.mp4?raw=true)
+
+Capturas reales de este Mac. Los fragmentos muestran la interfaz y escenas concretas;
+no son garantías de compatibilidad ni pruebas de rendimiento.
+
+| Elden Ring | Kirby's Adventure |
+|---|---|
+| ![Elden Ring en ejecución con el HUD de Metal visible](docs/media/elden-ring.jpg) | ![Tutorial de vuelo de Kirby's Adventure](docs/media/kirby.jpg) |
+| [MP4 · sin audio, 1,8 s](docs/media/elden-ring.mp4?raw=true) | [MP4 · sin audio, 1,6 s](docs/media/kirby.mp4?raw=true) |
+
+Elden Ring aparece con la configuración Windows/Metal. El HUD es una lectura puntual,
+no una promesa de 60 FPS sostenidos. Kirby muestra la secuencia de tutorial del propio juego.
+
+![Super Mario Odyssey: menú principal capturado en vivo en Ryujinx](docs/media/super-mario-odyssey.jpg)
+
+**Super Mario Odyssey (SMO):** menú principal capturado en vivo en el emulador Ryujinx instalado.
+La captura demuestra que el menú se dibuja; no demuestra una partida ni el lanzamiento desde Lever.
+
+Las imágenes se ven directamente en este README. Los enlaces MP4 abren el archivo o lo descargan,
+según el navegador; no dependen de un reproductor incrustado. Son fragmentos recortados a velocidad
+normal y sin audio. Las imágenes de los juegos pertenecen a sus respectivos titulares; aquí no
+se distribuyen juegos, claves ni firmware. [Detalles de las capturas](docs/media/README.md).
+
 > **El nombre.** Una palanca es lo que metes en la rendija de un cajón clavado para abrirlo: eso es
 > descomprimir. Y en sentido figurado, *leverage* es la fuerza que te abre una puerta que estaba
 > cerrada: eso es lo que hace Wine con un `.exe`. Palabra corriente, sin inventar nada.
