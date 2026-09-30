@@ -38,7 +38,7 @@ public enum WineLauncher {
             }
             .joined(separator: ":")
 
-        return [
+        var environment = [
             "WINEPREFIX": prefix.path,
             "PATH": path,
             // Silencia los avisos "fixme", que son ruido; los errores reales se siguen viendo.
@@ -46,6 +46,36 @@ public enum WineLauncher {
             // Evita el diálogo de Wine ofreciendo instalar Mono/Gecko en cada arranque.
             "WINEDLLOVERRIDES": "mscoree,mshtml="
         ]
+        let libraries = libraryDirectories(wine: wine)
+        if let external = libraries.first {
+            environment["DYLD_FALLBACK_LIBRARY_PATH"] = (libraries.map(\.path) + ["/usr/lib"]).joined(separator: ":")
+            environment["DYLD_FRAMEWORK_PATH"] = external.path
+            environment["WINEDLLOVERRIDES"] = "mscoree,mshtml=;d3d11,d3d12,dxgi=b"
+            environment["WINEDEBUG"] = "fixme-all,err-hid"
+            environment["MVK_CONFIG_LOG_LEVEL"] = "1"
+            environment["MTL_HUD_ENABLED"] = "0"
+            environment["MTL_HUD_LOG_ENABLED"] = "0"
+            for (name, value) in WindowsSteam.synchronization { environment[name] = value }
+        }
+        return environment
+    }
+
+    /// Dependencias del motor con D3DMetal. En Safe Mode todas se copian dentro del motor
+    /// temporal: no se concede al juego acceso a la instalación original ni a la de Steam.
+    static func libraryDirectories(wine: URL) -> [URL] {
+        let engine = wine.resolvingSymlinksInPath().deletingLastPathComponent().deletingLastPathComponent()
+        let external = engine.appendingPathComponent("lib/external", isDirectory: true)
+        guard FileManager.default.isReadableFile(atPath: external.appendingPathComponent("D3DMetal.framework/D3DMetal").path)
+        else { return [] }
+        var directories = [external]
+        let runtimes = engine.deletingLastPathComponent().deletingLastPathComponent()
+        if runtimes.lastPathComponent == "runtimes" {
+            let frameworks = WindowsSteam(root: runtimes.deletingLastPathComponent()).frameworksURL
+            if FileManager.default.isReadableFile(atPath: frameworks.appendingPathComponent("libinotify.0.dylib").path) {
+                directories.append(frameworks)
+            }
+        }
+        return directories
     }
 
     /// Prepara el prefijo por primera vez. Tarda, así que se muestra como paso propio.

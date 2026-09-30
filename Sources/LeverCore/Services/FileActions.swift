@@ -2,6 +2,18 @@ import AppKit
 import UniformTypeIdentifiers
 
 public enum FileActions {
+    /// Select a program or an unpacked game directory from the same browser.
+    @MainActor
+    public static func chooseProgramOrFolder(title: String) -> URL? {
+        let panel = NSOpenPanel()
+        panel.title = title
+        panel.allowsMultipleSelection = false
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = true
+        panel.treatsFilePackagesAsDirectories = false
+        return panel.runModal() == .OK ? panel.url : nil
+    }
+
     @MainActor
     public static func chooseFile(kind: SupportedFileKind, title: String) -> URL? {
         let panel = NSOpenPanel()

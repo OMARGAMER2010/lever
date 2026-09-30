@@ -11,7 +11,7 @@ struct ProgramPane: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.loose) {
             if model.windowsSteamIsReady { steamPanel }
-            if model.selectedProgram == nil {
+            if model.selectedProgram == nil && model.selectedFolder == nil {
                 DropZone(
                     title: s[.dropProgramTitle],
                     subtitle: s[.dropProgramSubtitle],
@@ -19,19 +19,154 @@ struct ProgramPane: View {
                     accept: { model.accept(droppedURLs: $0) },
                     browse: model.selectProgram
                 )
+                RecentsList(model: model, kind: .folder, heading: .folderRecentsTitle)
                 RecentsList(model: model, kind: .exe)
-            } else {
+            }
+            if model.selectedFolder != nil { folderPanel }
+            if model.selectedProgram != nil {
                 Panel { programContent }
             }
 
+            if model.programOpenMode == .safe { SafeModeSummary(model: model) }
+
             // Va antes que la tarjeta de Wine a propósito: si el juego puede correr nativo, esa
-            // es la opción buena y Wine pasa a ser el plan B, no al revés.
-            if model.portableGame != nil { portablePanel }
+            // es la opción buena y Wine pasa a ser el plan B, no al revés. En Safe Mode no: la app
+            // nativa correría sin aislamiento.
+            if model.portableGame != nil {
+                if model.programOpenMode == .safe {
+                    Text(s[.safeNoNativePort])
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    portablePanel
+                }
+            }
 
             wineState
             disclaimer
         }
         .sheet(isPresented: $showsWineHelp) { RuntimeHelpSheet.wine(model: model) }
+    }
+
+    /// A folder is a collection of possible starting points. Show the choice before Wine's
+    /// controls so a redistributable or crash reporter cannot silently become the game.
+    @ViewBuilder
+    private var folderPanel: some View {
+        if let folder = model.selectedFolder {
+            Panel(padding: Theme.Spacing.normal) {
+                VStack(alignment: .leading, spacing: Theme.Spacing.normal) {
+                    SelectedFileChip(
+                        url: folder,
+                        facts: [folder.deletingLastPathComponent().path
+                            .replacingOccurrences(of: NSHomeDirectory(), with: "~")],
+                        revealLabel: s[.revealInFinder],
+                        removeLabel: s[.folderRemove],
+                        onReveal: { FileActions.reveal(folder) },
+                        onClear: model.clearFolder
+                    )
+                    if model.isInspectingFolder {
+                        HStack(spacing: Theme.Spacing.tight) {
+                            ProgressView().controlSize(.small)
+                            Text(s[.folderScanning]).font(.system(size: 11))
+                        }
+                    } else if let inspection = model.folderInspection {
+                        if inspection.entries.isEmpty {
+                            Text(s[.folderEmpty])
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text(s(.folderFound, String(inspection.entries.count)))
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                            ForEach(inspection.entries) { entry in
+                                folderEntryRow(entry, in: inspection)
+                            }
+                        }
+                        if inspection.wasLimited {
+                            Text(s[.folderLimited])
+                                .font(.system(size: 11))
+                                .foregroundStyle(Theme.attention)
+                        }
+                        if let redistributables = inspection.redistributablesURL {
+                            HStack(alignment: .top, spacing: Theme.Spacing.tight) {
+                                Text(s(.folderRedistributables, redistributables.lastPathComponent))
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                Spacer(minLength: 4)
+                                Button(s[.revealInFinder]) { FileActions.reveal(redistributables) }
+                                    .controlSize(.small)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func folderEntryRow(_ entry: FolderEntry, in inspection: FolderInspection) -> some View {
+        let isSelected = model.selectedProgram == entry.url
+        let relative = String(entry.url.path.dropFirst(inspection.folder.path.count + 1))
+        return HStack(spacing: Theme.Spacing.tight) {
+            Image(systemName: folderEntryIcon(entry.kind))
+                .frame(width: 18)
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 5) {
+                    Text(entry.url.lastPathComponent)
+                        .font(.system(size: 11, weight: .medium))
+                    if inspection.recommended == entry {
+                        Text(s[.folderRecommended])
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Theme.ready)
+                    }
+                }
+                Text("\(folderEntryDescription(entry)) · \(relative)")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            Spacer(minLength: 4)
+            if isSelected {
+                Label(s[.folderSelected], systemImage: "checkmark.circle.fill")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Theme.ready)
+            } else {
+                Button(s[entry.kind == .macApplication ? .folderOpenEntry : .folderChooseEntry]) {
+                    model.openFolderEntry(entry)
+                }
+                .controlSize(.small)
+            }
+        }
+        .padding(7)
+        .background(Color.primary.opacity(0.03), in: RoundedRectangle(cornerRadius: Theme.Radius.inline))
+    }
+
+    private func folderEntryDescription(_ entry: FolderEntry) -> String {
+        let key: TextKey
+        switch entry.kind {
+        case .windowsProgram:
+            key = entry.isUnityGame ? .folderUnityWindows
+                : entry.isInstaller ? .folderWindowsInstaller : .folderWindowsProgram
+        case .androidApp: key = .folderAndroidApp
+        case .consoleGame: key = .folderConsoleGame
+        case .archive: key = .folderArchive
+        case .macApplication: key = .folderMacApplication
+        }
+        let architecture = entry.architecture.flatMap { $0 == .unknown ? nil : s[$0.textKey] }
+        return [s[key], architecture].compactMap { $0 }.joined(separator: " · ")
+    }
+
+    private func folderEntryIcon(_ kind: FolderEntryKind) -> String {
+        switch kind {
+        case .windowsProgram: return "gamecontroller"
+        case .androidApp: return "apps.iphone"
+        case .consoleGame: return "gamecontroller.fill"
+        case .archive: return "archivebox"
+        case .macApplication: return "macwindow"
+        }
     }
 
     // MARK: - Juego que puede correr nativo
@@ -234,6 +369,26 @@ struct ProgramPane: View {
                 Text(s[.programWillOpen])
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
+            }
+
+            Divider()
+            OpenModePicker(
+                model: model,
+                mode: $model.programOpenMode,
+                recommendation: model.programRecommendation,
+                normalExplanation: .normalProgramExplain,
+                safeExplanation: .safeProgramExplain
+            )
+            if model.programOpenMode == .safe {
+                VStack(alignment: .leading, spacing: 2) {
+                    Toggle(s[.safeAllowNetwork], isOn: $model.allowsNetworkInSafeRun)
+                        .toggleStyle(.checkbox)
+                        .font(.system(size: 11))
+                        .disabled(model.isRunningProgram || model.isPreparingWindows)
+                    Text(s[.safeAllowNetworkHint])
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
+                }
             }
         }
     }

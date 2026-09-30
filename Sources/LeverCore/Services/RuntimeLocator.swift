@@ -93,6 +93,10 @@ public struct RuntimeLocator {
     }
 
     public static func defaultWineCandidates() -> [URL] {
+        // El motor ya preparado por Lever incluye un Wine reciente y D3DMetal. Los enlaces de
+        // Homebrew pueden seguir apuntando al GPTK 1.1 (Wine 7.7), incapaz de cargar IL2CPP nuevo.
+        let managed = WindowsSteam()
+        let prepared = managed.isReady ? [managed.engineURL] : []
         let bundled = [
             // Compilaciones para Apple Silicon, las que mejor funcionan hoy.
             "/Applications/Game Porting Toolkit.app/Contents/Resources/wine/bin/wine64",
@@ -105,7 +109,7 @@ public struct RuntimeLocator {
             "/Applications/Whisky.app/Contents/Resources/Libraries/Wine/bin/wine"
         ].map { URL(fileURLWithPath: $0) }
 
-        return defaultExecutableCandidates(named: "wine")
+        return prepared + defaultExecutableCandidates(named: "wine")
             + defaultExecutableCandidates(named: "wine64")
             + bundled
     }

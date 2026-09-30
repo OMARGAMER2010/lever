@@ -3,7 +3,7 @@ import LeverCore
 
 @MainActor
 enum AppModelTests {
-    static func run() throws {
+    static func run() async throws {
         try testNothingIsEnabledWithoutTools()
         try testActionsEnableWhenEverythingIsInPlace()
         try testDestinationIsSuggestedNextToTheArchive()
@@ -15,7 +15,8 @@ enum AppModelTests {
         try testApkNeedsADeviceBeforeInstalling()
         try testAndroidBundlesAreAccepted()
         try testHybridPackagesGoToTheConsoleTab()
-        try testAGameFolderIsAcceptedLikeAFile()
+        try await testAGameFolderIsAcceptedLikeAFile()
+        try await testWindowsGameFolderPreparesRun()
     }
 
     /// Un paquete de la consola híbrida entra por la pestaña de consolas, y la decisión se toma
@@ -49,7 +50,7 @@ enum AppModelTests {
 
     /// Un juego de PS3 o de PS4 volcado de su disco es una **carpeta**, y hasta ahora Lever solo
     /// aceptaba archivos. Sin esto, esas dos máquinas no entran por ningún sitio.
-    private static func testAGameFolderIsAcceptedLikeAFile() throws {
+    private static func testAGameFolderIsAcceptedLikeAFile() async throws {
         let model = emptyModel()
         let fixture = try TemporaryFixture()
         let gestor = FileManager.default
@@ -61,14 +62,38 @@ enum AppModelTests {
         model.accept(droppedURLs: [juego])
         try expect(model.selectedRom == juego, "una carpeta de juego va a la pestaña de consolas")
 
-        // Y una carpeta cualquiera no: se dice que no se sabe qué es, en vez de aceptarla y
-        // dejar al usuario delante de una pestaña que no hace nada.
+        // Una carpeta genérica entra en el analizador aunque no tenga nada compatible.
         let cualquiera = fixture.directoryURL.appendingPathComponent("Fotos", isDirectory: true)
         try gestor.createDirectory(at: cualquiera, withIntermediateDirectories: true)
         model.clearRom()
-        model.accept(droppedURLs: [cualquiera])
-        try expect(model.selectedRom == nil, "una carpeta que no es un juego no se acepta")
-        try expect(model.lastError != nil, "y se dice")
+        try expect(model.accept(droppedURLs: [cualquiera]), "se acepta una carpeta para analizarla")
+        try expect(model.selectedFolder == cualquiera, "el modelo conserva la carpeta")
+        for _ in 0..<50 where model.isInspectingFolder {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        try expect(model.folderInspection?.entries.isEmpty == true,
+                   "una carpeta sin juegos muestra un resultado vacío")
+    }
+
+    private static func testWindowsGameFolderPreparesRun() async throws {
+        let model = emptyModel()
+        let fixture = try TemporaryFixture()
+        let root = fixture.directoryURL.appendingPathComponent("Juego", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try Data("MZ".utf8).write(to: root.appendingPathComponent("Juego.exe"))
+        try Data("MZ".utf8).write(to: root.appendingPathComponent("CrashHandler.exe"))
+
+        try expect(FileRouter.route(for: root) == .folder, "una carpeta normal va al analizador")
+        try expect(model.accept(droppedURLs: [root]), "se acepta una carpeta con juego Windows")
+        for _ in 0..<50 where model.isInspectingFolder {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        try expect(model.selectedProgram?.lastPathComponent == "Juego.exe",
+                   "el juego principal queda seleccionado")
+        try expect(model.programOpenMode == .safe,
+                   "un programa descubierto en una carpeta comienza en Safe Mode")
+        try expect(model.recentFiles(of: .folder).contains { $0.path == root.path },
+                   "la carpeta queda en recientes para poder reabrirla")
     }
 
     private static func emptyModel() -> AppModel {
@@ -256,12 +281,14 @@ enum AppModelTests {
         noAdb.selectedApk = model.selectedApk
         try expect(!noAdb.canRunApk, "sin adb tampoco")
 
-        // En automático la postura sale del .apk; el conmutador manda sobre ella.
+        // En automático la postura sale del .apk; el conmutador manda sobre ella. Se fija en vez de
+        // darlo por hecho: `rotationChoice` se guarda, y una prueba no debe depender de lo que haya
+        // quedado antes ni de los ajustes de nadie.
+        model.rotationChoice = .automatic
         try expect(model.effectiveOrientation == model.apkFacts.orientation,
                    "en automático manda lo que declara el .apk")
         model.rotationChoice = .landscape
         try expect(model.effectiveOrientation == .landscape, "elegir a mano gana")
-        model.rotationChoice = .automatic
     }
 
     /// Los cuatro formatos entran por la misma puerta. Antes se rechazaban con un aviso que

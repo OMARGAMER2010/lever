@@ -5,6 +5,7 @@ import LeverCore
 struct ArchivePane: View {
     @ObservedObject var model: AppModel
     @State private var showsContents = false
+    @State private var confirmsDeletePrevious = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var s: Strings { model.strings }
@@ -24,6 +25,10 @@ struct ArchivePane: View {
                 Panel { archiveContent }
             }
 
+            alreadyExtracted
+
+            if model.archiveOpenMode == .safe { SafeModeSummary(model: model) }
+
             if model.runtimeStatus.archiveTool == nil {
                 NoticeBanner(
                     kind: .warning,
@@ -37,6 +42,36 @@ struct ArchivePane: View {
             Text(s[.originalUntouched])
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
+        }
+        .confirmationDialog(s[.safeDeleteConfirmTitle], isPresented: $confirmsDeletePrevious) {
+            Button(s[.safeDeleteConfirm], role: .destructive, action: model.deletePreviousSafeExtractions)
+            Button(s[.cancel], role: .cancel) {}
+        } message: {
+            Text(s(.safeDeleteConfirmBody, model.previousSafeExtractionsSize))
+        }
+    }
+
+    /// Lo que este mismo comprimido ya dejó extraído.
+    ///
+    /// Sale **antes** de extraer y no después, que es el único momento en el que decirlo sirve de
+    /// algo: extraer dos veces el mismo archivo creaba dos espacios completos, y lo único que lo
+    /// delataba era el disco llenándose. Las dos salidas están aquí mismo —abrir lo que ya hay, o
+    /// borrarlo— porque llegar a ellas desde el menú de herramientas no se le ocurre a nadie.
+    @ViewBuilder
+    private var alreadyExtracted: some View {
+        let previous = model.archivePreviousExtractions
+        if model.archiveOpenMode == .safe, !previous.isEmpty, !model.isExtracting {
+            NoticeBanner(
+                kind: .warning,
+                title: s[.safeAlreadyExtractedTitle],
+                message: previous.count > 1
+                    ? s(.safeAlreadyExtractedMany, String(previous.count), previous.formattedSize, previous.formattedAge)
+                    : s(.safeAlreadyExtractedBody, previous.formattedSize, previous.formattedAge),
+                actionTitle: s[.safeOpenExisting],
+                action: model.openPreviousSafeExtraction,
+                secondaryTitle: s[.safeDeletePrevious],
+                secondaryAction: { confirmsDeletePrevious = true }
+            )
         }
     }
 
@@ -55,7 +90,15 @@ struct ArchivePane: View {
                 toolChoice
                 contentsPreview
                 Divider()
-                options
+                OpenModePicker(
+                    model: model,
+                    mode: $model.archiveOpenMode,
+                    recommendation: model.archiveRecommendation,
+                    normalExplanation: .normalArchiveExplain,
+                    safeExplanation: .safeArchiveExplain
+                )
+                Divider()
+                if model.archiveOpenMode == .safe { safeOptions } else { options }
             }
         }
     }
@@ -92,6 +135,23 @@ struct ArchivePane: View {
     }
 
     // MARK: - Opciones de extracción
+
+    /// En Safe Mode no se elige carpeta ni qué hacer con lo existente: todo va a un espacio nuevo.
+    private var safeOptions: some View {
+        VStack(alignment: .leading, spacing: 11) {
+            SettingRow(label: s[.saveIn]) {
+                Label(s[.safeDestination], systemImage: "shield.lefthalf.filled")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+            SettingRow(label: s[.password], hint: s[.passwordHint]) {
+                SecureField(s[.passwordNone], text: $model.archivePassword)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(maxWidth: 220)
+                    .accessibilityLabel(s[.password])
+            }
+        }
+    }
 
     private var options: some View {
         VStack(alignment: .leading, spacing: 11) {

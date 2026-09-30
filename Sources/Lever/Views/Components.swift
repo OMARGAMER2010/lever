@@ -301,6 +301,7 @@ struct LanguagePicker: View {
 enum WorkMode: String, CaseIterable, Identifiable {
     case program
     case archive
+    case safeRuns
     case android
     case rom
 
@@ -310,6 +311,7 @@ enum WorkMode: String, CaseIterable, Identifiable {
         switch self {
         case .program: return .tabPrograms
         case .archive: return .tabArchives
+        case .safeRuns: return .tabSafeRuns
         case .android: return .tabAndroid
         case .rom: return .tabEmulation
         }
@@ -325,7 +327,7 @@ enum WorkMode: String, CaseIterable, Identifiable {
     /// Lo que no cabe en ninguna parte cae en comprimidos, que es donde el usuario ve el error.
     static func forDroppedFile(_ url: URL) -> WorkMode {
         switch FileRouter.route(for: url) {
-        case .program: return .program
+        case .program, .folder: return .program
         case .android: return .android
         case .rom: return .rom
         case .archive, nil: return .archive

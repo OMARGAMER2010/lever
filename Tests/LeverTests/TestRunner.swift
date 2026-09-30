@@ -1,12 +1,21 @@
 import Darwin
 import Foundation
+import LeverCore
 
 @main
 struct LeverTests {
     static func main() async {
+        // Las pruebas de Safe Mode relanzan este mismo ejecutable como programa hostil.
+        SafeModeProbe.runIfRequested()
+        // Los ajustes van a un dominio desechable que se borra al terminar. Sin esto, este mismo
+        // binario ejecutado desde dentro de Lever.app trabajaría sobre la configuración de verdad
+        // de la persona: la leería —y una prueba pasaría o fallaría según lo que tenga puesto— y
+        // además se la cambiaría.
+        let discardSettings = Preferences.useDisposableStore()
         do {
             try LocalizationTests.run()
             try ProgramInspectorTests.run()
+            try FolderInspectorTests.run()
             try GodotTests.run()
             try RenpyTests.run()
             try LoveTests.run()
@@ -16,6 +25,7 @@ struct LeverTests {
             try ApkInspectorTests.run()
             try AndroidCommandTests.run()
             try AndroidBundleTests.run()
+            try AndroidFullscreenTests.run()
             try EmulationTests.run()
             try SwitchTests.run()
             try SwitchControlTests.run()
@@ -24,17 +34,24 @@ struct LeverTests {
             try PlayStationTests.run()
             try GamepadTests.run()
             try RuntimeLocatorTests.run()
+            try WineLauncherTests.run()
             try await WindowsSteamTests.run()
             try UpdateCheckTests.run()
             try CommandBuilderTests.run()
             try await ProcessRunnerTests.run()
-            try AppModelTests.run()
+            try await EmulatorChannelTests.run()
+            try await AppModelTests.run()
             try RecentFilesTests.run()
+            try SafeModeTests.run()
+            try SafeRunsTests.run()
+            try await SafeModeIntegrationTests.run()
+            try await SafeWineIntegrationTests.run()
             try await ExtractionIntegrationTests.run()
             try await SwitchIntegrationTests.run()
             try XciIntegrationTests.run()
             print("PASS LocalizationTests")
             print("PASS ProgramInspectorTests")
+            print("PASS FolderInspectorTests")
             print("PASS GodotTests")
             print("PASS RenpyTests")
             print("PASS LoveTests")
@@ -44,6 +61,7 @@ struct LeverTests {
             print("PASS ApkInspectorTests")
             print("PASS AndroidCommandTests")
             print("PASS AndroidBundleTests")
+            print("PASS AndroidFullscreenTests")
             print("PASS EmulationTests")
             print("PASS SwitchTests")
             print("PASS SwitchControlTests")
@@ -52,16 +70,25 @@ struct LeverTests {
             print("PASS PlayStationTests")
             print("PASS GamepadTests")
             print("PASS RuntimeLocatorTests")
+            print("PASS WineLauncherTests")
             print("PASS WindowsSteamTests")
             print("PASS UpdateCheckTests")
             print("PASS CommandBuilderTests")
             print("PASS ProcessRunnerTests")
+            print("PASS EmulatorChannelTests")
             print("PASS AppModelTests")
             print("PASS RecentFilesTests")
+            print("PASS SafeModeTests")
+            print("PASS SafeRunsTests")
+            print("PASS SafeModeIntegrationTests")
+            print("PASS SafeWineIntegrationTests")
             print("PASS ExtractionIntegrationTests")
             print("PASS SwitchIntegrationTests")
             print("PASS XciIntegrationTests")
+            discardSettings()
         } catch {
+            // `exit` no ejecuta los `defer`, así que el dominio se borra a mano en los dos caminos.
+            discardSettings()
             fputs("FAIL LeverTests: \(error)\n", stderr)
             exit(1)
         }

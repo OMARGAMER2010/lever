@@ -99,6 +99,11 @@ struct ControlMapperSheet: View {
             inputs: model.availableInputs,
             listening: listening,
             strings: s,
+            // En la DS los cuatro de atrás no son gatillos: soplan, cambian las pantallas, cierran
+            // la tapa y mueven el lápiz. Enseñarlos como «L2» sería no decir nada.
+            title: { control in
+                control.consoleLabel(on: model.romFacts.platform).map { s[$0] }
+            },
             describe: { control in
                 let tecla = model.controlProfile.binding(for: control)
                 let mando = model.controlProfile.gamepadBinding(for: control)

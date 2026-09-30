@@ -8,6 +8,8 @@ enum RuntimeLocatorTests {
         try testLocatePrefersSevenZipOverUnarAndUnrar()
         try testLocateFindsHomebrewCandidate()
         try testResolveWineAppToWineBinary()
+        try testPreparedModernWineIsPreferredToLegacyWine()
+        try testCustomWineStillWins()
     }
 
     private static func testLocateChoosesFirstExecutableWineCandidate() throws {
@@ -77,5 +79,21 @@ enum RuntimeLocatorTests {
         let binary = app.appendingPathComponent("Contents/Resources/wine/bin/wine")
 
         try expect(RuntimeLocator.resolveWineURL(app) == binary, "Wine app bundle should resolve to its binary")
+    }
+
+    private static func testPreparedModernWineIsPreferredToLegacyWine() throws {
+        let managed = WindowsSteam()
+        guard managed.isReady else { return }
+        try expect(RuntimeLocator().locate().wineURL == managed.engineURL,
+                   "el Wine moderno preparado debe preferirse al GPTK 1.1 de Wine 7.7 que no puede cargar Unity IL2CPP")
+    }
+
+    private static func testCustomWineStillWins() throws {
+        let fixture = try TemporaryFixture()
+        let automatic = try fixture.makeExecutable(named: "automatic-wine")
+        let custom = try fixture.makeExecutable(named: "custom-wine")
+        let locator = RuntimeLocator(wineCandidates: [automatic])
+        try expect(locator.locate(customWineURL: custom).wineURL == custom,
+                   "la selección explícita de Wine debe conservarse")
     }
 }

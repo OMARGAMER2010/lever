@@ -15,6 +15,9 @@ enum EmulationTests {
         try testReadsTheArchitectureOfARealBinary()
         try testBuildsTheCoreDownloadAddress()
         try testWritesTheInputLinesRetroArchUnderstands()
+        try testNoProfilePutsTwoControlsOnOneKey()
+        try testEveryConsoleCanRemapTheStickItReallyHas()
+        try testTheTouchScreenAnswersToThePointer()
         try testTheDefaultLayoutIsTheOneEverybodyKnows()
         try testTheMostSpecificProfileWins()
         try testOnlyOffersTheButtonsTheConsoleHas()
@@ -161,6 +164,116 @@ enum EmulationTests {
     }
 
     // MARK: - Controles
+
+    /// Dos controles en la misma tecla es uno que no responde. La única pareja que se permite es la
+    /// cruceta con la palanca izquierda en su mismo sentido: eso se hace a propósito, para que la
+    /// misma disposición valga para un juego plano y para uno en tres dimensiones.
+    private static func testNoProfilePutsTwoControlsOnOneKey() throws {
+        let pareja: [RetroPadInput: RetroPadInput] = [
+            .up: .leftStickUp, .down: .leftStickDown, .left: .leftStickLeft, .right: .leftStickRight
+        ]
+        for perfil in ControlProfile.builtIn {
+            var porTecla: [String: [RetroPadInput]] = [:]
+            for (control, asignación) in perfil.keyboard {
+                guard case .key(let tecla) = asignación else { continue }
+                porTecla[tecla, default: []].append(control)
+            }
+            for (tecla, controles) in porTecla where controles.count > 1 {
+                let esLaParejaPermitida = controles.count == 2
+                    && controles.contains { pareja[$0] != nil && controles.contains(pareja[$0]!) }
+                try expect(esLaParejaPermitida,
+                           "«\(perfil.name)»: la tecla «\(tecla)» tiene \(controles.map(\.rawValue).sorted())")
+            }
+            // Y ningún control se queda sin tecla: un mando a medias no se puede usar.
+            let sinTecla = RetroPadInput.allCases.filter { perfil.keyboard[$0] == nil }
+            try expect(sinTecla.isEmpty, "«\(perfil.name)» deja sin asignar \(sinTecla.map(\.rawValue))")
+        }
+    }
+
+    /// La palanca del mando con el que se jugó de verdad tiene que poder remapearse. Si no está en
+    /// la lista, no sale una fila para ella y no hay forma de tocarla.
+    private static func testEveryConsoleCanRemapTheStickItReallyHas() throws {
+        for id in ["psx", "n64", "dreamcast", "psp", "3ds"] {
+            let controles = RetroPadInput.available(on: RetroPlatforms.platform(id: id))
+            try expect(controles.contains(.leftStickUp), "la \(id) tiene palanca y hay que poder cambiarla")
+        }
+        // Los botones C de la N64 son su palanca derecha; hay juegos que sin ellos no se pueden jugar.
+        try expect(RetroPadInput.available(on: RetroPlatforms.platform(id: "n64")).contains(.rightStickUp),
+                   "los botones C de la N64 tienen que estar")
+        // Y las que no tienen no enseñan filas de más.
+        for id in ["nes", "gb", "snes", "gba", "megadrive", "nds"] {
+            let controles = RetroPadInput.available(on: RetroPlatforms.platform(id: id))
+            try expect(!controles.contains(.leftStickUp), "la \(id) no tiene palanca: no se enseña")
+        }
+        // Las etiquetas dicen de qué palanca es cada sentido.
+        try expect(RetroPadInput.leftStick.allSatisfy { $0.symbol == "LS" }
+                   && RetroPadInput.rightStick.allSatisfy { $0.symbol == "RS" },
+                   "cada sentido tiene que decir su palanca")
+
+        // En la DS los cuatro de atrás no son gatillos, y hay que poder asignarlos y entenderlos.
+        let ds = RetroPlatforms.platform(id: "nds")
+        let controlesDS = RetroPadInput.available(on: ds)
+        for control: RetroPadInput in [.l2, .r2, .l3, .r3] {
+            try expect(controlesDS.contains(control), "la DS usa \(control.rawValue) para algo suyo")
+            try expect(control.consoleLabel(on: ds) != nil, "y tiene que decir para qué, no «\(control.symbol)»")
+        }
+        try expect(RetroPadInput.a.consoleLabel(on: ds) == nil, "lo que sí es un botón normal se llama igual")
+        try expect(RetroPadInput.r2.consoleLabel(on: RetroPlatforms.platform(id: "snes")) == nil,
+                   "y en otra consola R2 es R2")
+    }
+
+    /// La pantalla de abajo de la DS tiene que responder donde se pincha, no donde haya quedado un
+    /// cursor invisible. Eso no se decide en la configuración de RetroArch sino en una opción del
+    /// núcleo, y para poder fijarla hay que apagar antes las opciones por núcleo.
+    private static func testTheTouchScreenAnswersToThePointer() throws {
+        let fixture = try TemporaryFixture()
+        let datos = fixture.directoryURL
+        func configuración(_ id: String, pantallaCompleta: Bool = false) -> String {
+            RetroConfig.makeConfig(
+                profile: .standard, platform: RetroPlatforms.platform(id: id),
+                saves: datos, states: datos, systemFiles: datos, data: datos,
+                windowed: !pantallaCompleta)
+        }
+        let ds = configuración("nds")
+
+        // A pantalla completa RetroArch esconde el cursor y no hay ajuste que lo evite, así que
+        // apuntar a la pantalla de abajo es imposible. Una consola táctil va en ventana aunque se
+        // pida lo contrario; las demás hacen lo que se les diga.
+        let dsEntera = configuración("nds", pantallaCompleta: true)
+        try expect(dsEntera.contains("video_fullscreen = \"false\""), "la DS va en ventana aunque se pida completa")
+        try expect(dsEntera.contains("video_windowed_fullscreen = \"false\""), "y sin la ventana sin bordes")
+        try expect(configuración("nes", pantallaCompleta: true).contains("video_fullscreen = \"true\""),
+                   "una consola sin táctil sí va a pantalla completa")
+        try expect(ds.contains("global_core_options = \"true\""),
+                   "sin esto manda el archivo por núcleo y lo que escriba Lever se ignora")
+        try expect(ds.contains("core_options_path = \"\(RetroConfig.coreOptionsURL(data: datos).path)\""),
+                   "y hay que decirle qué archivo es")
+        try expect(ds.contains("input_player1_mouse_index"), "el puntero es el dedo")
+        // Ponía `input_libretro_device_p1 = 1` creyendo que encendía el táctil. melonDS declara un
+        // solo tipo de mando y ni mira ese valor: no hacía nada.
+        try expect(!ds.contains("input_libretro_device_p1"), "y no se escribe lo que no sirve")
+        try expect(!configuración("nes").contains("core_options_path"),
+                   "una consola sin táctil no necesita que le toquen las opciones del núcleo")
+
+        // Con el puntero haciendo de lápiz, el botón derecho queda libre: cambia las pantallas.
+        try expect(ds.contains("input_player1_r2_mbtn = \"2\""), "el botón derecho cambia las pantallas")
+        try expect(!configuración("snes").contains("_mbtn = \"2\""), "en una consola sin lápiz el ratón no hace nada")
+
+        // Se escribe la opción que falta, y solo esa.
+        let escribió = try RetroConfig.mergeCoreOptions(for: RetroPlatforms.platform(id: "nds"), data: datos)
+        let opciones = RetroConfig.coreOptionsURL(data: datos)
+        let escrito = try String(contentsOf: opciones, encoding: .utf8)
+        try expect(escribió, "la primera vez hay que escribirla")
+        try expect(escrito.contains("melonds_touch_mode = \"Touch\""),
+                   "el modo de puntero es el que toca donde se pincha: \(escrito)")
+
+        // Y si la persona la cambió desde el menú de RetroArch, no se le pisa.
+        try "melonds_touch_mode = \"Joystick\"\n".write(to: opciones, atomically: true, encoding: .utf8)
+        let repitió = try RetroConfig.mergeCoreOptions(for: RetroPlatforms.platform(id: "nds"), data: datos)
+        let final = try String(contentsOf: opciones, encoding: .utf8)
+        try expect(!repitió && final.contains("Joystick") && !final.contains("Touch"),
+                   "lo que eligió la persona manda: \(final)")
+    }
 
     private static func testWritesTheInputLinesRetroArchUnderstands() throws {
         var perfil = ControlProfile.standard

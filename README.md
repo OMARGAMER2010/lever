@@ -6,6 +6,8 @@
 console games, and turn some of them into native Mac apps.**
 No accounts, no telemetry, and nothing of yours leaves your Mac.
 
+By [OMARGAMER2010](https://github.com/OMARGAMER2010).
+
 **English** · [Español](README.es.md)
 
 </div>
@@ -48,6 +50,7 @@ are distributed here. [Capture details](docs/media/README.md).
 | | |
 |---|---|
 | **Programs** | Runs Windows `.exe` and `.msi` files through Wine, in its own environment that doesn't touch anything else on your Mac. |
+| **Game folders** | Drop an unpacked folder: Lever finds the likely main program, sets component installers aside, and lists other candidates so you can choose. |
 | **Native games** | Some `.exe` files are only a wrapper: in Godot the game lives in the `.pck` next to it, in Ren'Py it's Python scripts, in LÖVE it's glued to the end of the `.exe` itself. Those files work on a Mac too. Lever pairs them with the official macOS runtime and hands you a native `.app` — no Wine, no Rosetta. |
 | **Steam games** | A Windows Steam library in its own environment, apart from the rest. You install from Steam like on any PC and your games show up in a list with a play button. Direct3D is translated to Metal with D3DMetal. |
 | **Archives** | Extracts `.rar`, `.zip`, `.7z`, `.tar`, `.iso`, `.cab` and friends. Handles passwords and never deletes the original. |
@@ -56,7 +59,7 @@ are distributed here. [Capture details](docs/media/README.md).
 | **Hybrid console** | `.nsp`, `.xci`, `.nsz` and `.xcz` packages get opened and read: which game is inside, which updates, which add-ons, with version and size. No libretro core emulates that console, so you bring the emulator; Lever finds it and launches it. Compressed packages are rebuilt before playing. |
 | **PlayStation family** | PS2, PS3, PS4 and Vita, each with its own emulator. Lever reads the `PARAM.SFO` inside — which ships unencrypted — to tell you the real title, the version, and whether that thing is the game, a patch or a DLC. It goes into disc images, `.pkg` and `.vpk` files, and accepts the game **folder**, which is how PS3 and PS4 games come. |
 
-Drag a file onto the window — or onto the app's Dock icon — and Lever lands on the right tab by
+Drag a file or folder onto the window — or onto the app's Dock icon — and Lever lands on the right tab by
 itself. "Open with" from Finder works too.
 
 Whatever you opened before stays in **Recently opened**, with its icon and size, so you don't have
@@ -114,6 +117,15 @@ The app opens fine without all of it, and tells you what's missing when it needs
 
 Drag the file onto the window and that's it. The rest is in case you want to know what to expect.
 
+**An unpacked folder.** Drop it into Lever or click the Programs drop area to browse. Lever looks
+inside for Windows programs, Mac or Android apps, console games, and archives. When one Windows game
+is the clear choice, Lever selects it so you can click **Run**; the list lets you choose a different
+executable. Installers in `_Redist` are shown separately and are never run automatically. Programs
+selected from folders start in Safe Mode, which copies the game and its adjacent files into an
+isolated workspace before launching them. Your original folder stays untouched.
+When Lever's D3DMetal game engine is already prepared, these programs use it as well, with their
+own Windows environment. This avoids recent Unity games failing on an older Wine installation.
+
 **A Windows program.** Drop the `.exe` or `.msi` and hit **Run**. The first time, Wine sets up its
 environment and takes a moment; after that it doesn't.
 
@@ -132,6 +144,11 @@ asks for one. The original is never touched.
 **An `.apk`.** Plug in a phone over USB, or let Lever set up the emulator. Hit **Run** and it does
 the whole chain: starts what it needs, waits, installs, opens the app. `.xapk`, `.apks` and `.aab`
 come apart on their own and install in pieces.
+
+**Full screen.** With the emulator open, a Lever button with two arrows shows up right under its
+side toolbar. Press it and the game fills the Mac's screen: upright even if the emulator is in
+portrait, and without Android's navigation bar. The mouse acts as a finger and the keyboard goes to
+the game. ⌘W gets you out. The same button is in the Android tab, next to **Run**.
 
 **When there's a new version.** Opening Lever shows a notice at the top with two answers. **Install
 now** fetches the new code, builds it and replaces the app, in a Terminal window so you can watch;
@@ -178,6 +195,13 @@ and that file is yours to provide: Lever doesn't ship it and won't go looking fo
 **Android.** The emulator is real Android running on arm64, native on your chip. 2D games and normal
 apps are fine; heavy 3D games and anything with anti-cheat will struggle or not start. Installing
 outside Google Play skips its checks, so only use files from a source you trust.
+
+**Full screen doesn't move the emulator window.** That would need the Accessibility permission,
+which macOS takes back every time Lever updates. The emulator opens a local control channel on its
+own —the one Android Studio uses— and leaves the key in a file: Lever asks it for the picture there
+and sends back the touches and keys. It asks Android once a second which way the screen is turned
+and which bars it shows, to straighten the picture and trim them. The emulator itself is left
+alone: its window, its navigation bar and its rotate button stay as they were.
 
 ## Development
 

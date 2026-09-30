@@ -6,6 +6,8 @@
 Steam y de consola, y convierte algunos en apps nativas de Mac.**
 Sin cuentas, sin telemetría, y nada tuyo sale de tu Mac.
 
+Por [OMARGAMER2010](https://github.com/OMARGAMER2010).
+
 [English](README.md) · **Español**
 
 </div>
@@ -48,6 +50,7 @@ se distribuyen juegos, claves ni firmware. [Detalles de las capturas](docs/media
 | | |
 |---|---|
 | **Programas** | Ejecuta `.exe` y `.msi` de Windows a través de Wine, en un entorno propio que no toca nada más de tu Mac. |
+| **Carpetas de juegos** | Arrastra una carpeta ya descomprimida: busca el archivo principal, aparta los instaladores de componentes y muestra los demás candidatos. Puedes elegir otro antes de jugar. |
 | **Juegos nativos** | Hay `.exe` que solo son un envoltorio: en Godot el juego vive en el `.pck` de al lado, en Ren'Py son guiones de Python y en LÖVE va pegado al final del propio `.exe`. Esos archivos sirven igual en Mac. La app los junta con el motor oficial de macOS y te deja un `.app` nativo, sin Wine y sin Rosetta. |
 | **Juegos de Steam** | Una biblioteca de Steam para Windows en su propio entorno, aparte del resto. Instalas desde Steam como en cualquier PC y los juegos salen en una lista con su botón de jugar. Direct3D se traduce a Metal con D3DMetal. |
 | **Comprimidos** | Extrae `.rar`, `.zip`, `.7z`, `.tar`, `.iso`, `.cab` y compañía. Admite contraseñas y nunca borra el original. |
@@ -56,7 +59,7 @@ se distribuyen juegos, claves ni firmware. [Detalles de las capturas](docs/media
 | **Consola híbrida** | Los paquetes `.nsp`, `.xci`, `.nsz` y `.xcz` se abren y se leen: qué juego traen, qué actualizaciones y qué contenido añadido, con su versión y su tamaño. Esa consola **no** la emula un núcleo de libretro, así que el emulador lo pones tú; la app lo encuentra y lanza. Los paquetes comprimidos se rehacen antes de jugar. |
 | **Familia PlayStation** | PS2, PS3, PS4 y Vita, cada una con su emulador aparte. Lee el `PARAM.SFO` que llevan dentro —y que va **sin cifrar**— para decirte el título de verdad, la versión y si eso es el juego, un parche o un DLC. Entra en las imágenes de disco, en los `.pkg` y en los `.vpk`, y acepta la **carpeta** del juego, que es como vienen los de PS3 y PS4. |
 
-Arrastra un archivo a la ventana —o al icono de la app en el Dock— y la app se coloca sola en la
+Arrastra un archivo o una carpeta a la ventana —o al icono de la app en el Dock— y la app se coloca sola en la
 pestaña que toca. También funciona con «Abrir con» desde el Finder.
 
 Lo que hayas abierto antes queda en **«Abiertos hace poco»**, con su icono y su tamaño, para no
@@ -118,6 +121,15 @@ La app arranca igual sin todo instalado, y te dice qué le falta cuando lo neces
 Arrastra el archivo a la ventana y ya está: la app se coloca sola en la pestaña que toca. Lo de
 abajo es por si quieres saber qué esperar de cada cosa.
 
+**Una carpeta ya descomprimida.** Suéltala en Lever o pulsa la zona de Programas para elegirla.
+Lever busca programas de Windows, apps de Mac o Android, juegos de consola y comprimidos dentro.
+Si encuentra un juego de Windows claro, lo deja elegido para que pulses **Ejecutar**; puedes cambiar
+el ejecutable en la lista. Los instaladores de `_Redist` se muestran aparte y no se ejecutan por
+su cuenta. Los programas elegidos desde una carpeta empiezan en Safe Mode: el juego y los archivos
+que lo acompañan se copian a un espacio aislado antes de abrirlos. El original queda intacto.
+Si Lever ya tiene preparado el motor de juegos con D3DMetal, lo usa también para estos programas,
+con un entorno de Windows propio. Así evita los fallos de juegos Unity recientes en Wine antiguo.
+
 **Un programa de Windows.** Suelta el `.exe` o el `.msi` y pulsa **Ejecutar**. La primera vez Wine
 monta su entorno y tarda un poco; después ya no.
 
@@ -136,6 +148,11 @@ original no se toca nunca.
 **Un `.apk`.** Enchufa un móvil por USB, o deja que la app monte el emulador. Pulsa **Ejecutar** y
 hace la cadena entera: arranca lo que haga falta, espera, instala y abre la app. Los `.xapk`,
 `.apks` y `.aab` se desmontan solos y se instalan por trozos.
+
+**A pantalla completa.** Con el emulador abierto, debajo de su menú lateral aparece un botón de
+Lever con dos flechas. Púlsalo y el juego ocupa la pantalla del Mac: derecho aunque el emulador
+esté en vertical, y sin la barra de navegación de Android. El ratón hace de dedo y el teclado va
+al juego. Para salir, ⌘W. El mismo botón está en la pestaña Android, junto a **Ejecutar**.
 
 **Cuando hay versión nueva.** Al abrir Lever aparece un aviso arriba, con dos respuestas. **Instalar
 ahora** trae el código nuevo, lo compila y reemplaza la app, en una ventana de Terminal para que veas
@@ -333,6 +350,13 @@ a la vez en el disco, para nada, es la diferencia entre que quepa y que no.
 **`adb install` no siempre falla con un código de error.** Hay versiones que terminan con código 0
 y escriben «Failure [...]» por la salida. La app lee el texto, no solo el código, y traduce cada
 motivo conocido a una frase que dice qué hacer.
+
+**La pantalla completa no mueve la ventana del emulador.** Eso pediría el permiso de
+Accesibilidad, que macOS retira en cada actualización de Lever. El emulador abre por su cuenta un
+canal de control local —el mismo que usa Android Studio— y deja la llave en un archivo: Lever le
+pide por ahí la imagen y le devuelve los toques y las teclas. A Android le pregunta cada segundo
+cómo tiene girada la pantalla y qué barras enseña, para enderezar la imagen y recortarlas. El
+emulador no se toca: su ventana, su barra de navegación y su botón de girar siguen como estaban.
 
 **De un móvil solo se toca lo que le pidas.** La app instala, abre y desinstala el paquete que le
 has dado, y nada más. «Desinstalar» solo aparece después de una instalación que salió bien.

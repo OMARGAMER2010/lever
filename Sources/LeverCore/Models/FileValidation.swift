@@ -14,11 +14,15 @@ public enum SupportedFileKind: String, Codable, CaseIterable, Sendable {
     case apk
     /// Juegos de consola: ROMs e imágenes de disco.
     case rom
+    /// Carpetas con juegos o aplicaciones que Lever puede descubrir.
+    case folder
 
     public var extensions: [String] {
         switch self {
         case .exe:
             return ["exe", "msi"]
+        case .folder:
+            return []
         case .apk:
             // Los cuatro últimos no se instalan tal cual: hay que abrirlos y decidir qué trozos
             // le tocan al aparato. Se aceptan porque Lever ya sabe hacerlo.
@@ -51,6 +55,7 @@ public enum SupportedFileKind: String, Codable, CaseIterable, Sendable {
         case .rar: return "archivo comprimido (.rar, .zip, .7z…)"
         case .apk: return "aplicación de Android (.apk, .xapk, .apks, .aab)"
         case .rom: return "juego de consola (.nes, .sfc, .gba, .nds, .xci, .nsp…)"
+        case .folder: return "carpeta con programas o juegos"
         }
     }
 }

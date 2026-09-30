@@ -50,7 +50,9 @@ public enum RecentFileError: Error, Equatable, Sendable {
 /// aparecería otro nombre.
 @MainActor
 public enum RecentFiles {
-    private static let defaults = UserDefaults.standard
+    // Use the same store as the rest of the app. Tests swap it for a disposable domain;
+    // writing straight to standard defaults would leave their temporary files in the user's list.
+    private static var defaults: UserDefaults { Preferences.defaults }
     private static let key = "recentFiles"
     /// Por tipo, no en total: si no, abrir diez comprimidos seguidos borraría los programas.
     private static let limitPerKind = 12

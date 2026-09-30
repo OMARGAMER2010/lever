@@ -17,21 +17,21 @@ enum RecentFilesTests {
         }
     }
 
-    /// Las pruebas escriben en los mismos ajustes que la app. Se guarda lo que hubiera y se
-    /// devuelve al terminar: perder la lista del usuario por ejecutar las pruebas sería absurdo.
+    /// Se conserva cualquier entrada que otra prueba haya dejado en el dominio desechable.
     private static func withCleanStore(_ body: () throws -> Void) throws {
-        let defaults = UserDefaults.standard
-        let saved = defaults.data(forKey: "recentFiles")
-        defaults.removeObject(forKey: "recentFiles")
+        let saved = RecentFiles.load()
+        reset()
         defer {
-            if let saved { defaults.set(saved, forKey: "recentFiles") }
-            else { defaults.removeObject(forKey: "recentFiles") }
+            reset()
+            for file in saved {
+                RecentFiles.remember(file.url, kind: file.kind, now: file.lastOpened)
+            }
         }
         try body()
     }
 
     private static func reset() {
-        UserDefaults.standard.removeObject(forKey: "recentFiles")
+        for kind in SupportedFileKind.allCases { RecentFiles.clear(kind: kind) }
     }
 
     // MARK: - Lista

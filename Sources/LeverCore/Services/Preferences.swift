@@ -3,7 +3,26 @@ import Foundation
 /// Ajustes que sobreviven entre sesiones. Nada sensible: solo rutas y preferencias de uso.
 @MainActor
 public enum Preferences {
-    private static let defaults = UserDefaults.standard
+    /// Dónde se guardan.
+    ///
+    /// `UserDefaults.standard` no es un sitio fijo: resuelve al dominio de quien ejecuta. El mismo
+    /// binario de pruebas lanzado desde `.build` no tiene identificador de bundle y ve los valores
+    /// por defecto, pero lanzado desde dentro de `Lever.app` ve —y cambia— los ajustes de verdad de
+    /// la persona. Una prueba que dé por hecho un valor pasa en un sitio y falla en el otro, y por
+    /// el camino te reescribe la configuración. Por eso el almacén se puede cambiar.
+    private(set) static var defaults = UserDefaults.standard
+
+    /// Manda los ajustes a un dominio desechable. Lo llaman las pruebas antes de nada: así ninguna
+    /// lee ni escribe los de la persona, corran desde donde corran.
+    public static func useDisposableStore(named name: String = "lever.pruebas." + UUID().uuidString) -> () -> Void {
+        let previous = defaults
+        guard let store = UserDefaults(suiteName: name) else { return {} }
+        defaults = store
+        return {
+            store.removePersistentDomain(forName: name)
+            defaults = previous
+        }
+    }
 
     private enum Key {
         static let overwritePolicy = "overwritePolicy"

@@ -6,6 +6,8 @@ struct ContentView: View {
     @State private var mode: WorkMode = .archive
     @State private var showsActivity = false
     @State private var showsSwitchControls = false
+    @State private var confirmsDeleteAllSafe = false
+    @State private var safeSizeText = ""
 
     private var s: Strings { model.strings }
 
@@ -50,6 +52,7 @@ struct ContentView: View {
                     switch mode {
                     case .program: ProgramPane(model: model)
                     case .archive: ArchivePane(model: model)
+                    case .safeRuns: SafeRunsPane(model: model)
                     case .android: AndroidPane(model: model)
                     case .rom: EmulationPane(model: model)
                     }
@@ -114,6 +117,15 @@ struct ContentView: View {
                     Button(s[.menuOpenWindowsFolder]) {
                         FileActions.openInFinder(model.windowsFolderURL)
                     }
+                    Divider()
+                    Button(s[.menuSafeModeFolder], action: model.openSafeModeFolder)
+                    Button(s[.menuSafeModeDeleteAll]) {
+                        Task {
+                            safeSizeText = await model.safeWorkspaceSize(all: true)
+                            confirmsDeleteAllSafe = true
+                        }
+                    }
+                    .disabled(model.isBusy)
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
@@ -125,6 +137,12 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $showsSwitchControls) { SwitchControlSheet(model: model) }
+        .confirmationDialog(s[.safeDeleteAllConfirmTitle], isPresented: $confirmsDeleteAllSafe) {
+            Button(s[.safeDeleteConfirm], role: .destructive, action: model.deleteAllSafeWorkspaces)
+            Button(s[.cancel], role: .cancel) {}
+        } message: {
+            Text(s(.safeDeleteAllConfirmBody, safeSizeText))
+        }
         .onAppear {
             if model.log.isEmpty { model.refreshTools() }
         }

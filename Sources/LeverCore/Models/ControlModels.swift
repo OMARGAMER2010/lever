@@ -69,8 +69,11 @@ public enum RetroPadInput: String, CaseIterable, Sendable, Codable, Identifiable
         case .r3: return "R3"
         case .start: return "Start"
         case .select: return "Select"
-        case .leftStickUp, .leftStickDown, .leftStickLeft, .rightStickUp: return "LS"
-        case .leftStickRight, .rightStickDown, .rightStickLeft, .rightStickRight: return "RS"
+        // Estaban partidos cuatro y cuatro por el orden en que están escritos, no por la palanca a
+        // la que pertenecen: «izquierda de la palanca izquierda» decía RS y «arriba de la derecha»
+        // decía LS. Quien remapeaba asignaba la otra.
+        case .leftStickUp, .leftStickDown, .leftStickLeft, .leftStickRight: return "LS"
+        case .rightStickUp, .rightStickDown, .rightStickLeft, .rightStickRight: return "RS"
         }
     }
 
@@ -83,6 +86,25 @@ public enum RetroPadInput: String, CaseIterable, Sendable, Codable, Identifiable
     ///
     /// Enseñar dieciséis botones para una Game Boy, que tiene cuatro y dos, es enseñar catorce
     /// casillas que no hacen nada. Cada máquina tiene los suyos.
+    /// Cómo se llama este control **en esta consola**, cuando ahí no es lo que su nombre dice.
+    ///
+    /// El mando que dibuja Lever es el RetroPad, que tiene gatillos; la DS no. Su núcleo usa esos
+    /// cuatro sitios para otras cosas, así que enseñarlos como «L2» o «R3» sería enseñar cuatro
+    /// casillas que no se entienden. `nil` significa «el nombre de siempre».
+    public func consoleLabel(on platform: RetroPlatform?) -> TextKey? {
+        guard platform?.id == "nds" else { return nil }
+        switch self {
+        case .l2: return .controlDSMicrophone
+        case .r2: return .controlDSSwapScreens
+        case .l3: return .controlDSCloseLid
+        case .r3: return .controlDSStylusStick
+        default: return nil
+        }
+    }
+
+    public static let leftStick: [RetroPadInput] = [.leftStickUp, .leftStickDown, .leftStickLeft, .leftStickRight]
+    public static let rightStick: [RetroPadInput] = [.rightStickUp, .rightStickDown, .rightStickLeft, .rightStickRight]
+
     public static func available(on platform: RetroPlatform?) -> [RetroPadInput] {
         guard let platform else { return onDiagram }
         switch platform.id {
@@ -91,8 +113,25 @@ public enum RetroPadInput: String, CaseIterable, Sendable, Codable, Identifiable
         case "gba": return [.up, .down, .left, .right, .a, .b, .l, .r, .start, .select]
         case "snes": return [.up, .down, .left, .right, .a, .b, .x, .y, .l, .r, .start, .select]
         case "megadrive": return [.up, .down, .left, .right, .a, .b, .x, .y, .l, .r, .start]
-        case "n64": return [.up, .down, .left, .right, .a, .b, .x, .y, .l, .r, .l2, .start,
-                            .leftStickUp, .leftStickDown, .leftStickLeft, .leftStickRight]
+        // Los botones C de la N64 son la palanca derecha: así los mapea su núcleo, y sin ellos en
+        // la lista no había forma de tocarlos —y hay juegos que no se pueden jugar sin las C.
+        case "n64": return [.up, .down, .left, .right, .a, .b, .l, .r, .l2, .start]
+            + leftStick + rightStick
+        // La palanca del mando con el que se jugó de verdad. Antes caían todas en la lista genérica,
+        // que no la trae: en la PlayStation, la Dreamcast, la PSP y la 3DS no se podía remapear.
+        case "psx": return onDiagram + leftStick + rightStick
+        case "dreamcast": return [.up, .down, .left, .right, .a, .b, .x, .y, .l2, .r2, .start] + leftStick
+        case "psp": return [.up, .down, .left, .right, .a, .b, .x, .y, .l, .r, .start, .select] + leftStick
+        // La de abajo se toca con el puntero, no con un botón; la 3DS además trae deslizador.
+        //
+        // Los cuatro de atrás no son gatillos en la DS: su núcleo los usa para soplar al micrófono
+        // (L2), cambiar las pantallas de sitio (R2), cerrar la tapa (L3) y mover el lápiz con la
+        // palanca (R3). Sin ellos en la lista no había forma de asignarlos, y hay juegos que piden
+        // soplar o cerrar la tapa para pasar de sitio.
+        case "nds": return [.up, .down, .left, .right, .a, .b, .x, .y, .l, .r, .start, .select,
+                            .l2, .r2, .l3, .r3]
+        case "3ds": return [.up, .down, .left, .right, .a, .b, .x, .y, .l, .r, .l2, .r2, .start, .select]
+            + leftStick + rightStick
         default: return onDiagram
         }
     }
@@ -188,13 +227,28 @@ public struct ControlProfile: Equatable, Sendable, Codable, Identifiable {
 
     /// La otra disposición que existe de verdad: WASD para moverse, que es lo que espera quien
     /// viene de jugar en PC.
+    ///
+    /// Antes se escribía encima de la de arriba solo a medias y quedaban cinco teclas con dos
+    /// controles cada una: `i`, `j`, `k` y `l` eran botón **y** palanca derecha a la vez, y `d`
+    /// movía y pulsaba L3. Dos controles en la misma tecla es uno que no responde.
+    ///
+    /// Ahora se escribe entera. Al mover el movimiento a WASD, los cursores quedan libres y son el
+    /// sitio natural para la palanca derecha —la de mirar—, que es justo lo que hace falta en las
+    /// consolas de tres dimensiones. WASD lleva la cruceta y la palanca izquierda a la vez: es lo
+    /// que hace que la misma disposición valga para un juego plano y para uno en tres dimensiones.
     public static let wasd = ControlProfile(
         id: "wasd", name: "WASD",
-        keyboard: defaultKeyboard.merging([
+        keyboard: [
             .up: .key("w"), .down: .key("s"), .left: .key("a"), .right: .key("d"),
+            .leftStickUp: .key("w"), .leftStickDown: .key("s"),
+            .leftStickLeft: .key("a"), .leftStickRight: .key("d"),
+            .rightStickUp: .key("up"), .rightStickDown: .key("down"),
+            .rightStickLeft: .key("left"), .rightStickRight: .key("right"),
             .a: .key("l"), .b: .key("k"), .x: .key("i"), .y: .key("j"),
-            .l: .key("u"), .r: .key("o")
-        ]) { _, nuevo in nuevo }
+            .l: .key("u"), .r: .key("o"), .l2: .key("e"), .r2: .key("r"),
+            .l3: .key("c"), .r3: .key("v"),
+            .start: .key("enter"), .select: .key("rshift")
+        ]
     )
 
     public static let builtIn: [ControlProfile] = [standard, wasd]

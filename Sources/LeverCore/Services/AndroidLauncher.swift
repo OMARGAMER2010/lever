@@ -196,6 +196,23 @@ public enum AndroidLauncher {
         )
     }
 
+    /// Lo que la pantalla completa necesita saber de Android, en una sola ida y vuelta: cuánto ha
+    /// girado su pantalla, qué app está delante, qué barras del sistema se ven y qué marco tiene
+    /// cada ventana. `dumpsys` es enorme, así que se filtra ya dentro del aparato: la respuesta
+    /// cabe en unas pocas líneas y llega en unos 60 ms.
+    public static func screenStateCommand(adb: URL, serial: String) -> ProcessCommand {
+        ProcessCommand(
+            executableURL: adb,
+            arguments: [
+                "-s", serial, "shell",
+                "dumpsys window displays | grep -E 'mFocusedApp=|mCurrentRotation=|InsetsSource ';"
+                    + "dumpsys window windows | grep -E 'Window #|Frames:'"
+            ],
+            currentDirectoryURL: nil,
+            environment: environment()
+        )
+    }
+
     /// Espera a que el aparato termine de arrancar. Un emulador aparece en `adb devices` mucho
     /// antes de poder instalar nada: `sys.boot_completed` es la señal de que ya está listo.
     public static func waitForBootCommand(adb: URL, serial: String) -> ProcessCommand {

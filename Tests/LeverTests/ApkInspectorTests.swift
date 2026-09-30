@@ -441,12 +441,21 @@ enum ApkInspectorTests {
             body += le16(8) + Data([0, attribute.type]) + le32(attribute.data)
         }
 
-        return le16(0x0102) + le16(16) + le32(UInt32(36 + body.count))
-            + le32(1) + le32(0xFFFF_FFFF)
-            + le32(UInt32(bitPattern: -1)) + le32(UInt32(bitPattern: name))
-            + le16(20) + le16(20) + le16(UInt16(attributes.count))
-            + le16(0) + le16(0) + le16(0)
-            + body
+        var element = le16(0x0102)
+        element += le16(16)
+        element += le32(UInt32(36 + body.count))
+        element += le32(1)
+        element += le32(0xFFFF_FFFF)
+        element += le32(UInt32(bitPattern: -1))
+        element += le32(UInt32(bitPattern: name))
+        element += le16(20)
+        element += le16(20)
+        element += le16(UInt16(attributes.count))
+        element += le16(0)
+        element += le16(0)
+        element += le16(0)
+        element += body
+        return element
     }
 
     /// Etiqueta de cierre: la misma cabecera de nodo que la de apertura, con espacio de nombres

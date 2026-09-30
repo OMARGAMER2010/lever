@@ -138,17 +138,23 @@ public struct ProcessCommand: Equatable, Sendable {
     public let currentDirectoryURL: URL?
     /// Variables que se añaden al entorno heredado. `nil` significa heredarlo tal cual.
     public let environment: [String: String]?
+    /// `false` para arrancar solo con `environment`, sin nada de Lever. Lo usa Safe Mode: el
+    /// entorno de una app abierta desde la Terminal puede llevar tokens o el `SSH_AUTH_SOCK`, y un
+    /// proceso aislado no tiene por qué verlos.
+    public let inheritsEnvironment: Bool
 
     public init(
         executableURL: URL,
         arguments: [String],
         currentDirectoryURL: URL?,
-        environment: [String: String]? = nil
+        environment: [String: String]? = nil,
+        inheritsEnvironment: Bool = true
     ) {
         self.executableURL = executableURL
         self.arguments = arguments
         self.currentDirectoryURL = currentDirectoryURL
         self.environment = environment
+        self.inheritsEnvironment = inheritsEnvironment
     }
 
     /// Representación legible, apta para copiar y pegar en la Terminal.
@@ -163,13 +169,17 @@ public struct ProcessResult: Equatable, Sendable {
     public let exitCode: Int32
     public let output: String
     public let wasCancelled: Bool
+    /// `true` cuando lo terminó una señal; entonces `exitCode` es el número de la señal. Hace falta
+    /// para distinguir un `SIGXFSZ` —el límite de tamaño por archivo— de un código de salida 25.
+    public let endedBySignal: Bool
 
-    public var succeeded: Bool { exitCode == 0 && !wasCancelled }
+    public var succeeded: Bool { exitCode == 0 && !wasCancelled && !endedBySignal }
 
-    public init(exitCode: Int32, output: String, wasCancelled: Bool = false) {
+    public init(exitCode: Int32, output: String, wasCancelled: Bool = false, endedBySignal: Bool = false) {
         self.exitCode = exitCode
         self.output = output
         self.wasCancelled = wasCancelled
+        self.endedBySignal = endedBySignal
     }
 }
 

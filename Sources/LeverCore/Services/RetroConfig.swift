@@ -62,14 +62,19 @@ public enum RetroConfig {
         windowed: Bool = true,
         resumeSessions: Bool = true
     ) -> String {
+        // **Una consola táctil va en ventana, aunque se pida pantalla completa.** RetroArch esconde
+        // el cursor siempre que va a pantalla completa —`cocoa_show_mouse(data, !fullscreen)` en su
+        // contexto de macOS, sin ajuste que lo evite—, y sin ver el puntero no hay forma de apuntar
+        // a la pantalla de abajo: el clic llega, pero a ciegas. En ventana el cursor se ve.
+        let enVentana = windowed || platform?.hasTouch == true
         var líneas: [String] = [
             "# Configuración escrita por Lever. No la edites a mano: se sobrescribe al lanzar.",
-            línea("video_fullscreen", valor: windowed ? "false" : "true"),
+            línea("video_fullscreen", valor: enVentana ? "false" : "true"),
             // **Pantalla completa sin cambiar el modo del monitor.** La otra forma —cambiar la
             // resolución de verdad— deja el escritorio y las demás ventanas reordenadas al salir,
             // y si el emulador se cierra mal el Mac se queda en la resolución del juego. Una
             // ventana sin bordes del tamaño de la pantalla se ve igual y no toca nada.
-            línea("video_windowed_fullscreen", valor: windowed ? "false" : "true"),
+            línea("video_windowed_fullscreen", valor: enVentana ? "false" : "true"),
             línea("savefile_directory", valor: saves.path),
             línea("savestate_directory", valor: states.path),
             // Donde el núcleo busca las BIOS que no se pueden descargar.
@@ -138,15 +143,90 @@ public enum RetroConfig {
         líneas.append(línea("savestate_auto_save", valor: resumeSessions ? "true" : "false"))
         líneas.append(línea("savestate_auto_load", valor: resumeSessions ? "true" : "false"))
 
-        // Una consola de dos pantallas se maneja con el dedo, y en un Mac el dedo es el ratón.
-        // Sin decírselo al núcleo, la pantalla táctil no responde a nada.
+        // Una consola de dos pantallas se maneja con el dedo, y en un Mac el dedo es el puntero.
+        //
+        // Lo que decide si el dedo funciona **no está en este archivo**: es una opción del núcleo, y
+        // RetroArch las guarda aparte. Mientras exista un archivo por núcleo —y existe en cuanto se
+        // abre el menú una vez— manda ese y `core_options_path` se ignora, así que hay que apagar
+        // las opciones por núcleo para que Lever pueda fijar la suya.
+        //
+        // Antes aquí se escribía `input_libretro_device_p1 = 1` creyendo que eso encendía el táctil.
+        // No hace nada: melonDS declara un solo tipo de mando —«Nintendo DS», que es JOYPAD, o sea
+        // el 1— y su `retro_set_controller_port_device` solo escribe una línea en el registro.
         if platform?.hasTouch == true {
-            líneas.append(línea("input_libretro_device_p1", valor: "1"))
             líneas.append(línea("input_player1_mouse_index", valor: "0"))
+            líneas.append(línea("global_core_options", valor: "true"))
+            líneas.append(línea("core_options_path", valor: coreOptionsURL(data: data).path))
         }
 
         líneas += inputLines(for: profile)
+        líneas += mouseLines(for: platform)
         return líneas.joined(separator: "\n") + "\n"
+    }
+
+    /// Lo que hace el ratón además de ser el lápiz.
+    ///
+    /// En una consola táctil el puntero ya toca la pantalla, así que el botón derecho queda libre
+    /// —la mano ya está ahí— y se le da lo que más se usa con el lápiz puesto: cambiar las
+    /// pantallas de sitio. Va por núcleo porque el botón que hace eso es cosa suya: en melonDS es
+    /// R2, y en el de la 3DS ese mismo R2 es un gatillo de verdad.
+    ///
+    /// Los números son los de RetroArch: 1 el izquierdo, 2 el derecho, 3 el de la rueda.
+    public static let mouseButtons: [String: [RetroPadInput: Int]] = [
+        "melonds": [.r2: 2]
+    ]
+
+    static func mouseLines(for platform: RetroPlatform?, player: Int = 1) -> [String] {
+        guard let platform, let botones = mouseButtons[platform.core] else { return [] }
+        return botones
+            .sorted { $0.key.rawValue < $1.key.rawValue }
+            .map { línea("input_player\(player)_\($0.key.retroArchName)_mbtn", valor: String($0.value)) }
+    }
+
+    // MARK: - Opciones de los núcleos
+
+    /// Donde Lever guarda las opciones de los núcleos, junto al resto de lo suyo.
+    public static func coreOptionsURL(data: URL) -> URL {
+        data.appendingPathComponent("opciones-nucleo.cfg")
+    }
+
+    /// Lo que hace que la pantalla de abajo responda al puntero, por núcleo.
+    ///
+    /// Los dos núcleos de DS vienen de fábrica en modo «ratón», que lee **desplazamientos**: llevan
+    /// un cursor propio y tocan donde esté ese cursor, no donde apuntas. En un Mac, donde el cursor
+    /// del sistema está escondido mientras se juega, eso se ve como que hacer clic sobre la pantalla
+    /// no hace nada. El modo de puntero lee la posición **absoluta**, que es lo que espera
+    /// cualquiera: se toca donde se pincha.
+    public static let touchOptions: [String: [String: String]] = [
+        "melonds": ["melonds_touch_mode": "Touch"],
+        "desmume": ["desmume_pointer_type": "touch"]
+    ]
+
+    /// Deja escritas las opciones que Lever necesita **sin pisar** las que haya elegido la persona:
+    /// solo añade las claves que falten. Así se puede cambiar el modo desde el menú de RetroArch y
+    /// la siguiente partida lo respeta. Devuelve si hizo falta escribir.
+    @discardableResult
+    public static func mergeCoreOptions(
+        for platform: RetroPlatform?,
+        data: URL,
+        fileManager: FileManager = .default
+    ) throws -> Bool {
+        guard let platform, platform.hasTouch, let deseadas = touchOptions[platform.core] else { return false }
+        let url = coreOptionsURL(data: data)
+        var texto = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+        let presentes = Set(texto.split(whereSeparator: \.isNewline).compactMap {
+            $0.split(separator: "=", maxSplits: 1).first?.trimmingCharacters(in: .whitespaces)
+        })
+        var escribió = false
+        for (clave, valor) in deseadas.sorted(by: { $0.key < $1.key }) where !presentes.contains(clave) {
+            if !texto.isEmpty, !texto.hasSuffix("\n") { texto += "\n" }
+            texto += línea(clave, valor: valor) + "\n"
+            escribió = true
+        }
+        guard escribió else { return false }
+        try fileManager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try texto.write(to: url, atomically: true, encoding: .utf8)
+        return true
     }
 }
 

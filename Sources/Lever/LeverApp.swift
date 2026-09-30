@@ -14,6 +14,8 @@ struct LeverApp: App {
     /// el modelo, cada prueba que construye un `AppModel` movería carpetas del usuario de verdad.
     private static func makeModel() -> AppModel {
         Migration.runIfNeeded()
+        // Si Lever se cerró de golpe con una sesión aislada abierta, no queda nada corriendo.
+        SafeWindowsRunner.recoverStaleSessions()
         return AppModel()
     }
 
@@ -58,10 +60,26 @@ struct LeverApp: App {
 
 /// Permite abrir archivos arrastrándolos sobre el icono de la app o con «Abrir con» del Finder.
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    @MainActor var model: AppModel?
+    @MainActor var model: AppModel? {
+        didSet { startEmulatorSideButton() }
+    }
+    @MainActor private var sideButton: EmulatorSideButtonController?
+
+    /// El botón que se pega al menú lateral del emulador vive mientras viva la app, no la ventana:
+    /// el emulador puede estar abierto con Lever en cualquier pestaña.
+    @MainActor private func startEmulatorSideButton() {
+        guard sideButton == nil, let model else { return }
+        let controller = EmulatorSideButtonController(model: model)
+        controller.start()
+        sideButton = controller
+    }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        MainActor.assumeIsolated { model?.stopSafeSessionsNow() }
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {

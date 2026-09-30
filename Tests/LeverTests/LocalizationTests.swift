@@ -33,7 +33,14 @@ enum LocalizationTests {
             .tabAndroid, .toolAndroid, .deviceAndroidVersion, .androidOptionStudio,
             // Dos herramientas que se llaman igual en todas partes: «Java» es una marca y
             // «bundletool» es el nombre del programa de Google, sin traducción oficial.
-            .toolJava, .toolBundletool
+            .toolJava, .toolBundletool,
+            // «Safe Mode» es el nombre de la función en los dos idiomas, como lo pidió quien la
+            // encargó, y «Safe Runs» —la sección que los lista— se nombró igual por lo mismo;
+            // «Normal» y «Script» se escriben igual en español y en inglés.
+            .safeModeName, .tabSafeRuns, .openModeNormal, .safeFindingScript,
+            // El nombre del acceso del Escritorio es el de una carpeta que se ve en el Finder:
+            // lleva «Safe Mode» dentro, que ya es igual en los dos idiomas, y nada más.
+            .safeDesktopLinkName
         ]
         let spanish = Strings.rawTable(for: .spanish)
         let english = Strings.rawTable(for: .english)

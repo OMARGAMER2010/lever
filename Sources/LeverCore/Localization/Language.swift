@@ -33,7 +33,8 @@ public enum Language: String, CaseIterable, Identifiable, Sendable {
 /// idioma se queda corto, en vez de descubrir un hueco en producción.
 public enum TextKey: String, CaseIterable, Sendable {
     // Barra superior
-    case tabPrograms, tabArchives, tabAndroid
+    case tabPrograms, tabArchives, tabAndroid, tabSafeRuns
+    case safeRunsEmpty, safeRunsEmptyBody, safeRunsNoPrograms
     case toolWine, toolExtractor, toolAndroid, toolNotInstalled, languageMenu
 
     // Menú de herramientas
@@ -45,6 +46,11 @@ public enum TextKey: String, CaseIterable, Sendable {
     // Zonas de soltar
     case dropProgramTitle, dropProgramSubtitle, dropArchiveTitle, dropArchiveSubtitle
     case dropApkTitle, dropApkSubtitle
+    case folderRecentsTitle, folderRemove, folderScanning, folderFound, folderEmpty, folderLimited
+    case folderRedistributables, folderRecommended, folderSelected, folderChooseEntry, folderOpenEntry
+    case folderUnityWindows, folderWindowsProgram, folderWindowsInstaller
+    case folderAndroidApp, folderConsoleGame, folderArchive, folderMacApplication
+    case logFolderChosen, errFolderUnreadable, errFolderEntryMissing
 
     // Ficha de archivo
     case revealInFinder, removeFile, chooseAnotherProgram, chooseAnotherArchive
@@ -128,7 +134,8 @@ public enum TextKey: String, CaseIterable, Sendable {
     case controlsButton, controlsAxis, controlsHat, controlsGamepadHint
     case retroSessionSection, retroFullscreen, retroFullscreenNote
     case retroResume, retroResumeNote
-    case playRom, playingRom, statusGettingCore, statusLaunchingRetro
+    case playRom, playingRom, statusGettingCore, statusLaunchingRetro, logTouchNeedsAWindow
+    case controlDSMicrophone, controlDSSwapScreens, controlDSCloseLid, controlDSStylusStick
     case errNoRetroArch, errNoCore, errUnknownRom, errPickRom, emulationDisclaimer
 
     // La consola híbrida: paquetes, contenidos y llaves
@@ -215,6 +222,11 @@ public enum TextKey: String, CaseIterable, Sendable {
     case logRotated, logEmulatorReady, statusApkRunning
     case errEmulatorTimeout, errEmulatorSetUpFailed, errEmulatorScriptMissing
 
+    // Android: pantalla completa
+    case androidFullscreen, androidFullscreenHelp, androidFullscreenExitHint
+    case errFullscreenNoEmulator, errFullscreenNoChannel, errFullscreenRefused, errFullscreenLost
+    case logFullscreenOpened, logFullscreenClosed, logFullscreenNoAdb
+
     // Abiertos hace poco
     case recentsTitle, recentsClear, recentsReopen, recentsRename, recentsRenameHint
     case recentsMove, recentsForget, recentsMissing
@@ -253,4 +265,49 @@ public enum TextKey: String, CaseIterable, Sendable {
     case statusWindowsReset, statusWineUnblocked, statusPreparing, statusWindowsFailed
     case statusInstallingApk, statusApkInstalled, statusApkUninstalled, statusScanning
     case statusEmulatorStarting
+
+    // Safe Mode: elegir cómo se abre
+    case safeModeName, openModeNormal, openModeLabel, safeRecommended, safeRecommendedBecause
+    case safeArchiveExplain, normalArchiveExplain, safeProgramExplain, normalProgramExplain
+    case safeUnavailable, safeChecking, safeAllowNetwork, safeAllowNetworkHint, safeDestination
+    case extractSafe, runSafe, safeNoNativePort, safeFromWorkspace
+
+    // Safe Mode: resumen y detalles
+    case safeActive, safeNetworkBlocked, safeNetworkAllowed, safePersonalProtected, safeIsolated
+    case safeVerdictKnownThreats, safeVerdictSuspicious, safeVerdictUnverified
+    case safeVerdictNothingSuspicious, safeVerdictNoKnownThreats
+    case safeDetails, safeHideDetails, safeScannerNotAvailable, safeScannerNothing, safeScannerClean
+    case safeScannerDetected, safeScannerFailed, safeWorkspaceFolder, safeShowFiles
+    case safeDeleteWorkspace, safeDeleteConfirmTitle, safeDeleteConfirmBody, safeDeleteConfirm, cancel
+    case safeProgramsFound, safeInstallerTag, safeSigned, safeUnsigned, safeFingerprint
+    case safeDrivesNote, safeEntries, safeFindingsTitle, safeNoFindings, safeCopyFingerprint
+
+    // Safe Mode: pasos
+    case safeStageListing, safeStageExtracting, safeStageSweeping, safeStageScanning
+    case safeStagePreparing, safeStageCreatingWindows, safeStageRunning, safeStageCleaning
+    case safeStageImporting
+
+    // Safe Mode: registro y errores
+    case logSafeExtracted, logSafeRunClosed, logSafeLinksRemoved, logSafeWorkspaceDeleted
+    case errSafeUnavailable, errSafeDoesNotFit, errSafeTooManyEntries, errSafeListingFailed
+    case errSafeExtractionFailed, errSafeLimitHit, safeLimitFileSize, safeLimitWritten
+    case safeLimitDisk, safeLimitMemory, errSafeEngine, errSafePrefix, errSafeImport, errSafeDiskLow
+    case errSafeBusy
+    case menuSafeModeFolder, menuSafeModeDeleteAll, safeDeleteAllConfirmTitle, safeDeleteAllConfirmBody
+
+    // Safe Mode: este archivo ya estaba extraído
+    case safeAlreadyExtractedTitle, safeAlreadyExtractedBody, safeAlreadyExtractedMany
+    case safeOpenExisting, safeDeletePrevious, extractAgain
+    case safeExtractAgainTitle, safeExtractAgainBody, safeReplacePrevious, safeKeepBoth
+    case safeStaysInsideNote, errSafeAlreadyExtracted, logSafeReplacedSpaces
+    case safeDesktopLink, safeDesktopLinkName, logSafeDesktopLink, errSafeDesktopLink
+
+    // Safe Mode: hallazgos
+    case safeFindingPathTraversal, safeFindingAbsolutePath, safeFindingSymbolicLink, safeFindingHardLink
+    case safeFindingSpecialFile, safeFindingSetID, safeFindingDeceptiveName, safeFindingCaseCollision
+    case safeFindingTooManyEntries, safeFindingDoesNotFit, safeFindingCompressionBomb
+    case safeFindingExtensionMismatch, safeFindingEncrypted, safeFindingNestedArchive
+    case safeFindingUnreadable, safeFindingWindowsProgram, safeFindingWindowsInstaller
+    case safeFindingScript, safeFindingRiskyScript, safeFindingMacProgram, safeFindingDllSideLoading
+    case safeFindingWebShortcut, safeFindingKnownThreat, safeFindingBlockedLink, safeFindingResourceLimit
 }

@@ -13,6 +13,7 @@ import LeverCore
 struct RecentsList: View {
     @ObservedObject var model: AppModel
     let kind: SupportedFileKind
+    var heading: TextKey = .recentsTitle
 
     /// Ruta de la fila que se está renombrando. El nombre se edita en su sitio, como en el
     /// Finder, en vez de abrir una ventana para escribir una palabra.
@@ -27,7 +28,7 @@ struct RecentsList: View {
         if !files.isEmpty {
             VStack(alignment: .leading, spacing: Theme.Spacing.tight) {
                 HStack(alignment: .firstTextBaseline) {
-                    Text(s[.recentsTitle])
+                    Text(s[heading])
                         .font(.system(size: 12, weight: .semibold))
                     Spacer()
                     Button(s[.recentsClear]) { model.clearRecents(of: kind) }

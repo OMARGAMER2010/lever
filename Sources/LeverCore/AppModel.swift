@@ -4,9 +4,9 @@ import AppKit
 
 @MainActor
 public final class AppModel: ObservableObject {
-    private let locator: RuntimeLocator
-    private let runner: ProcessRunner
-    private let fileManager: FileManager
+    let locator: RuntimeLocator
+    let runner: ProcessRunner
+    let fileManager: FileManager
     /// La biblioteca de motores y núcleos. Se inyecta para que las pruebas no toquen —ni ensucien—
     /// lo que el usuario tenga descargado de verdad.
     private let portLibrary: PortLibrary
@@ -14,8 +14,8 @@ public final class AppModel: ObservableObject {
     private let switchControls: SwitchControlLibrary
 
     private var customWineURL: URL?
-    private var programSession: ProcessSession?
-    private var extractionSession: ProcessSession?
+    var programSession: ProcessSession?
+    var extractionSession: ProcessSession?
     private var installSession: ProcessSession?
     private var portSession: ProcessSession?
 
@@ -41,11 +41,16 @@ public final class AppModel: ObservableObject {
             programArchitecture = selectedProgram.map(ProgramInspector.architecture(of:)) ?? .unknown
             portableGame = nil
             inspectPortable()
+            if selectedProgram != oldValue { refreshProgramRecommendation() }
         }
     }
     @Published public private(set) var programArchitecture: ProgramArchitecture = .unknown
-    @Published public private(set) var isRunningProgram = false
-    @Published public private(set) var isPreparingWindows = false
+    @Published public internal(set) var isRunningProgram = false
+    @Published public internal(set) var isPreparingWindows = false
+    @Published public private(set) var selectedFolder: URL?
+    @Published public private(set) var folderInspection: FolderInspection?
+    @Published public private(set) var isInspectingFolder = false
+    private var folderScanID = UUID()
 
     /// Lo que se sabe del `.exe` cuando resulta ser un juego hecho con Godot. Que no sea `nil`
     /// cambia por completo lo que conviene ofrecer: no hay que emular nada, hay que rehacer la app.
@@ -76,9 +81,9 @@ public final class AppModel: ObservableObject {
     @Published public var revealWhenDone: Bool {
         didSet { Preferences.revealWhenDone = revealWhenDone }
     }
-    @Published public private(set) var isExtracting = false
+    @Published public internal(set) var isExtracting = false
     /// De 0 a 1 mientras `7zz` informa. `nil` cuando no hay dato.
-    @Published public private(set) var extractionProgress: Double?
+    @Published public internal(set) var extractionProgress: Double?
     @Published public private(set) var archiveFacts = ArchiveFacts()
     @Published public private(set) var isInspecting = false
 
@@ -119,6 +124,8 @@ public final class AppModel: ObservableObject {
     @Published public private(set) var installedPackage: String?
     @Published public private(set) var avdNames: [String] = []
     @Published public private(set) var startingAvd: String?
+    /// Si hay una pantalla completa del emulador abierta.
+    @Published public internal(set) var isAndroidFullscreen = false
 
     // MARK: - Juegos de consola
 
@@ -170,12 +177,31 @@ public final class AppModel: ObservableObject {
 
     @Published public private(set) var recentFiles: [RecentFile] = []
 
+    // MARK: - Safe Mode
+
+    /// Cómo se abre el comprimido o el programa elegido. Normal por defecto; Safe Mode cuando hay
+    /// señales fuertes o cuando el archivo ya viene de un espacio aislado. Se decide por archivo.
+    @Published public var archiveOpenMode: OpenMode = .normal
+    @Published public var programOpenMode: OpenMode = .normal
+    /// Red para la próxima ejecución aislada. Se vuelve a apagar al terminar: no se recuerda.
+    @Published public var allowsNetworkInSafeRun = false
+    @Published public internal(set) var archiveRecommendation = SafeRecommendation.none
+    /// Lo que este mismo comprimido ya dejó extraído. Se mide al elegirlo, para poder avisar antes
+    /// de repetir la extracción en vez de descubrirlo cuando el disco se llena.
+    @Published public internal(set) var archivePreviousExtractions = SafePreviousExtractions.none
+    @Published public internal(set) var programRecommendation = SafeRecommendation.none
+    @Published public internal(set) var sandboxAvailability = SandboxAvailability.unknown
+    /// El espacio aislado que se está enseñando y lo que se sabe de él.
+    @Published public internal(set) var safeWorkspace: SafeWorkspace?
+    @Published public internal(set) var safeReport: SafeReport?
+    lazy var safeWindowsRunner = SafeWindowsRunner(runner: runner)
+
     // MARK: - Estado común
 
     @Published public private(set) var log: [LogEntry] = []
-    @Published public private(set) var activityMessage = ""
+    @Published public internal(set) var activityMessage = ""
     @Published public private(set) var lastError: String?
-    @Published public private(set) var lastSuccessFolder: URL?
+    @Published public internal(set) var lastSuccessFolder: URL?
     @Published public private(set) var isInstallingTools = false
 
     public var isBusy: Bool {
@@ -690,8 +716,65 @@ public final class AppModel: ObservableObject {
     // MARK: - Selección de archivos
 
     public func selectProgram() {
-        guard let url = FileActions.chooseFile(kind: .exe, title: strings[.menuOpenProgram]) else { return }
-        acceptProgram(url)
+        guard let url = FileActions.chooseProgramOrFolder(title: strings[.menuOpenProgram]) else { return }
+        accept(droppedURLs: [url])
+    }
+
+    public func acceptFolder(_ url: URL) {
+        let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+        let isLink = (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true
+        guard isDirectory, !isLink, fileManager.isReadableFile(atPath: url.path) else {
+            showError(strings(.errFolderUnreadable, url.lastPathComponent))
+            return
+        }
+        folderScanID = UUID()
+        let scanID = folderScanID
+        selectedFolder = url
+        folderInspection = nil
+        selectedProgram = nil
+        isInspectingFolder = true
+        remember(url, kind: .folder)
+        clearError()
+        add(strings(.logFolderChosen, url.lastPathComponent), level: .info)
+
+        Task { [weak self] in
+            guard let self else { return }
+            let inspection = await Task.detached { FolderInspector.inspect(url) }.value
+            guard self.folderScanID == scanID else { return }
+            self.folderInspection = inspection
+            self.isInspectingFolder = false
+            if self.selectedProgram == nil,
+               let entry = inspection.recommended, entry.kind == .windowsProgram {
+                self.acceptProgram(entry.url)
+                // A folder can include DLLs and scripts alongside the game. Start in the
+                // isolated environment; the existing picker still lets the user change modes.
+                self.programOpenMode = .safe
+            }
+        }
+    }
+
+    public func clearFolder() {
+        folderScanID = UUID()
+        selectedFolder = nil
+        folderInspection = nil
+        isInspectingFolder = false
+    }
+
+    public func openFolderEntry(_ entry: FolderEntry) {
+        guard folderInspection?.entries.contains(entry) == true,
+              fileManager.fileExists(atPath: entry.url.path) else {
+            showError(strings(.errFolderEntryMissing, entry.url.lastPathComponent))
+            return
+        }
+        switch entry.kind {
+        case .windowsProgram:
+            acceptProgram(entry.url)
+            programOpenMode = .safe
+        case .androidApp: acceptApk(entry.url)
+        case .consoleGame: acceptRom(entry.url)
+        case .archive: acceptArchive(entry.url)
+        case .macApplication: FileActions.openInFinder(entry.url)
+        }
     }
 
     public func acceptProgram(_ url: URL) {
@@ -728,6 +811,7 @@ public final class AppModel: ObservableObject {
         clearError()
         add(strings(.logArchiveChosen, url.lastPathComponent), level: .info)
         inspectArchive()
+        assessArchiveForSafeMode()
     }
 
     public func selectApk() {
@@ -760,6 +844,7 @@ public final class AppModel: ObservableObject {
         archiveFacts = ArchiveFacts()
         archivePassword = ""
         lastSuccessFolder = nil
+        archivePreviousExtractions = .none
     }
 
     /// Punto de entrada para arrastrar y soltar, y para «Abrir con» desde el Finder.
@@ -776,6 +861,7 @@ public final class AppModel: ObservableObject {
             case .android: acceptApk(url)
             case .rom: acceptRom(url)
             case .archive: acceptArchive(url)
+            case .folder: acceptFolder(url)
             case nil: continue
             }
             handled = true
@@ -1181,6 +1267,10 @@ public final class AppModel: ObservableObject {
 
     public func runProgram() {
         guard !isRunningProgram, !isPreparingWindows else { return }
+        if programOpenMode == .safe {
+            runProgramSafely()
+            return
+        }
         guard let program = selectedProgram,
               SupportedFileKind.exe.accepts(program),
               fileManager.isReadableFile(atPath: program.path) else {
@@ -1261,6 +1351,11 @@ public final class AppModel: ObservableObject {
 
     public func stopProgram() {
         programSession?.cancel()
+        // En Safe Mode, detener es cerrar la sesión entera, también lo que se haya desligado.
+        if programOpenMode == .safe {
+            let safe = safeWindowsRunner
+            Task { await safe.stopActiveSession() }
+        }
         add(strings[.logStopping], level: .warning)
     }
 
@@ -1280,7 +1375,8 @@ public final class AppModel: ObservableObject {
 
     /// Hay un motor reconocido, es de una versión contemplada y no hay nada más en marcha.
     public var canMakeNativeApp: Bool {
-        guard let portableGame, portableGame.isSupported else { return false }
+        // La app nativa correría sin aislamiento: no se ofrece mientras el archivo se trata como no fiable.
+        guard programOpenMode == .normal, let portableGame, portableGame.isSupported else { return false }
         return !isBusy
     }
 
@@ -1405,7 +1501,7 @@ public final class AppModel: ObservableObject {
         return values.volumeAvailableCapacityForImportantUsage
     }
 
-    private func finishProgram(message: String, level: LogLevel) {
+    func finishProgram(message: String, level: LogLevel) {
         isRunningProgram = false
         isPreparingWindows = false
         activityMessage = message
@@ -1447,6 +1543,10 @@ public final class AppModel: ObservableObject {
 
     public func extractArchive() {
         guard !isExtracting else { return }
+        if archiveOpenMode == .safe {
+            extractArchiveSafely()
+            return
+        }
         guard let archive = selectedArchive,
               SupportedFileKind.rar.accepts(archive),
               fileManager.isReadableFile(atPath: archive.path) else {
@@ -1568,7 +1668,7 @@ public final class AppModel: ObservableObject {
         FileActions.openInFinder(lastSuccessFolder)
     }
 
-    private func finishExtraction(message: String) {
+    func finishExtraction(message: String) {
         isExtracting = false
         extractionProgress = nil
         extractionSession = nil
@@ -2195,6 +2295,10 @@ public final class AppModel: ObservableObject {
                 let configuración = try writeRetroConfig(for: plataforma)
                 activityMessage = strings[.statusLaunchingRetro]
                 add(strings(.logInstallingApk, rom.lastPathComponent, plataforma.name), level: .info)
+                // Se ignora «pantalla completa» a propósito; que no parezca que no funciona.
+                if plataforma.hasTouch, playFullscreen {
+                    add(strings(.logTouchNeedsAWindow, plataforma.name), level: .warning)
+                }
 
                 try RetroTools.open(
                     retroarch: retroarch, core: núcleo, rom: rom, config: configuración,
@@ -2458,6 +2562,10 @@ public final class AppModel: ObservableObject {
             try fileManager.createDirectory(at: carpeta, withIntermediateDirectories: true)
         }
 
+        // Lo que enciende la pantalla táctil es una opción del núcleo, y esa va en otro archivo.
+        // Solo se añaden las claves que falten: lo que haya cambiado la persona se respeta.
+        try? RetroConfig.mergeCoreOptions(for: platform, data: datos, fileManager: fileManager)
+
         let archivo = datos.appendingPathComponent("lever.cfg")
         let texto = RetroConfig.makeConfig(
             profile: controlProfile, platform: platform,
@@ -2557,6 +2665,7 @@ public final class AppModel: ObservableObject {
         case .rar: acceptArchive(file.url)
         case .apk: acceptApk(file.url)
         case .rom: acceptRom(file.url)
+        case .folder: acceptFolder(file.url)
         }
     }
 
@@ -2603,6 +2712,7 @@ public final class AppModel: ObservableObject {
         case .exe where selectedProgram == file.url: selectedProgram = destination
         case .rar where selectedArchive == file.url: selectedArchive = destination
         case .apk where selectedApk == file.url: selectedApk = destination
+        case .folder where selectedFolder == file.url: acceptFolder(destination)
         default: break
         }
     }
@@ -2653,22 +2763,22 @@ public final class AppModel: ObservableObject {
         addOutput(line)
     }
 
-    private func addOutput(_ line: String) {
+    func addOutput(_ line: String) {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         add(trimmed, level: .output)
     }
 
-    private func add(_ text: String, level: LogLevel) {
+    func add(_ text: String, level: LogLevel) {
         log.append(LogEntry(text: text, level: level))
         if log.count > 600 { log.removeFirst(log.count - 600) }
     }
 
-    private func clearError() {
+    func clearError() {
         lastError = nil
     }
 
-    private func showError(_ message: String) {
+    func showError(_ message: String) {
         lastError = message
         add(message, level: .failure)
     }

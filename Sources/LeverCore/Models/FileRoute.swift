@@ -18,6 +18,8 @@ public enum FileRoute: String, Equatable, Sendable, CaseIterable {
     case android
     /// Un juego de consola, que se interpreta con un emulador.
     case rom
+    /// Una carpeta que hay que inspeccionar para encontrar su punto de entrada.
+    case folder
 }
 
 /// Quién se queda con un archivo, mirando lo que tiene dentro y no cómo se llama.
@@ -30,12 +32,13 @@ public enum FileRouter {
     /// de red de seguridad. Es la razón de que un `.xci` renombrado a `.zip` siga sin colarse por
     /// el sitio que no es.
     public static func route(for url: URL) -> FileRoute? {
+        let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+        if isDirectory {
+            if PlayStationInspector.inspect(url).isRecognised { return .rom }
+            return .folder
+        }
         if SupportedFileKind.exe.accepts(url) { return .program }
         if SupportedFileKind.apk.accepts(url) { return .android }
-        // Un juego de PS3 o de PS4 volcado de su disco es una carpeta con un ejecutable dentro, no
-        // un archivo. Va antes que las dos ramas de abajo porque ninguna de ellas mira dentro de
-        // una carpeta.
-        if url.hasDirectoryPath, PlayStationInspector.inspect(url).isRecognised { return .rom }
         if SupportedFileKind.rom.accepts(url), isRecognisedGame(url) { return .rom }
         if SupportedFileKind.rar.accepts(url) { return .archive }
         return nil

@@ -9,6 +9,7 @@ import LeverCore
 struct ActionBar: View {
     @ObservedObject var model: AppModel
     let mode: WorkMode
+    @State private var confirmsExtractAgain = false
 
     private var s: Strings { model.strings }
 
@@ -22,6 +23,17 @@ struct ActionBar: View {
         .padding(.vertical, 11)
         .background(.bar)
         .overlay(alignment: .top) { Divider() }
+        // Las dos salidas de «ya estaba extraído», con lo que ocupa dicho en cada una. Reemplazar
+        // es destructivo y lo dice; quedarse con los dos no borra nada, pero entonces el disco
+        // tiene que dar para ambos y el análisis previo lo comprueba sin descontar nada.
+        .confirmationDialog(s[.safeExtractAgainTitle], isPresented: $confirmsExtractAgain) {
+            Button(s(.safeReplacePrevious, model.previousSafeExtractionsSize), role: .destructive,
+                   action: model.extractArchiveReplacingPrevious)
+            Button(s[.safeKeepBoth], action: model.extractArchiveKeepingPrevious)
+            Button(s[.cancel], role: .cancel) {}
+        } message: {
+            Text(s(.safeExtractAgainBody, model.previousSafeExtractionsSize))
+        }
     }
 
     // MARK: - Lado izquierdo: qué está pasando
@@ -30,7 +42,7 @@ struct ActionBar: View {
     private var status: some View {
         switch mode {
         case .archive: archiveStatus
-        case .program: programStatus
+        case .program, .safeRuns: programStatus
         case .android: androidStatus
         case .rom: romStatus
         }
@@ -81,6 +93,10 @@ struct ActionBar: View {
             busy(s[.preparingWindows])
         } else if model.isRunningProgram {
             busy(s[.programIsOpen])
+        } else if model.isInspectingFolder {
+            busy(s[.folderScanning])
+        } else if model.selectedFolder != nil && model.selectedProgram == nil {
+            hint(s[.folderChooseEntry])
         } else if model.selectedProgram == nil {
             hint(s[.chooseProgramFirst])
         } else if model.wineIsBlocked {
@@ -187,13 +203,13 @@ struct ActionBar: View {
                     Button(s[.stop], action: model.stopExtraction)
                         .controlSize(.large)
                 }
-                Button(model.isExtracting ? s[.extracting] : s[.extract], action: model.extractArchive)
+                Button(archiveActionTitle, action: startExtraction)
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
                     .keyboardShortcut(.return, modifiers: [.command])
                     .disabled(!model.canExtractArchive)
 
-            case .program:
+            case .program, .safeRuns:
                 if model.isRunningProgram || model.isPreparingWindows {
                     Button(s[.stop], action: model.stopProgram)
                         .controlSize(.large)
@@ -208,6 +224,13 @@ struct ActionBar: View {
                 if model.isRunningApk {
                     Button(s[.stop], action: model.stopRun)
                         .controlSize(.large)
+                }
+                if model.canOpenAndroidFullscreen {
+                    Button(s[.androidFullscreen]) {
+                        AndroidFullscreenPresenter.shared.present(model: model, emulatorPID: nil, screen: nil)
+                    }
+                    .controlSize(.large)
+                    .help(s[.androidFullscreenHelp])
                 }
                 Button(model.isRunningApk ? s[.runningApk] : s[.runApk], action: model.runApk)
                     .buttonStyle(.borderedProminent)
@@ -229,9 +252,30 @@ struct ActionBar: View {
         }
     }
 
+    /// Cuando este comprimido ya tiene una extracción, el botón lo dice: «Extraer otra vez». Seguir
+    /// poniendo «Extraer» es lo que hacía que repetirlo pareciera la primera vez.
+    private var archiveActionTitle: String {
+        if model.isExtracting { return s[.extracting] }
+        if hasPreviousExtraction { return s[.extractAgain] }
+        return s[model.archiveOpenMode == .safe ? .extractSafe : .extract]
+    }
+
+    private var hasPreviousExtraction: Bool {
+        model.archiveOpenMode == .safe && !model.archivePreviousExtractions.isEmpty
+    }
+
+    private func startExtraction() {
+        // Nunca se extrae otra vez sin preguntar: la respuesta decide si queda un espacio o dos.
+        if hasPreviousExtraction {
+            confirmsExtractAgain = true
+            return
+        }
+        model.extractArchive()
+    }
+
     private var runTitle: String {
         if model.isPreparingWindows { return s[.preparingWindows] }
         if model.isRunningProgram { return s[.running] }
-        return s[.run]
+        return s[model.programOpenMode == .safe ? .runSafe : .run]
     }
 }

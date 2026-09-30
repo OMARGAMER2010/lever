@@ -45,8 +45,9 @@ struct GamepadDiagram<Caption: View>: View {
     /// Lo que va escrito dentro del botón. Sin nada, el nombre que ese botón lleva serigrafiado en
     /// el mando conectado.
     var glyph: ((RetroPadInput) -> String)?
-    /// El nombre de la etiqueta. Sin nada, el mismo criterio.
-    var title: ((RetroPadInput) -> String)?
+    /// El nombre de la etiqueta. Devolver `nil` para un control concreto deja el nombre de siempre:
+    /// así quien llama solo se ocupa de los que en su consola se llaman de otra forma.
+    var title: ((RetroPadInput) -> String?)?
     /// Cómo se lee en voz alta. No se puede sacar del pie porque el pie es un dibujo.
     let describe: (RetroPadInput) -> String
     let onPick: (RetroPadInput) -> Void
@@ -354,7 +355,7 @@ struct GamepadDiagram<Caption: View>: View {
     /// Cómo se llama de verdad ese botón en este mando. Es lo que va en la etiqueta y lo que quita
     /// la adivinanza: en un DualSense no pone «Select» por ninguna parte.
     private func name(_ input: RetroPadInput) -> String {
-        if let title { return title(input) }
+        if let title, let propio = title(input) { return propio }
         let family = family ?? .generic
         switch input {
         case .start: return family.menuLabels.start

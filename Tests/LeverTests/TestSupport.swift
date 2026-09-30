@@ -49,3 +49,15 @@ final class TemporaryFixture {
         return app
     }
 }
+
+/// Bytes desde texto hexadecimal, para escribir en las pruebas lo que se capturó de verdad.
+func hexData(_ text: String) -> Data {
+    var bytes = Data()
+    var index = text.startIndex
+    while index < text.endIndex {
+        let next = text.index(index, offsetBy: 2)
+        bytes.append(UInt8(text[index..<next], radix: 16) ?? 0)
+        index = next
+    }
+    return bytes
+}

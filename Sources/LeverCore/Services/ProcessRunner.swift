@@ -24,6 +24,14 @@ public final class ProcessSession: @unchecked Sendable {
         return cancelRequested
     }
 
+    /// El PID del proceso en marcha, o `nil` si todavía no arrancó o ya terminó. Lo usa la
+    /// vigilancia de recursos de Safe Mode para leer lo que escribe y lo que ocupa en memoria.
+    public var processIdentifier: Int32? {
+        lock.lock(); defer { lock.unlock() }
+        guard let process, process.isRunning else { return nil }
+        return process.processIdentifier
+    }
+
     func attach(_ process: Process) {
         lock.lock()
         self.process = process
@@ -79,7 +87,9 @@ public final class ProcessRunner: @unchecked Sendable {
             // Sin esto, una herramienta que pida contraseña se quedaría esperando para siempre.
             process.standardInput = FileHandle.nullDevice
 
-            if let extra = command.environment {
+            if !command.inheritsEnvironment {
+                process.environment = command.environment ?? [:]
+            } else if let extra = command.environment {
                 var environment = ProcessInfo.processInfo.environment
                 extra.forEach { environment[$0.key] = $0.value }
                 process.environment = environment
@@ -100,7 +110,8 @@ public final class ProcessRunner: @unchecked Sendable {
                     returning: ProcessResult(
                         exitCode: process.terminationStatus,
                         output: output,
-                        wasCancelled: session?.isCancelled ?? false
+                        wasCancelled: session?.isCancelled ?? false,
+                        endedBySignal: process.terminationReason == .uncaughtSignal
                     )
                 )
             }
